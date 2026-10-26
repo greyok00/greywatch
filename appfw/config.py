@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import time
 
 from .atomicio import write_json_atomic
 
@@ -60,7 +59,7 @@ def build_ruleset(cfg: dict) -> str:
     nfq = int(cfg.get("nfqueue_num", 111))
     bypass = "bypass" if cfg.get("fail_open", True) else ""
     lines = [
-        f"add table inet greywatch_appfw",
+        "add table inet greywatch_appfw",
         "add chain inet greywatch_appfw out "
         "{ type filter hook output priority 0 ; policy accept ; }",
         "add rule inet greywatch_appfw out ip daddr 127.0.0.0/8 counter accept",

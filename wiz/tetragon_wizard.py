@@ -1,4 +1,4 @@
-from rules import tetragon_policy, ValidationError
+from rules import tetragon_policy
 from wiz import common
 
 TPD = "/etc/tetragon/tetragon.tp.d"

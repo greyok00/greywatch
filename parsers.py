@@ -251,7 +251,6 @@ def parse_apparmor(line: str) -> Optional[Event]:
     m = _APPARMOR_AVC.search(line)
     if not m or m.group("status") != "DENIED":
         return None
-    ts = _AUDIT.search(line)
     return _ev("apparmor", "MEDIUM",
                f"AppArmor DENIED {m.group('profile') or ''} {m.group('comm') or ''}".strip(),
                None)
@@ -291,9 +290,7 @@ def parse_auditd(line: str) -> Optional[Event]:
 
 
 PARSERS = {
-    "net-watch": None,          # synthetic: the daemon's own analyzer
     "cve-updater": None,        # synthetic: mirrored from the cache
-    "freshclam": parse_freshclam,
     "responderd": parse_responderd,
     "tetragon": parse_tetragon,
     "yara-watch": parse_yara_watch,

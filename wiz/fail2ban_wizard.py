@@ -1,4 +1,4 @@
-from rules import fail2ban_jail, fail2ban_filter, ValidationError
+from rules import fail2ban_jail, fail2ban_filter
 from wiz import common
 
 

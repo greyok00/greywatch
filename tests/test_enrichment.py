@@ -5,7 +5,6 @@ import pathlib
 import socketserver
 import threading
 
-import pytest
 
 from enrichment import enrich, extract_cves, load_map, sync_map_names
 from events import Event

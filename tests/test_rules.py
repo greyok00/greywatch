@@ -6,12 +6,11 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-import rules as R
 import wiz.common as C
 from rules import (ValidationError, arpwatch_env_file, fail2ban_filter,
                    fail2ban_jail, tetragon_policy, ufw_build,
-                   ufw_exact_string, yara_source)
-from wiz import arpwatch_wizard, fail2ban_wizard, tetragon_wizard, yara_wizard
+                   ufw_exact_string)
+from wiz import fail2ban_wizard, tetragon_wizard, yara_wizard
 
 
 

@@ -2,9 +2,7 @@ import datetime as _dt
 import json
 import os
 import pathlib
-import re
 import subprocess
-import sys
 import threading
 import time
 
@@ -13,15 +11,14 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GLib, Gio    # noqa: E402
 
 from registry import load_registry
-from ui.models import (MARK_BY_SEVERITY, dedupe, feed_worthy, state_mark,
-                       status_mark, status_words, recent_rows, age_words,
+from ui.models import (MARK_BY_SEVERITY, status_mark, status_words, recent_rows, age_words,
                        local_clock)
 from ui.plain import (sentence as plain_sentence, friendly_name, what_is,
-                      escape, without_mark, ink as pc_ink, soft as pc_soft,
+                      escape, without_mark, soft as pc_soft,
                       muted as pc_muted)
 from ui.themes import (ThemeStore, dark_default, load_setting,
                        THEME_CHOICES)
-from ui.cards import CARD_ICONS, SCAN_MODES, card_subtitle, quiet_note
+from ui.cards import CARD_ICONS, SCAN_MODES, quiet_note
 from ui.settings import (TrustList, PausedStore, LearningStore,
                          FirewallModeStore)
 from ui import discover
@@ -978,7 +975,7 @@ class MainWindow(Gtk.Window):
             p = subprocess.run(["nft", "list", "tables"],
                                capture_output=True, text=True, timeout=5)
             present = "greywatch_appfw" in p.stdout
-            lines.append(f"firewall nft table: "
+            lines.append("firewall nft table: "
                          + ("present (armed)" if present else "absent (off)"))
         except Exception:
             lines.append("firewall nft table: could not check")

@@ -4,7 +4,6 @@ import os
 import pathlib
 import shutil
 import subprocess
-import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BACKUP_DIR = ROOT / "data" / "backups"

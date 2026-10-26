@@ -1,9 +1,7 @@
-import json
 
 from ui.models import (DecisionView, EventRow, filter_events, pending_badge,
                        rows_from, state_mark)
 
-import greywatch_daemon as gd
 from registry import load_registry
 
 

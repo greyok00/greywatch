@@ -1,7 +1,5 @@
 import json
 import subprocess
-import socket
-import struct
 import pathlib
 
 import sys

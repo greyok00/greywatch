@@ -9,9 +9,8 @@ import tracemalloc
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from collectors import BoundedQueue, FileTailer
-from events import normalize_event
 from parsers import PARSERS
-from greywatch_daemon import Daemon, read_events
+from greywatch_daemon import Daemon
 
 TMP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tmp")
 FLOOD_N = 100_000
@@ -39,7 +38,6 @@ def flood():
     tracemalloc.start()
     exceptions = 0
     events = 0
-    junk = None
     for i in range(FLOOD_N):
         line = blob_sources[i % len(blob_sources)](rng.randrange(0, 1200))
         for tool in tools:

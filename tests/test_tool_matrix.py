@@ -1,9 +1,6 @@
-import json
 import pathlib
 import sys
-import time
 
-import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -11,7 +8,6 @@ sys.path.insert(0, str(ROOT))
 import os
 os.environ.setdefault("TZ", "UTC")
 
-from appfw.base import Conn
 from appfw import rules as R
 from appfw.policy import Policy, decide
 from netwatch import NetWatch
@@ -61,11 +57,9 @@ def test_s3_fail2ban_ban():
 
 def test_s4_every_parser_accepts_every_fixture_line():
     from parsers import PARSERS
-    from events import normalize_event
     files = sorted(p for p in FIXTURES.glob("*") if p.is_file())
     assert files, "fixture corpus missing — the tool docs need their files"
     for f in files:
-        tool = f.stem.replace("-fixture", "")
         for parser_name, fn in PARSERS.items():
             if fn is None:
                 continue
@@ -73,7 +67,7 @@ def test_s4_every_parser_accepts_every_fixture_line():
                 if not line.strip():
                     continue
                 try:
-                    out = fn(line)
+                    fn(line)
                 except Exception as exc:          # a parser must not raise
                     raise AssertionError(f"{parser_name} raised on "
                                          f"{f.name}: {exc!r}")
@@ -153,7 +147,6 @@ def test_s10_combo_denial_cluster_and_burst():
     for i in range(31):
         nw.ingest(Ev("appfw", f"appfw node → burst{i}.example:443 allow "
                               f"[default allow-once (no dialog wired)]"))
-    kinds = [t.split(":")[0] for _, t in seen]
     assert any("denied attempts" in t for _, t in seen)
     assert any("connection burst" in t for _, t in seen)
 

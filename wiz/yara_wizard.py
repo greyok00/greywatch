@@ -48,7 +48,6 @@ def build(rules: dict):
 
 
 def apply_rules(b, payload_path=_PAYLOAD):
-    name = pathlib.Path(b["rules"][0]).stem if False else None
     return None
 
 

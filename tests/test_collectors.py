@@ -2,7 +2,6 @@ import os
 import time
 import threading
 
-import pytest
 
 from collectors import BoundedQueue, FileTailer, JournalTailer
 

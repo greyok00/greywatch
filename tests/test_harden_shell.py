@@ -143,7 +143,7 @@ def test_undo_restores_from_the_helper_journal(h):
 
     p = h.run(["undo", "stop-service", str(h.journal)])
     assert p.returncode == 0, p.stdout + p.stderr
-    assert f"RESTORE-UNIT stop-service fake.service" in p.stdout
+    assert "RESTORE-UNIT stop-service fake.service" in p.stdout
     assert (h.state / "unit-enabled").exists()   # was enabled, re-enabled
     assert (h.state / "unit-active").exists()    # was active, restarted
     assert "enable" in (h.state / "systemctl.log").read_text()
@@ -512,7 +512,6 @@ def test_symlinked_fragment_outside_pass_dir_refused(h):
 
 
 def test_symlinked_rollback_journal_refused(h):
-    from wizard import changeset as cs
     jid = "20261025-112000"
     pdir = h.data / "harden" / "journal" / jid
     pdir.mkdir(parents=True)

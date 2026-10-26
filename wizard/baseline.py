@@ -224,7 +224,7 @@ def generate(scan_result, controls, profile: str = "workstation") -> list:
                 else FRESH_UNKNOWN_NOTE
             card["current"] = (f"IPv6 value {disable}"
                                if disable is not None else
-                               f"IPv6 value unknown (sysctl)")
+                               "IPv6 value unknown (sysctl)")
             if fresh is None:
                 card["state"] = _CANT
             card["recommended"] = _ACTION_RECOMMENDED[FLAG_ACTION]

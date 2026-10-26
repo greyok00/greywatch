@@ -387,7 +387,7 @@ def yara_source(key: str, name: str) -> str:
     if not preset:
         return ""
     parts = [f"rule {name} {{\n",
-             f"    meta:\n",
+             "    meta:\n",
              f"        description = \"{preset['title']}\"\n"]
     if preset["strings"]:            # an empty strings: section is invalid
         parts.append("    strings:\n")

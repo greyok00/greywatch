@@ -1,4 +1,4 @@
-import json, os, pathlib, time
+import os, pathlib, time
 log = pathlib.Path.home() / "security-hardening" / "yara-scan.log"
 line = (f"{time.strftime('%Y-%m-%d %H:%M:%S')} "
         f"SMOKE: yara match rule=SmokeTest.YARA file=/tmp/smoke_payload.bin "

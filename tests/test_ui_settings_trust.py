@@ -1,5 +1,4 @@
-import sys
-from ui.settings import TrustList, TRUST_PATH
+from ui.settings import TrustList
 from appfw.base import Conn
 from appfw.policy import Policy, decide
 from appfw import rules as R

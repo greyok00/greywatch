@@ -27,7 +27,6 @@ def _gtk_ready() -> bool:
 if not _gtk_ready():
     pytest.skip("no display available", allow_module_level=True)
 
-from gi.repository import Gtk  # noqa: E402
 from ui.window import MainWindow  # noqa: E402
 
 

@@ -3,7 +3,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
 from ui import discover  # noqa: E402
-from ui.plain import escape, muted as pc_muted  # noqa: E402
+from ui.plain import muted as pc_muted  # noqa: E402
 
 TOOL_CHOICES = [
     ("appfw",    "🧱", "Allow or deny a program", "Trusts or stops one program from using the internet. No popups afterward."),
@@ -626,7 +626,7 @@ class RuleWizard(Gtk.Assistant):
                 from wiz.yara_wizard import compile_gate
                 ok, err = compile_gate(src)
                 if not ok:
-                    from ui.plain import escape, muted as pc_muted
+                    from ui.plain import escape
                     self._done_body.set_markup(
                         f"<span size='14000'>The scanner rejected it: "
                         f"{escape(err)}. Nothing installed.</span>")

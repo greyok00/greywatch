@@ -5,7 +5,6 @@ import json
 import os
 import pathlib
 import re
-import sys
 import time
 from dataclasses import dataclass
 

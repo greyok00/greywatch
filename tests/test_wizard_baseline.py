@@ -4,12 +4,10 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from hardening.controls import Control, load_controls  # noqa: E402
-from wizard import baseline  # noqa: E402
 from wizard.baseline import (  # noqa: E402
     BREAK_RISK_SENTENCE, DONE_ACTION, EXISTING_INSTALL_NOTE, FLAG_ACTION,
     INSTALL_PROMPT_ACTION, UFW_SENTENCE, generate,
-    IPv6_DONE_NOTE, NOT_INSTALLED_UNKNOWN_NOTE, PROFILES,
-    FRESH_UNKNOWN_NOTE, UFW_UNKNOWN_NOTE,
+    IPv6_DONE_NOTE, NOT_INSTALLED_UNKNOWN_NOTE, FRESH_UNKNOWN_NOTE, UFW_UNKNOWN_NOTE,
 )
 
 DATA_DIR = pathlib.Path(__file__).resolve().parents[1] / "data"

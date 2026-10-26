@@ -1,5 +1,5 @@
 import shlex
-from rules import ufw_build, ValidationError
+from rules import ufw_build
 from wiz import common
 
 

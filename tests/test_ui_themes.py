@@ -5,7 +5,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from ui import themes as T
 from ui.themes import (dark_default, gtk_css, load_setting, load_themes,
-                       persist, DEFAULT_THEME)
+                       persist)
 
 
 @pytest.fixture

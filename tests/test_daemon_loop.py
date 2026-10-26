@@ -1,7 +1,4 @@
-import json
-import time
 
-import pytest
 
 import greywatch_daemon as gd
 from decisions_factory import interaction_for, sanitize
@@ -82,7 +79,6 @@ def test_snapshot_full_registry_state_transitions(tmp_path):
     snap = snapshot(reg, fake_unit(states))
     assert snap["tools"]["responderd"]["state"] == "RED"
     states["yara-watch"] = "active"
-    snap2 = snapshot(reg, fake_unit(states))
     snap = snapshot(reg, fake_unit(states))
     assert snap["tools"]["yara-watch"]["state"] in ("GREEN", "YELLOW")
 

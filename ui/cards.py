@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import subprocess
-import threading
-import time
 
 CARD_ICONS = {
     "responderd": "🛡", "tetragon": "👁", "yara-watch": "🧪",

@@ -1,15 +1,15 @@
 import json
 import socket
 import pathlib
+import subprocess
 import sys
 
-import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from ui import notify_alert
-from ui.notify_alert import (NotifyAlert, CriticalSquare, CriticalEvents,
+from ui.notify_alert import (CriticalSquare, CriticalEvents,
                              critical_filter, parse_deny)
 from appfw.engine import Engine, read_enabled, write_enabled
 from appfw import rules as R

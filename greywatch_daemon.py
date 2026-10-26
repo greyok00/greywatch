@@ -18,10 +18,9 @@ from supervisor import Supervisor
 from decisions_factory import interaction_for, sanitize
 from enrichment import enrich
 from events import normalize_event
-from parsers import PARSERS
-from registry import load_registry, tool_names
-from status import (GREEN, YELLOW, RED, classify, log_state_of, snapshot,
-                    write_status, load_status)
+from registry import load_registry
+from status import (snapshot,
+                    write_status)
 
 ROOT = pathlib.Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
@@ -40,7 +39,6 @@ TRIM_KEEP = 20_000
 
 
 def unit_checker_factory(command_ok=True):
-    from registry import load_registry
     units_by_scope = {"root": [], "user": []}
     states = {"active": "active", "inactive": "inactive", "failed": "failed",
               "unknown": "unknown"}

@@ -617,7 +617,6 @@ def test_arpwatch_wizard_lists_the_real_devices():
 
 
 def test_program_picker_is_a_real_list_not_a_typing_box(win):
-    from ui import discover
     ids = _combo_ids(win.app_combo)
     assert ids, "no programs discovered"
     for path in ids[:10]:

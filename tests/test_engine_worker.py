@@ -1,19 +1,15 @@
 import json
-import os
 import pathlib
-import socket
 import subprocess
 import sys
 import time
 
-import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from appfw import config as acfg
 from appfw.engine import Engine
-from appfw import rules as R
 
 
 class _FakeSub:

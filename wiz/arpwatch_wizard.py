@@ -1,4 +1,4 @@
-from rules import arpwatch_env_file, ValidationError
+from rules import arpwatch_env_file
 from wiz import common
 import subprocess
 
