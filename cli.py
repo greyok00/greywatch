@@ -30,7 +30,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import greywatch_daemon as daemon_mod
 from decisions_factory import pending_ids
-from events import Event
 from registry import load_registry
 from status import load_status
 
@@ -239,8 +238,19 @@ def cmd_rules(args) -> int:
     return rules_main(args)
 
 
+def _cli_version() -> str:
+    try:
+        import tomllib
+        with open(ROOT / "pyproject.toml", "rb") as fh:
+            return str(tomllib.load(fh)["project"]["version"])
+    except Exception:
+        return "0.0.0"
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="greywatch", description=__doc__)
+    ap.add_argument("--version", action="version",
+                    version=f"greywatch {_cli_version()} (pyproject.toml)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status").set_defaults(fn=cmd_status)
 

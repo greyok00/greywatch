@@ -21,3 +21,17 @@ __pycache__/
 *.so
 # cython build intermediates
 build/
+
+# secrets hygiene (no tracked file has ever matched this shape — keep it so)
+.env
+.env.*
+*.key
+*.pem
+*.p12
+
+# outputs with no business in a repo
+logs/
+cache/
+output/
+coverage/
+.coverage
