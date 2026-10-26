@@ -88,6 +88,13 @@ compliant.
 
 ## Architecture
 
+The suite is three layers stacked on one machine, and the diagram below
+shows how they touch: the daemon at the bottom watches and writes, the
+CLI and the desktop app only read what it wrote, and nothing phones
+home.
+
+![greywatch architecture diagram](doc/images/arch-layers.svg)
+
 | Layer | Responsibility | Main components |
 |---|---|---|
 | L1 — root daemon | Collect, record, and supervise | `greywatch.service`, inotify watchers, journal followers, event store, decision records, unit self-watch |
@@ -112,7 +119,10 @@ a ten-question FAQ, and the same text lives in the app's Help tab.
 rows with state, last activity, and Pause/Resume controls where a real
 unit backs them. Green means running, amber means paused, and red calls
 for attention. A check that cannot be verified reports that uncertainty
-rather than inventing a healthy state.
+rather than inventing a healthy state. A running protection is never
+labelled paused: a pause may only be claimed while the unit is really
+stopped, and the lockdown button ("Panic: enable every protection")
+starts and enables everything with one confirmation.
 
 **Tools.** Per-protection cards provide Pause, Resume, Details, and
 Scan now controls where applicable. A scan strip launches the five scan
@@ -179,12 +189,13 @@ result, and a tool that cannot be checked must be reported as such.
 
 ## Application firewall
 
-The application firewall is off by default (the daemon's status reports
-`appfw: off (owner switch)` until armed) and designed to fail open: if
-its daemon dies, traffic flows rather than being left waiting for a
-userspace verdict.
+The application firewall ships enabled in the default profile: on app
+launch the desktop app re-arms it whenever it was left off (the Panic
+button does this for every protection at once). Its design still fails
+open: if the daemon dies, traffic flows rather than being left waiting
+for a userspace verdict.
 
-Arming is a deliberate owner act in the app, and requires
+Arming requires
 `netfilterqueue` plus libnetfilter-queue headers — without them the
 engine refuses to arm and nothing else on the machine changes. When
 armed, it installs its own nftables table (never the system firewall's)
@@ -353,7 +364,7 @@ The test battery is the ground truth, and the invocation is the real
 one this tree is shipped with:
 
 ```bash
-env -u DISPLAY python3 -m pytest -q tests/   # 605 tests, ~50 s
+env -u DISPLAY python3 -m pytest -q tests/   # 648+ tests, ~50 s
 ```
 
 As of 2026-10-26 that battery passes 605 tests and skips 4
@@ -386,7 +397,11 @@ history, and an unknown check result are distinct states.
 That protection is paused rather than running. Security shows its state
 and provides a resume control; Tools exposes the corresponding
 protection controls. Paused is not the same as healthy, and it is not
-the same as a completed scan.
+the same as a completed scan. A pause is only ever shown while the
+protection is really stopped — the app never claims a paused state for
+a protection the monitor reports as running, and nothing in it pauses
+anything by itself. The "Panic: enable every protection" button on
+Security starts and enables everything in one confirmed step.
 
 **How much CPU and memory does the daemon get?**
 The daemon's unit carries CPUQuota=50% and MemoryMax=768M. Those are

@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OFFLINE MOCKUP · GitHub repo page · greywatch</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0d1117; color:#e6edf3;
+         font:15px/1.5 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }
+  a { color:#4493f8; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .mock-banner { background:#238636; color:#fff; padding:6px 16px;
+    font-size:13px; font-weight:600; text-align:center; }
+  .top { display:flex; align-items:center; gap:16px; padding:12px 24px;
+    background:#010409; border-bottom:1px solid #30363d; }
+  .top .mark { font-weight:800; font-size:18px; color:#e6edf3; letter-spacing:.5px; }
+  .searchbox { flex:0 1 330px; border:1px solid #30363d; border-radius:6px;
+    padding:4px 10px; color:#7d8590; font-size:13px; background:#0d1117; }
+  .top .right { margin-left:auto; color:#7d8590; font-size:13px; }
+  .repoline { display:flex; align-items:center; gap:10px; padding:16px 24px 0; }
+  .b { color:#9198a1; }
+  .repoline h1 { font-size:20px; margin:0; font-weight:400; }
+  .repoline h1 a { color:#4493f8; } .repoline h1 .sep { color:#656d76; }
+  .badge { border:1px solid #30363d; border-radius:999px; padding:0 10px;
+    font-size:12px; color:#9198a1; font-weight:500; }
+  .actions { margin-left:auto; display:flex; gap:8px; }
+  .pillbtn { border:1px solid rgba(240,246,242,0.12); background:#21262d;
+    color:#e6edf3; border-radius:6px; padding:3px 12px; font-size:12px; }
+  .tabs { display:flex; gap:8px; padding:8px 24px; margin-top:12px;
+    border-bottom:1px solid #30363d; font-size:14px; }
+  .tabs span { padding:8px 12px; border-radius:6px 6px 0 0; color:#e6edf3; }
+  .tabs .on { border-bottom:2px solid #f78166; font-weight:600; }
+  .tabs .cnt { background:#30363d; border-radius:99px; padding:0 6px;
+    font-size:12px; color:#9198a1; margin-left:6px; }
+  .wrap { display:flex; gap:24px; padding:16px 24px 60px; }
+  .main { flex:1 1 62%; min-width:0; max-width:1012px; }
+  .sidecol { flex:0 0 296px; font-size:14px; }
+  .branch { display:flex; gap:10px; align-items:center; font-size:14px;
+    padding:12px 0; border-bottom:1px solid #30363d; }
+  .file { display:flex; gap:10px; padding:8px 12px; font-size:14px;
+    border-top:1px solid #30363d; color:#9198a1; align-items:center; }
+  .readme-card { border:1px solid #30363d; border-radius:6px; margin-top:16px; }
+  .readme-head { border-bottom:1px solid #30363d; padding:8px 16px;
+    font-size:14px; color:#9198a1; display:flex; gap:12px; align-items:center; }
+  .readme-body { padding:8px 24px 24px; }
+  .readme-body img { max-width:100%; }
+  .readme-body h1, .readme-body h2 { border-bottom:1px solid #30363d;
+    padding-bottom:8px; margin-top:32px; }
+  .readme-body code { background:rgba(110,118,129,0.4); border-radius:6px;
+    padding:2px 6px; font-size:13px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .readme-body pre { background:#161b22; border-radius:6px; padding:16px; overflow:auto; }
+  .readme-body pre code { background:none; padding:0; font-size:12px; }
+  .readme-body table { border-collapse:collapse; }
+  .readme-body th, .readme-body td { border:1px solid #30363d; padding:6px 13px; }
+  .readme-body blockquote { border-left:3px solid #30363d; margin:0; padding:0 16px; color:#9198a1; }
+  .about { border-bottom:1px solid #30363d; padding:16px 0; }
+  .about h2 { font-size:16px; margin:0 0 8px; }
+  .topic { display:inline-block; background:rgba(56,139,253,0.15); color:#4493f8;
+    border-radius:99px; padding:2px 10px; font-size:12px; margin:0 4px 4px 0; font-weight:500; }
+  .meta { color:#9198a1; display:flex; gap:6px; align-items:center; margin:6px 0; }
+  .langbar { margin-top:8px; }
+  .langbar .bar { display:flex; height:8px; border-radius:999px; overflow:hidden; background:#21262d; }
+  .langbar .py { background:#3572A5; } .langbar .c { background:#555; }
+  .langbar .sh { background:#89e051; }
+  .langrow { font-size:12px; color:#9198a1; margin-top:8px; }
+  .dot { width:8px; height:8px; border-radius:99px; display:inline-block; margin-right:6px; }
+  .note { background:#161b22; border:1px dashed #d29922; color:#d29922;
+    border-radius:6px; padding:10px 14px; margin:12px 24px 0; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="mock-banner">OFFLINE MOCKUP — this is a preview of how the public GitHub page will look. Nothing has been published.</div>
+<div class="top">
+  <span class="mark">⬡ GitHub</span>
+  <div class="searchbox">Type / to search</div>
+  <div class="right">Pull requests · Issues · Marketplace · Explore</div>
+</div>
+<div class="repoline">
+  <h1><a href="#">your-handle</a><span class="sep"> / </span><a href="#">greywatch</a></h1>
+  <span class="badge">Public</span>
+  <div class="actions">
+    <span class="pillbtn">☆ Star 0</span>
+    <span class="pillbtn">⑂ Fork</span>
+    <span class="pillbtn" style="background:#238636;border-color:#2ea043">&lt;&gt; Code ▾</span>
+  </div>
+</div>
+<div class="tabs">
+  <span class="on">Code</span>
+  <span>Issues <span class="cnt">1</span></span>
+  <span>Pull requests <span class="cnt">0</span></span>
+  <span>Actions</span><span>Projects</span><span>Wiki</span>
+  <span>Security</span><span>Insights</span>
+</div>
+<div class="note">This is the page you will see after "your-handle" creates the repo and the first push lands (tag v0.1.0, one commit). The README below is the real file, rendered.</div>
+<div class="wrap">
+  <div class="main">
+    <div class="branch">🌿 <b>main</b> ▾ &nbsp;· 1 commit · <b>312</b> files · ⚖ Apache-2.0</div>
+    <div class="readme-card">
+      <div class="readme-head">📄 README.md</div>
+      <div class="readme-body">
+        <!--README-BODY-->
+<div align="center">
+  <img src="../../doc/images/greywatch-banner.png" alt="greywatch — one dashboard for every protection on this Linux machine" width="720">
+  <p><b>greywatch</b> — A local watch-and-harden suite for Debian-class
+  Linux desktops: watch the machine, record what happened, and preview
+  reversible hardening before applying it.</p>
+  <p>greywatch runs on your machine, not in a cloud dashboard. A root
+  daemon collects security events, a dependency-free Python CLI explains
+  them, and a GTK desktop app provides protection controls, scans, and
+  guided hardening.</p>
+  <p>The design is deliberately calm: a tray icon, desktop popups off by
+  default, explicit unknown states, and no pretend-success messages.</p>
+  <p><a href="#architecture">Architecture</a> ·
+     <a href="#desktop-screens">Desktop screens</a> ·
+     <a href="#scans">Scans</a> ·
+     <a href="#application-firewall">Application firewall</a> ·
+     <a href="#installation-and-removal">Installation and removal</a> ·
+     <a href="#cli">CLI</a> ·
+     <a href="#security-model">Security model</a> ·
+     <a href="#faq">FAQ</a></p>
+</div>
+
+<pre><code class="language-text">greywatch status — updated 2026-10-26T09:06:20+00:00
+🟢 aide          GREEN  — AIDE (integrity check)
+🟢 appfw         GREEN  — App Firewall
+🟢 arpwatch      GREEN   last:2026-10-25 — Arpwatch (ARP monitor)
+🟢 clamav        GREEN   last:2026-10-26T06:54 — ClamAV (antivirus)
+🟢 fail2ban      GREEN  — Fail2ban (bans)
+🟢 ufw           GREEN  — UFW (firewall)
+🟢 yara-watch    GREEN  — YARA Watch (realtime scanner)
+🟢 … every row has the same shape: dot, tool, state, last activity
+</code></pre>
+<h2 id="what-it-watches">What it watches</h2>
+<p><strong>Watch.</strong> Follow activity on the local machine: processes, new binaries,
+listening ports, systemd unit changes, and policy changes. The root daemon
+combines inotify filesystem watchers with journal followers. It also
+monitors the health of its own units.</p>
+<p><strong>Record.</strong> Write observations to an append-only event store and record
+decisions separately: what was changed or allowed, and why. The event
+store is root-owned with mode 0600, keeping its contents out of reach of
+an ordinary compromised user session.</p>
+<p><strong>Harden.</strong> Run baseline checks without changing the system. Review
+proposed changes before applying them. Hardening steps have an undo path,
+and privileged operations go through designated helpers rather than
+loosely constructed shell commands.</p>
+<p>The daemon's systemd unit carries <code>CPUQuota=50%</code> and <code>MemoryMax=768M</code>
+(raised from the original 10%/200M after a documented connection-storm
+lockup). These bound the service's resource use; they are not a promise that every
+scan engine has the same limits or that every operation completes
+instantly.</p>
+<h3 id="event-store-access-is-intentionally-restricted">Event-store access is intentionally restricted</h3>
+<p>The event store is root-owned and mode 0600. An ordinary user session
+cannot read or rewrite that file. Consequently, a GUI without the
+necessary access can encounter an unreadable store. It must display that
+access failure explicitly — not show an empty history and imply that
+nothing happened.</p>
+<p>An unreadable store and an empty store are different states. A lack of
+visible events is not evidence of a clean machine.</p>
+<h3 id="rules-enrichment-and-self-checks">Rules, enrichment, and self-checks</h3>
+<p>Collectors, enrichment, and parsers feed the event store. A
+registry-driven rules engine uses <code>registry.json</code> and <code>rules.py</code>. The
+doctor self-check helps inspect greywatch's own condition — run
+<code>python3 cli.py doctor</code>.</p>
+<p>Protections are annotated in <code>nist-map.json</code> with the NIST 800-53 control
+objectives they support:</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Mapping focus</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AC-3, AC-4, AC-7</td>
+<td>access-control objectives: least privilege, information-flow separation, failed-logon handling</td>
+</tr>
+<tr>
+<td>CM-6, CM-7</td>
+<td>baseline configuration and least functionality</td>
+</tr>
+<tr>
+<td>SI-2, SI-3, SI-4, SI-7</td>
+<td>flaw remediation, malicious-code protection, monitoring, integrity</td>
+</tr>
+<tr>
+<td>SC-7</td>
+<td>boundary protection</td>
+</tr>
+</tbody>
+</table>
+<p>These annotations explain the purpose of a protection; they are not a
+certification or a claim that installing greywatch makes a machine
+compliant.</p>
+<h2 id="architecture">Architecture</h2>
+<p>The suite is three layers stacked on one machine, and the diagram below
+shows how they touch: the daemon at the bottom watches and writes, the
+CLI and the desktop app only read what it wrote, and nothing phones
+home.</p>
+<p><img alt="greywatch architecture diagram" src="../../doc/images/arch-layers.svg" /></p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Responsibility</th>
+<th>Main components</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>L1 — root daemon</td>
+<td>Collect, record, and supervise</td>
+<td><code>greywatch.service</code>, inotify watchers, journal followers, event store, decision records, unit self-watch</td>
+</tr>
+<tr>
+<td>L2 — CLI</td>
+<td>Inspect state and explain activity</td>
+<td>Python standard library; <code>status</code>, <code>events</code>, <code>tail</code>, <code>log</code>, <code>decisions</code>, <code>rules</code>, <code>answer</code></td>
+</tr>
+<tr>
+<td>L3 — desktop GUI</td>
+<td>Control protections, run scans, and guide hardening</td>
+<td>GTK 4, PyGObject, dark/light themes, separate AyatanaAppIndicator3 tray helper</td>
+</tr>
+<tr>
+<td>App Firewall</td>
+<td>Per-process outbound control inside the daemon</td>
+<td><code>appfw/</code> engine, one nftables table, one NFQUEUE chain</td>
+</tr>
+</tbody>
+</table>
+<p>Every decision — suite-native or appfw intercept — flows through one
+pipeline: specs → one answer per event (<code>data/decisions.jsonl</code>) → an
+allowlisted helper script via <code>pkexec</code>. Only scripts listed in the
+installed polkit policy can be privileged, and each is pinned to exactly
+one helper path.</p>
+<h2 id="desktop-screens">Desktop screens</h2>
+<p>No product screenshots are embedded yet — the images in this README are
+generated artwork, and the real screens land here before release. In the
+meantime, <a href="doc/help.html">doc/help.html</a> walks every screen in text with
+a ten-question FAQ, and the same text lives in the app's Help tab.</p>
+<p><strong>Security.</strong> The home screen presents all 17 local protections as live
+rows with state, last activity, and Pause/Resume controls where a real
+unit backs them. Green means running, amber means paused, and red calls
+for attention. A check that cannot be verified reports that uncertainty
+rather than inventing a healthy state. A running protection is never
+labelled paused: a pause may only be claimed while the unit is really
+stopped, and the lockdown button ("Panic: enable every protection")
+starts and enables everything with one confirmation.</p>
+<p><strong>Tools.</strong> Per-protection cards provide Pause, Resume, Details, and
+Scan now controls where applicable. A scan strip launches the five scan
+types below. Work runs in the background and results appear in place.
+Long scans remain pending until they finish; users can wait or check
+later. Updater rows show actual freshness, such as when the update list
+was fetched or virus definitions were updated — a running service alone
+is not presented as evidence that its data is fresh.</p>
+<p><strong>Harden.</strong> Run read-only baseline checks, inspect proposed hardening
+steps, and review the full preview before applying changes. Reversible
+steps include an undo path. Every touched file is backed up and journaled
+before the change, and <strong>Undo last change</strong> reverts it.</p>
+<p><strong>Settings.</strong> Choose dark or light appearance, explicitly enable desktop
+popups (off by default), manage application-firewall switches, maintain
+trusted sites, start time-boxed learning mode, and refresh updater lists.
+Popups are off by default; the tray remains the quiet surface.</p>
+<p><strong>Status tile.</strong> A small 150px-wide strip (opt-in via its own checkbox)
+that answers "what is supposed to be running right now, and is it?":
+the daemon's watcher components with restart counts, the appfw engine,
+and every protection with its honest state — quiet when healthy, loud
+when not. It names an unreadable snapshot and turns amber when the
+snapshot goes stale; it never invents a healthy row.</p>
+<p><strong>Logs.</strong> Filter by tool and inspect recorded activity. If the event
+store cannot be read, the screen explains the access problem. It does not
+substitute a fake empty table. The <strong>Recent</strong> strip on Security — the
+short log — reads that store when your account can; on a default
+install the event file is root-only, so it resolves from the daemon's
+public digest of recent events in <code>status.json</code> instead.</p>
+<p><strong>Setup Wizard.</strong> A six-step onboarding flow (<code>welcome</code> → <code>scan</code> →
+<code>preview</code> → <code>apply</code> → <code>verify</code> → <code>finish</code>) probes the machine's role,
+builds an adaptive hardening plan, previews it step by step, then applies
+approved changes and verifies the result. Role probes inspect what is
+installed, listening, or exposed.</p>
+<p>Two companion flows extend this setup:</p>
+<ul>
+<li><strong>Tool Chooser</strong> — add a custom protection from the catalog.</li>
+<li><strong>Per-tool wizards</strong> — author a tool's rules through a guided
+  conversation instead of editing a configuration file by hand.</li>
+</ul>
+<h2 id="scans">Scans</h2>
+<p>The Tools screen exposes five scans, driven through the protections the
+machine already has:</p>
+<table>
+<thead>
+<tr>
+<th>Scan</th>
+<th>Engine</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Quick scan</td>
+<td>YARA</td>
+<td>Sweep temporary folders with YARA rules</td>
+</tr>
+<tr>
+<td>Full antivirus scan</td>
+<td>ClamAV</td>
+<td>Run an antivirus scan with the ClamAV engine</td>
+</tr>
+<tr>
+<td>Rootkit scan</td>
+<td>rkhunter</td>
+<td>Check for rootkit indicators</td>
+</tr>
+<tr>
+<td>Security audit</td>
+<td>lynis</td>
+<td>Inspect security configuration and hardening opportunities</td>
+</tr>
+<tr>
+<td>File-integrity check</td>
+<td>aide</td>
+<td>Compare files against an integrity baseline</td>
+</tr>
+</tbody>
+</table>
+<p>They serve different purposes: a temporary-folder sweep is not a full
+antivirus scan, a rootkit check is not an integrity baseline, and an
+audit is not a malware verdict. Scans run in the background. Results
+appear in place after completion. An unfinished scan is not a clean
+result, and a tool that cannot be checked must be reported as such.</p>
+<h2 id="application-firewall">Application firewall</h2>
+<p>The application firewall ships enabled in the default profile: on app
+launch the desktop app re-arms it whenever it was left off (the Panic
+button does this for every protection at once). Its design still fails
+open: if the daemon dies, traffic flows rather than being left waiting
+for a userspace verdict.</p>
+<p>Arming requires
+<code>netfilterqueue</code> plus libnetfilter-queue headers — without them the
+engine refuses to arm and nothing else on the machine changes. When
+armed, it installs its own nftables table (never the system firewall's)
+and decides every NEW outbound connection through one chain: trusted
+site → trusted program → permitted local services → downloaded block
+list → learning mode → block-unknown → explicit ask → default
+allow-once (fail-open).</p>
+<p>It provides:</p>
+<ul>
+<li>Learning mode for observing application behavior (time-boxed: the
+  window is an explicit <code>until</code> timestamp, checked against the clock).</li>
+<li>A strict block-unknown mode.</li>
+<li>Workspace-aware profiles, managed in Settings.</li>
+<li>A prominent pause/resume switch.</li>
+</ul>
+<p>Fail-open behavior is an availability choice, not a claim that blocking
+continues after a daemon failure. While the engine is unavailable,
+greywatch's application-level enforcement is unavailable too. Other
+system firewall rules remain a separate concern — the engine can never
+lock your traffic out, and it never touches the system firewall's rules.</p>
+<h2 id="installation-and-removal">Installation and removal</h2>
+<p>Requirements:</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Requirement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Host</td>
+<td>Debian-class Linux with systemd; developed and run on a MATE desktop (any indicator-compatible panel works for the tray)</td>
+</tr>
+<tr>
+<td>CLI</td>
+<td>Python 3.12+; no third-party Python dependencies for the CLI</td>
+</tr>
+<tr>
+<td>Desktop GUI</td>
+<td>GTK 4 and Python PyGObject</td>
+</tr>
+<tr>
+<td>Tray integration</td>
+<td>AyatanaAppIndicator3, hosted in a separate helper process</td>
+</tr>
+<tr>
+<td>Privileged hardening</td>
+<td>polkit and pkexec, with the project's exact-helper allowlist</td>
+</tr>
+<tr>
+<td>Scan integrations</td>
+<td>YARA, ClamAV, rkhunter, lynis, and aide, as used by the selected protections</td>
+</tr>
+<tr>
+<td>Optional application firewall</td>
+<td>nftables, NFQUEUE support, and Python netfilterqueue</td>
+</tr>
+</tbody>
+</table>
+<p>Install:</p>
+<pre><code class="language-bash">sudo ./install.sh      # system files + service restart + user icons
+./install.sh --check   # verify the deployment (no root needed)
+</code></pre>
+<p><code>install.sh</code> is one short script — read it before granting it root. It
+substitutes this checkout's path into the hardened unit
+(<code>doc/greywatch.service</code>) and the polkit allowlist
+(<code>apply/polkit/greywatch.apply.policy</code>), installs both, reloads systemd,
+enables and restarts the service, and installs the user icons and
+launcher. Without sudo it installs only the icons and launcher. Self-test
+without touching the system: <code>./install.sh --root &lt;dir&gt;</code> then
+<code>./install.sh --check --root &lt;dir&gt;</code> — the same flow
+<code>tests/test_install_script.py</code> exercises in the battery.</p>
+<p>After installation, inspect the resulting state:</p>
+<pre><code class="language-bash">python3 cli.py status
+</code></pre>
+<p>Then open the desktop app and review the Setup Wizard's probes and plan
+before approving any hardening. The application firewall starts off;
+desktop popups also start off.</p>
+<p>Remove — the installer reverses itself, but deliberately keeps <code>data/</code>:</p>
+<pre><code class="language-bash">sudo ./install.sh --uninstall
+</code></pre>
+<p>It removes the unit, the polkit allowlist, and the user-scope launcher
+and icons. Security history in <code>data/</code> is kept unless you delete it
+yourself — decide what you want done with that history before removing
+the suite.</p>
+<h3 id="configuration">Configuration</h3>
+<p>There is nothing to configure before first run, and no credentials to
+enter anywhere — the suite drives your machine's own tools. The only
+names the code consults:</p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Who reads it</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GREYWATCH_UI_USER</code></td>
+<td>daemon</td>
+<td>user account the GUI relaunches under</td>
+</tr>
+<tr>
+<td><code>GREYWATCH_USER_HOME</code></td>
+<td>registry</td>
+<td>alternate HOME for runtime state</td>
+</tr>
+<tr>
+<td><code>GREYWATCH_HELPER_CMD</code></td>
+<td>tests</td>
+<td>test-only helper override; never set on a real machine</td>
+</tr>
+<tr>
+<td><code>NOTIFY_SOCKET</code></td>
+<td>appfw engine</td>
+<td>set by systemd for Type=notify</td>
+</tr>
+<tr>
+<td><code>data/</code> tree</td>
+<td>everything</td>
+<td>runtime state, root-owned, never shipped</td>
+</tr>
+</tbody>
+</table>
+<h2 id="cli">CLI</h2>
+<p>The CLI uses the Python standard library. Six commands inspect the
+machine, <code>answer</code> records a decision on a pending interaction, and
+three utilities take care of setup and maintenance:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Purpose</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>status</td>
+<td>Inspect current protection state</td>
+<td><code>python3 cli.py status</code></td>
+</tr>
+<tr>
+<td>events</td>
+<td>Inspect recorded observations</td>
+<td><code>python3 cli.py events</code></td>
+</tr>
+<tr>
+<td>tail</td>
+<td>Follow incoming event activity</td>
+<td><code>python3 cli.py tail</code></td>
+</tr>
+<tr>
+<td>log</td>
+<td>Inspect log output</td>
+<td><code>python3 cli.py log</code></td>
+</tr>
+<tr>
+<td>decisions</td>
+<td>Inspect what was changed or allowed, and why</td>
+<td><code>python3 cli.py decisions</code></td>
+</tr>
+<tr>
+<td>rules</td>
+<td>Inspect rules</td>
+<td><code>python3 cli.py rules</code></td>
+</tr>
+<tr>
+<td>answer</td>
+<td>Record your decision on one pending interaction (answer-once is enforced; the chosen helper then runs via pkexec)</td>
+<td><code>python3 cli.py answer ID OPTION</code></td>
+</tr>
+<tr>
+<td>doctor</td>
+<td>Self-check greywatch's own condition</td>
+<td><code>python3 cli.py doctor</code></td>
+</tr>
+<tr>
+<td>setup</td>
+<td>First-time service setup from the CLI</td>
+<td><code>python3 cli.py setup</code></td>
+</tr>
+<tr>
+<td>action</td>
+<td>Maintenance actions (daemon restart)</td>
+<td><code>python3 cli.py action restart</code></td>
+</tr>
+</tbody>
+</table>
+<p>Start with <code>status</code> for the health table, then use the other commands to
+inspect the underlying activity and decisions. Commands that need
+protected records remain subject to the event store's access
+restrictions (root only).</p>
+<h2 id="security-model">Security model</h2>
+<p>Three honesty guarantees:</p>
+<ul>
+<li><strong>Unknown stays unknown.</strong> A probe that cannot be verified says
+  "could not be checked." It does not guess or fake a green dot.</li>
+<li><strong>Timeouts stay timeouts.</strong> If the pkexec password prompt reaches the
+  application's 30-second timeout, the action reports that timeout
+  rather than claiming success.</li>
+<li><strong>Unreadable stays unreadable.</strong> An inaccessible root-owned store
+  produces an explicit access message, not a table pretending the
+  history is empty.</li>
+</ul>
+<p>These are interface guarantees as much as implementation rules. A calm
+interface must still be truthful.</p>
+<p><strong>Privilege boundaries.</strong> The daemon runs as root. The desktop app
+provides the interface. Privileged changes go through pkexec using a
+polkit allowlist of exact helper paths. The allowed helper boundary is
+explicit; the GUI is not a generic shell-command execution surface.</p>
+<p><strong>Record integrity and limitations.</strong> The store is append-only by
+application design and protected from ordinary user access by root
+ownership and mode 0600. Decision records preserve what changed and why.
+This is tamper resistance against an ordinary user-session compromise,
+not a claim of root-proof or cryptographically immutable logging. Mode
+0600 alone does not establish a kernel-enforced append-only flag, and a
+root-owned local record must not be advertised as proof against a fully
+compromised host.</p>
+<p><strong>Preview and recovery.</strong> Baseline checks can run read-only. Hardening
+changes are previewed before application and have an undo path. A plan
+proposed by the Setup Wizard is not permission to apply every step
+without review.</p>
+<p><strong>Honest limitations.</strong></p>
+<ul>
+<li>The engine's process resolution is /proc-based (no eBPF): rare
+  connection bursts may see brief resolve misses that fall back to
+  allow-once; the queue rule's <code>bypass</code> guarantees a dead engine can
+  never lock traffic out.</li>
+<li>Reverse DNS fills <code>dst_host</code> best-effort so site trust applies; an
+  unresolvable IP decides on IP/path rules only, never on a guess.</li>
+<li>Truncate + same-length rewrite fully inside one 50 ms poll is
+  undetectable by content-free means (GNU tail -F shares this).</li>
+<li>Disk encryption is ignored entirely by this build — never probed,
+  never touched.</li>
+<li>Single-ban fail2ban events do not ask for decisions — only
+  near-ignoreip patterns (3+ re-bans of one IP inside 300 s) do.</li>
+</ul>
+<h2 id="testing-and-project-health">Testing and project health</h2>
+<p>The test battery is the ground truth, and the invocation is the real
+one this tree is shipped with:</p>
+<pre><code class="language-bash">env -u DISPLAY python3 -m pytest -q tests/   # 648+ tests, ~50 s
+</code></pre>
+<p>As of 2026-10-26 that battery passes 605 tests and skips 4
+display-dependent GUI tests (with a real display they run). The copy
+rules are executable (<code>runbooks/longtext.py</code> flags user-facing strings
+over 12 words), wizard flows are tested end-to-end with fakes, the
+theme system round-trips, and the GUI has a smoke suite. The Harden
+path is unit-tested never to escalate privileges by itself, its probe
+environment is scrubbed (only a repaired PATH is inherited), and an
+advisory check that cannot run never blocks applying the rest.</p>
+<p>CI runs lint and the same battery on every push; a CI badge will be
+added once the repository is live and has real runs to point at.</p>
+<h2 id="faq">FAQ</h2>
+<p><strong>Can it lock me out of the network?</strong>
+The application firewall starts off and is designed to fail open if its
+daemon dies. Its purpose is to avoid accidental loss of connectivity
+from a missing queue consumer. That does not guarantee connectivity
+under unrelated network failures, other firewall rules, or every policy
+you deliberately enable. Review strict block-unknown mode before using
+it.</p>
+<p><strong>Does the GUI pretend an unreadable store is empty?</strong>
+No. It reports that it cannot read the store. An access error, an empty
+history, and an unknown check result are distinct states.</p>
+<p><strong>What does a paused protection mean?</strong>
+That protection is paused rather than running. Security shows its state
+and provides a resume control; Tools exposes the corresponding
+protection controls. Paused is not the same as healthy, and it is not
+the same as a completed scan. A pause is only ever shown while the
+protection is really stopped — the app never claims a paused state for
+a protection the monitor reports as running, and nothing in it pauses
+anything by itself. The "Panic: enable every protection" button on
+Security starts and enables everything in one confirmed step.</p>
+<p><strong>How much CPU and memory does the daemon get?</strong>
+The daemon's unit carries CPUQuota=50% and MemoryMax=768M. Those are
+service resource limits, not a speed guarantee for scans or a statement
+that every external scanner belongs to the same capped service.</p>
+<p><strong>Will it interrupt me with popups?</strong>
+Not by default. The tray is the calm status surface. Desktop popups
+must be explicitly enabled in Settings.</p>
+<p><strong>What does closing the window do?</strong>
+It hides to the tray and the app keeps running; where no tray exists,
+the close really exits. Launching greywatch again is a restart, not a
+stack-up — any running instance closes first.</p>
+<p><strong>Does it send security history to a cloud service?</strong>
+No. greywatch has no cloud component; observations and decisions stay
+on the machine. Local operation does not mean that tools which refresh
+update lists or antivirus definitions never make network connections.</p>
+<p><strong>Does a NIST control mapping make this a compliance product?</strong>
+No. The mapping explains which control objectives a protection
+supports. It is not a certification, a compliance assessment, or proof
+that the host satisfies those controls.</p>
+<p><strong>Can I preview and undo hardening?</strong>
+Yes. The hardening workflow previews steps before application and
+provides an undo path. Read the proposed changes and their scope before
+approving privileged work.</p>
+<p><strong>What happens when authorization times out?</strong>
+The application reports that the pkexec password prompt timed out after
+30 seconds. It does not claim the action succeeded.</p>
+<p><strong>Are the images actual screenshots?</strong>
+No — the banner and icons are generated artwork. Real desktop
+screenshots are added before release; nothing in this README pretends
+otherwise.</p>
+<h2 id="license">License</h2>
+<p>Apache License 2.0 — see <a href="LICENSE">LICENSE</a>. Contributions land under
+the same terms (<a href="CONTRIBUTING.md">CONTRIBUTING.md</a> is the front door),
+and <a href="ACCEPTABLE_USE.md">ACCEPTABLE_USE.md</a> is the boundary: defensive
+use on machines you own or are authorized to administer, nothing else.</p>
+<h3 id="free-vs-premium">Free vs premium</h3>
+<p>Everything in this repository is free and stays free — daemon, CLI, GTK
+app, and the tagged release bundles. A future premium tier lives in a
+separate private repo: the free core is never a trial of it, and
+payment, license-check, and webhook secrets have no place in this tree
+— pre-commit and CI run gitleaks on every push to keep it that way.</p>
+<h2 id="roadmap">Roadmap</h2>
+<ul>
+<li><strong>v0.1.x</strong> — documentation polish: real desktop screenshots before the
+  public release.</li>
+<li><strong>v0.2</strong> — packaging: a <code>.deb</code> that installs units + pkexec policy in
+  one step.</li>
+<li><strong>premium (separate repo)</strong> — hosted summaries and extra profiles;
+  the free core is untouched by it.</li>
+</ul>
+<div align="center">
+  <img src="../../doc/images/greywatch-icon-128.png" alt="greywatch app icon: side-profile wolf in a light disc" width="96">
+  <img src="../../doc/images/greywatch-icon-dark-256.png" alt="greywatch dark-disc icon variant" width="96"><br>
+  <sub>greywatch — the wolf runs the perimeter: protections you can see, changes you can undo.</sub>
+</div>
+      <!--END-README-BODY-->
+      </div>
+    </div>
+  </div>
+  <div class="sidecol">
+    <div class="about">
+      <h2>About</h2>
+      <div>A local, on-machine security "watch and harden" suite for Linux desktops. A guard dog, not a cloud dashboard: nothing phones home.</div>
+      <div class="meta">🔗 <a href="#">greywatch: doc/help.html</a></div>
+      <div>
+        <span class="topic">linux</span><span class="topic">security</span>
+        <span class="topic">gtk4</span><span class="topic">python</span>
+        <span class="topic">systemd</span><span class="topic">antivirus</span>
+        <span class="topic">firewall</span><span class="topic">hardening</span>
+        <span class="topic">cve</span><span class="topic">privacy</span>
+      </div>
+    </div>
+    <div class="about">
+      <div class="meta">📗 <a href="#"><b>v0.1.0</b> — first public-ready release</a></div>
+      <div class="meta">⭐ 0 stars · 👁 0 watching · ⑂ 0 forks</div>
+    </div>
+    <div class="about langbar">
+      <h2>Languages</h2>
+      <div class="bar"><div class="py" style="width:88%"></div><div class="c" style="width:9%"></div><div class="sh" style="width:3%"></div></div>
+      <div class="langrow"><span class="dot" style="background:#3572A5"></span>Python 88% &nbsp; <span class="dot" style="background:#555"></span>C 9% &nbsp; <span class="dot" style="background:#89e051"></span>Shell 3%</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

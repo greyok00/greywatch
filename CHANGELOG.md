@@ -31,8 +31,27 @@ First public-ready release.
   killer (it only matched script-path launches), so restarts could leave
   the old window running minus its tray helper, and launches could stack
   up. The matcher now also recognizes the module form.
+- A running protection could read "paused by you" from a stale pause
+  marker while the unit was demonstrably up. The app now reconciles on
+  every refresh: a monitor report that the protection is running drops
+  the stale marker, a pause is displayed only while the unit is really
+  stopped, and every "paused by you" wording became actor-free
+  ("paused" / "paused in the app").
+- The Harden pack's ClamAV card hardcoded "ClamAV is not installed" in
+  its description regardless of the probe's actual result (which passes
+  on an installed system). The text now describes the check instead of
+  asserting a missing state.
 
 ### Added
+- Panic lockdown: one confirmed button on the Security screen that
+  starts whatever is stopped, enables the application firewall, and
+  clears the pause record — "enable everything" in a single step.
+- Defaults on: app launch re-arms the application firewall and brings
+  the auto-responder back if something left them off; nothing in the
+  app pauses a protection by itself.
+- The two GUI test suites refuse to run on a real desktop: they skip
+  unless `GREYWATCH_TEST_DISPLAY=1` is set, so a test run can never open
+  windows on an in-use screen (use a hidden Xvfb display for GUI tests).
 - Application icon set from the final side-profile wolf art: sizes 16–256
   plus a light-background variant, and `install-icons.sh` (hicolor app
   icons + freedesktop launcher entry, no root).
