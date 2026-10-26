@@ -1,0 +1,181 @@
+"""Tray (GTK4 era) — the GTK4 app's window onto a GTK3 helper process.
+
+The ONLY tray that ever rendered correctly on this mate-panel is
+AyatanaAppIndicator3, a GTK3 binding. Since the app is GTK4, the tray now
+runs in its own tiny process (ui/tray_helper.py) and this module is the
+parent-side driver: it spawns the helper, feeds it badge/alert updates as
+JSON lines, and turns the helper's {"event": ...} lines back into the same
+on_show / on_quit callbacks app.py has always wired.
+
+Contract with app.py / decisions.py (unchanged):
+    Tray(badge_cb=...)   — spawns the helper; failure is non-fatal
+    tray.refresh_badge() — re-collects data, pushes an update; returns count
+    tray.on_show / .on_quit / .stop()
+
+Every IO failure is a print + no-tray — the app itself still opens. The
+helper dying (indicator host restart, crash) is caught the same way.
+"""
+import json
+import os
+import subprocess
+import sys
+import threading
+
+import gi
+gi.require_version("Gio", "2.0")
+from gi.repository import GLib  # noqa: E402
+
+_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "tray_helper.py")
+
+
+def _offline(why) -> None:
+    print(f"tray unavailable ({why}): window close will exit", flush=True)
+
+
+class Tray:
+    """Wrapper around the GTK3 tray-helper process."""
+
+    def __init__(self, badge_cb=None, icon="greywatch", on_show=None,
+                 on_quit=None, item_id="greywatch"):
+        self.badge_cb = badge_cb          # kept for the old call shape
+        self.icon = icon
+        self.item_id = item_id
+        self.on_show = on_show            # fired on the main GLib context
+        self.on_quit = on_quit
+        self._proc = None
+        self._pending, self._alerts = 0, []
+        self.start()
+
+    # ── helper process ──────────────────────────────────────────────────
+    def start(self):
+        try:
+            self._proc = subprocess.Popen(
+                [sys.executable, _HELPER],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True, start_new_session=True)
+        except Exception as e:
+            self._proc = None
+            self._offline(e)
+            return
+        self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        self._reader.start()
+        self.refresh_badge()
+
+    def _read_loop(self):
+        for line in self._proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            event = msg.get("event")
+            if event == "open":
+                GLib.idle_add(self._fire, self.on_show or self._spawn_app)
+            elif event == "quit":
+                GLib.idle_add(self._fire, self.on_quit)
+            # other events (ready) are protocol acks, not user actions
+        self._proc = None
+        GLib.idle_add(_offline, "helper exited")
+
+    def _send(self, obj) -> None:
+        try:
+            if self._proc is not None and self._proc.stdin:
+                self._proc.stdin.write(json.dumps(obj) + "\n")
+                self._proc.stdin.flush()
+        except (OSError, BrokenPipeError, ValueError):
+            pass                          # dead helper stays non-fatal
+
+    @staticmethod
+    def _fire(cb):
+        try:
+            if callable(cb):
+                cb()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _app_running() -> bool:
+        """True when another process holds data/gui.lock (the app itself)."""
+        import fcntl
+        import pathlib
+        lock = pathlib.Path(_HELPER).resolve().parents[1] / "data" / "gui.lock"
+        try:
+            with open(lock, "a") as fh:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fh, fcntl.LOCK_UN)
+            return False
+        except OSError:
+            return True
+
+    def _spawn_app(self):
+        """Fallback when no window handle exists: a new app.py self-dedupes
+        through the gui.lock (never a second dashboard)."""
+        if self._app_running():
+            if self.on_show:
+                self.on_show()
+            return
+        app = os.path.join(os.path.dirname(os.path.abspath(_HELPER)),
+                           "app.py")
+        subprocess.Popen([sys.executable, app], start_new_session=True)
+
+    def stop(self):
+        try:
+            if self._proc is not None:
+                self._send({"cmd": "quit"})
+                try:
+                    self._proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self._proc.terminate()
+        except Exception:
+            pass
+        self._proc = None
+
+    # ── badge + alerts (same data source as before) ─────────────────────
+    def refresh_badge(self) -> int:
+        """Returns (pending+alerts) count; menu shows the actual alerts."""
+        pending = 0
+        alerts = []
+        try:
+            from datetime import datetime, timezone, timedelta
+            from greywatch_daemon import read_events, DATA_DIR
+            answered = set()
+            try:
+                from decisions_factory import pending_ids
+                answered = pending_ids(DATA_DIR / "decisions.jsonl")
+            except (ImportError, OSError):
+                pass
+            from ui.models import feed_worthy
+            evs = read_events(DATA_DIR / "events.jsonl", 500)
+            hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+            for e in reversed(evs):
+                spec = e.get("interaction")
+                if spec and spec.get("id") not in answered:
+                    pending += 1
+                # feed_worthy() drops check-in heartbeats (routine noise)
+                if not feed_worthy(e):
+                    continue
+                try:
+                    ts = datetime.fromisoformat(
+                        e.get("ts", "").replace("Z", "+00:00"))
+                    if ts >= hour_ago and e.get("severity") in ("HIGH",
+                                                                "CRITICAL"):
+                        alerts.append((e.get("from_tool", "?"), "🔴",
+                                       e.get("text", "")))
+                    elif ts >= hour_ago and e.get("severity") == "MEDIUM":
+                        alerts.append((e.get("from_tool", "?"), "🟡",
+                                       e.get("text", "")))
+                except (ValueError, TypeError):
+                    continue
+                if len(alerts) >= 5:
+                    break
+            alerts.reverse()
+        except Exception:
+            pass
+        self._pending, self._alerts = pending, alerts
+        self._send({"cmd": "update", "pending": pending,
+                    "alerts": [list(a) for a in alerts]})
+        return pending + len(alerts)

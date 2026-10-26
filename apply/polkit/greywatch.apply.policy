@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <!-- G3.7: ONLY these exact helper scripts are pkexec-able -->
+  <action id="com.greywatch.apply.unban-ip">
+    <description>greywatch unban-ip helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_HOME__/apply/unban-ip.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.drop-listener">
+    <description>greywatch drop-listener helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_HOME__/apply/drop-listener.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.restore-quarantine">
+    <description>greywatch restore-quarantine helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_HOME__/apply/restore-quarantine.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.keep-quarantine">
+    <description>greywatch keep-quarantine helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_HOME__/apply/keep-quarantine.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.keep-scan-ban">
+    <description>greywatch keep-scan-ban helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_HOME__/apply/keep-scan-ban.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.widen-scan-ban">
+    <description>greywatch widen-scan-ban helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_HOME__/apply/widen-scan-ban.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.scan-now">
+    <description>greywatch manual-scan helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_HOME__/apply/scan-now.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.harden">
+    <description>greywatch harden helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_HOME__/apply/harden.sh</annotate>
+  </action>
+</policyconfig>

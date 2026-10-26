@@ -1,0 +1,3 @@
+# CANONICAL lynis.log — re-validated at G2.4
+!SKIP 2026-10-22 06:00:00 Lynis version: 3.1.5
+2026-10-22 06:00:00 Warning: Found weak SSH MAC algorithm in sshd_config

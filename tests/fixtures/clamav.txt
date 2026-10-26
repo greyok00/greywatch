@@ -1,0 +1,8 @@
+# REAL — sampled from ~/security-hardening/clam-scan.log 2026-10-22
+!SKIP ----------- SCAN SUMMARY -----------
+Infected files: 0
+!SKIP Total errors: 1
+!SKIP Start Date: 2026:10:22 15:18:26
+!SKIP End Date:   2026:10:22 16:32:13
+# canonical variant (clamdscan per-file flag, not present in current log)
+/usr/tmp/eicar.txt FOUND

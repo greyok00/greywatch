@@ -1,0 +1,16 @@
+# greywatch-watchdog.service (P0-b) + timer — restarts the daemon when its
+# 5 s heartbeat goes stale >30 s. Install: doc/greywatch-watchdog.* →
+# /etc/systemd/system/ + systemctl enable --now greywatch-watchdog.timer
+[Unit]
+Description=greywatch watchdog (heartbeat-staleness restart)
+After=greywatch.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 __GW_HOME__/doc/greywatch_watchdog.py
+# 226/NAMESPACE fix (2026-10-25): the watchdog only READS /run/greywatch —
+# ProtectSystem=strict leaves /run readable, so NO ReadWritePaths needed.
+# (A whitelist on a not-yet-existing directory kills the unit at namespace
+# setup: exit 226 before one line of code runs.)
+ProtectSystem=strict
+PrivateTmp=true

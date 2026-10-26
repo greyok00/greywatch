@@ -1,0 +1,3 @@
+# CANONICAL audit.log root-only (640 root) — re-validated at G2.4
+type=SYSCALL msg=audit(1758532800.001:221): arch=c000003e syscall=59 success=yes exit=0 a0=x1 key="watch"
+type=ANOM_ABEND msg=audit(1758532900.500:222): auid=0 ses=1

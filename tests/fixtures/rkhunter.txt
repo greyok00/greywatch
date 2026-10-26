@@ -1,0 +1,4 @@
+# CANONICAL rkhunter.log — re-validated at G2.4
+!SKIP [18:00:00]   Performing rootkit checks...
+[18:01:00]     Warning: Suspicious file type found in file: /etc/passwd.check
+[18:02:00]   No warnings were found while checking the system.

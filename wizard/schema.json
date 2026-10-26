@@ -1,0 +1,44 @@
+{
+  "$id": "greywatch/wizard/changeset-v1",
+  "title": "GreyWatch setup-wizard changeset (v1)",
+  "description": "The handoff document between the Setup Wizard's Apply click and the hardening helper. One changeset carries the owner-approved control changes plus the journal id that names the rollback pass. This file is the grammar of record: wizard/changeset.py loads these patterns and enums directly, so the schema cannot drift from the validator.",
+  "version": 1,
+  "required": ["version", "journal_id", "changes"],
+  "allowed_keys": ["version", "journal_id", "changes"],
+  "fields": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "journal_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}$",
+      "plain": "the journal timestamp id, e.g. 20261025-140532 — no slashes, no whitespace, nothing else"
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["control_id", "action", "backup_path"],
+        "allowed_keys": ["control_id", "action", "backup_path"],
+        "plain": "backup_path is REQUIRED for every change (W5 round 1): it names the JSON plan fragment ({\"entries\": [..]}) that carries this control's executable entries/probes, in the per-pass layout data/harden/journal/<journal_id>/<control_id>.json",
+        "fields": {
+          "control_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "plain": "must match an id in data/hardening-controls.json; no whitespace, no path characters, no metacharacters"
+          },
+          "action": {
+            "type": "string",
+            "enum": ["apply", "verify", "rollback"]
+          },
+          "backup_path": {
+            "type": "string",
+            "pattern": "^(data/harden/journal/[0-9]{8}-[0-9]{6}/[A-Za-z0-9._-]+\\.json|/(?:[A-Za-z0-9._-]+/)*harden/journal/[0-9]{8}-[0-9]{6}/[A-Za-z0-9._-]+\\.json)$",
+            "plain": "path to the control's plan-fragment file, per-pass layout ONLY: data/harden/journal/<journal_id>/<name>.json (canonical relative form) or an absolute path whose tail is .../harden/journal/<journal_id>/<name>.json. apply/verify: the fragment carrying this control's entries; rollback: a fragment inside the TARGET pass dir whose journal is undone (dirname/journal.jsonl). Note: '..' segment TRAVERSAL is blocked by the validator/helper PRE-CHECK, not by this regex (the allowed sets contain dots); symlink resolution is checked by realpath (W5 round 2) — no whitespace, no metacharacters, unrelated absolute paths are refused"
+          }
+        }
+      }
+    }
+  }
+}

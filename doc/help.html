@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<!-- greywatch user guide — the same content the in-app Help tab carries,
+     with the real screenshots from the 2026-10-25 campaign capture
+     (tests/campaign/shots/, window-ID-only captures of the GTK4 UI). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>greywatch: the guide</title>
+<style>
+  body { font-family: sans-serif; max-width: 960px; margin: 2rem auto;
+         padding: 0 1rem; background: #0d1117; color: #dde5f2; }
+  h1, h2 { font-weight: 700; }
+  img.shot { max-width: 100%; border: 1px solid #2a3140; border-radius: 8px; }
+  .qa { margin: 1.2rem 0; }
+  .q { font-weight: 600; }
+  .a { margin: 0.2rem 0 0 0; color: #c6d2e0; }
+  .oneq { background: #161b22; border: 1px solid #2a3140; border-radius: 8px;
+          padding: 0.6rem 0.9rem; margin: 0.7rem 0 1.4rem 0; }
+  footer { color: #8b9bb0; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<h1>greywatch: the guide</h1>
+<p>greywatch is one dashboard for every tool that protects this Linux
+computer. This page walks each screen, shows the real app, and answers the
+questions people ask first. <b>Where to start:</b> the Security screen —
+it is the health table for everything below.</p>
+
+<h2>1. Wizard — guided setup</h2>
+<p><b>What it shows:</b> the start of the setup wizard, which asks a few
+plain questions and then makes one real change at a time — preview first,
+apply only on your press, and every change is recorded so it can be undone.</p>
+<img class="shot" src="../tests/campaign/shots/wizard.png"
+     alt="The setup wizard asking its first plain questions">
+<div class="oneq"><b>The question this answers:</b>
+&ldquo;How do I make my first change without touching a terminal?&rdquo; —
+Answer the wizard's questions and press Apply on the preview you like; press
+Cancel and nothing changes.</div>
+
+<h2>2. Security — the health table</h2>
+<p><b>What it shows:</b> every protection on the machine as one row — a
+colored dot (green running, amber paused-by-you or waiting, red not running),
+the protection's name, its state in words, and its last activity. Pause and
+Resume buttons sit on each row. The crop below is that table close up.</p>
+<img class="shot" src="../tests/campaign/shots/security.png"
+     alt="The Security screen: one status row per protection">
+<img class="shot" src="../tests/campaign/shots/security-crop.png"
+     alt="Close crop of the status table: dots, names, states, last activity">
+<div class="oneq"><b>The question this answers:</b>
+&ldquo;Is everything that should be running actually running?&rdquo; —
+Read the dot and the word on each row; a red row is a protection that should
+be up but is not.</div>
+
+<h2>3. Tools — cards, scans, live progress</h2>
+<p><b>What it shows:</b> the same protections as cards with a pause/resume
+control and an honest one-line state under each, a strip of quick-scan
+buttons with a live progress circle, and a short "Recent" log of what
+happened. The screenshot is the machine's real state while running: the
+auto-responder paused-by-you, most watchers running, the antivirus engine
+not running until you start it or its daily schedule fires.</p>
+<img class="shot" src="../tests/campaign/shots/tools.png"
+     alt="The Tools screen: protection cards, scan strip with progress circle">
+<div class="oneq"><b>The question this answers:</b>
+&ldquo;How do I run a scan right now?&rdquo; — Press a quick-scan button on
+the strip and watch the circle; the scheduled scanners also run on their own
+timers without you.</div>
+
+<h2>4. Harden — baseline checks, apply, undo</h2>
+<p><b>What it shows:</b> the harden flow: run baseline checks that test this
+computer's settings, review the result cards, and apply only what you approve
+through the system's privilege prompt. The Undo last change button reverts
+the latest applied change. The screenshot is a fresh session that has not
+run checks yet — the page says so in one line.</p>
+<img class="shot" src="../tests/campaign/shots/harden.png"
+     alt="The Harden screen: run/apply/undo buttons and empty verification strip">
+<div class="oneq"><b>The question this answers:</b>
+&ldquo;How do I apply (or take back) a system setting safely?&rdquo; —
+Run the checks, read the cards, apply what you agree with; Undo last change
+reverts the newest one.</div>
+
+<h2>5. Settings — the look, trusted items, update lists</h2>
+<p><b>What it shows:</b> the app's own controls: the theme picker (Dark Mode /
+Light Mode, changes instantly and is remembered), your trusted-list entries,
+and where the update lists (virus definitions, CVE list) stand. The crop is
+the theme picker itself.</p>
+<img class="shot" src="../tests/campaign/shots/settings.png"
+     alt="The Settings screen: theme, trusted list, update lists">
+<img class="shot" src="../tests/campaign/shots/settings-crop.png"
+     alt="Close crop of the theme picker: Look of the app — Dark Mode">
+<div class="oneq"><b>The question this answers:</b>
+&ldquo;How do I change the theme?&rdquo; — On Settings, pick Dark Mode or
+Light Mode under "Look of the app"; it applies instantly and sticks across
+restarts.</div>
+
+<h2>6. Logs — the raw record</h2>
+<p><b>What it shows:</b> every tool's raw event record, newest first, with
+identical consecutive lines grouped and a filter for one tool at a time. In
+this capture the body is empty because the desktop's event store is written
+by the root daemon with owner-only permissions; run the same view as root,
+or read events through the app's own account, to see rows.</p>
+<img class="shot" src="../tests/campaign/shots/logs.png"
+     alt="The Logs screen: filter combo and the raw record table">
+<div class="oneq"><b>The question this answers:</b>
+&ldquo;Where is the raw record behind the friendly words?&rdquo; —
+Logs keeps each tool's events one row per line; filter the combo to a single
+tool to see only its rows.</div>
+
+<h2>7. Help — this guide, in the app</h2>
+<p><b>What it shows:</b> the in-app Help tab: how to use the app in one
+short list, an FAQ for the confusing moments, and one-sentence cards for
+every tool so you can tell an "auto-responder" from a "program jail" without
+a manual.</p>
+<img class="shot" src="../tests/campaign/shots/help.png"
+     alt="The Help screen: how-to list, FAQ pointer, tool cards">
+<div class="oneq"><b>The question this answers:</b>
+&ldquo;What does each protection actually do?&rdquo; —
+The "Every tool, one sentence each" cards say it in plain words, and the
+FAQ below covers the moments that confuse people.</div>
+
+<h2>FAQ — the questions people ask</h2>
+
+<div class="qa"><p class="q">1. What does greywatch do?</p>
+<p class="a">It puts every protection already on this machine under one
+plain-English dashboard: live states, scans, guided changes, and an honest
+record. It does not install replacements for your tools — it points them and
+reports.</p></div>
+
+<div class="qa"><p class="q">2. How do I run a scan?</p>
+<p class="a">Tools screen → press a quick-scan button and watch the progress
+circle. The scheduled scanners (live, temp-folder, antivirus full scan) also
+run on their own timers without you.</p></div>
+
+<div class="qa"><p class="q">3. How do I pause a protection?</p>
+<p class="a">Security screen → press Pause on its row; the button becomes
+Resume. Protections managed by a service pause for real; auditors without a
+service say so in a note instead.</p></div>
+
+<div class="qa"><p class="q">4. What does "At risk" mean?</p>
+<p class="a">A protection that should be running is not — for example a red
+"not running" antivirus. It names a gap in coverage; it does not mean
+something bad was found.</p></div>
+
+<div class="qa"><p class="q">5. A detection appeared — what now?</p>
+<p class="a">Read the Recent line or the Logs row to see which tool flagged
+what. If you did not cause it, prefer the quarantine choice when the app
+offers one, and use Undo if you change your mind.</p></div>
+
+<div class="qa"><p class="q">6. How do I isolate my machine?</p>
+<p class="a">There is no one-click panic button. Keep the firewall on, use
+the site wizard to cut off a specific bad site, and for a full disconnect
+turn off Wi-Fi or unplug the network.</p></div>
+
+<div class="qa"><p class="q">7. How do I change the theme?</p>
+<p class="a">Settings → "Look of the app" → Dark Mode or Light Mode. The
+change is instant and remembered across restarts.</p></div>
+
+<div class="qa"><p class="q">8. Why is my antivirus quiet?</p>
+<p class="a">It runs its full scan on a daily schedule, and quiet means
+nothing was found and nothing failed. Its last run and definition date sit
+on the Health rows on Security.</p></div>
+
+<div class="qa"><p class="q">9. Is my disk encrypted — how do I check?</p>
+<p class="a">Today's baseline checks do not test disk encryption. In a
+terminal run <code>lsblk -o NAME,FSTYPE</code>; an encrypted disk shows
+<code>crypto_luks</code>.</p></div>
+
+<div class="qa"><p class="q">10. How do I undo a change the wizard made?</p>
+<p class="a">Harden screen → press "Undo last change"; it reverts the latest
+applied change through the same privilege helper. The verification strip
+under it confirms what changed back.</p></div>
+
+<footer>greywatch user guide — generated 2026-10-25; screenshots captured
+window-ID-only from the live GTK4 app during the documented test campaign
+(tests/campaign/).</footer>
+</body>
+</html>
