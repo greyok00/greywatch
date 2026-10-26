@@ -312,6 +312,8 @@ def test_wireless_row_synthetic_when_hardware_present():
 
 
 def test_module_newline():
-    text = (pathlib.Path(baseline.__file__).read_text())
+    src = (pathlib.Path(__file__).resolve().parents[1] / "wizard"
+           / "baseline.py")
+    text = src.read_text()
     assert text.endswith("\n")
     assert not text.endswith("\n\n")
