@@ -1,10 +1,3 @@
-"""PLAIN ENGLISH layer (owner 2026-10-23: "imagine I know nothing about
-computers" — nothing may read like a log line).
-
-Every event renders as ONE sentence a non-technical person understands; the
-tool's friendly name is shown BESIDE it (the sentence never prefixes the
-tool's own name), and every tool has a one-sentence "what is this?".
-"""
 from __future__ import annotations
 
 import re
@@ -34,18 +27,9 @@ FRIENDLY = {
 
 
 def escape(text) -> str:
-    """Escape text for Pango markup. Every event-derived string goes through
-    this before set_markup: an ampersand or angle bracket used to blank a
-    card (the repeated grey/blank render bug)."""
     return _xml_escape(str(text or ""))
 
 
-# ── theme-aware colors (2026-10-25) ──────────────────────────────────────
-# Pango markup cannot use CSS var(); the old hardcoded grays (#98a2b3,
-# #b9c4d4, …) were dark-theme colors that sat invisibly on the light
-# theme's white panels (owner: "white on white"). Every markup color now
-# comes from the APPLIED theme. These fall back to the dark default so a
-# render before any theme is applied is still readable.
 
 
 def _token(name: str, fallback: str) -> str:
@@ -57,22 +41,18 @@ def _token(name: str, fallback: str) -> str:
 
 
 def ink() -> str:
-    """Main text color of the applied theme."""
     return _token("ink", "#dde5f2")
 
 
 def soft() -> str:
-    """Secondary text color — slightly dimmer than main."""
     return _token("ink_soft", "#8b9bb0")
 
 
 def muted() -> str:
-    """Tertiary text color — hints, tags, timestamps."""
     return _token("mute", "#8b9bb0")
 
 
 def warn() -> str:
-    """Warning color of the applied theme."""
     return _token("warn", "#ffc940")
 
 
@@ -80,8 +60,6 @@ _LEAD_MARK = re.compile(r"^[^\w]+")
 
 
 def without_mark(text) -> str:
-    """Drop the leading emoji from a plain sentence (the card already shows
-    its own state light, so two icons in one line is noise)."""
     return _LEAD_MARK.sub("", str(text or ""), count=1)
 
 
@@ -99,9 +77,6 @@ def _ip(text: str) -> str:
 
 
 def _path(text: str) -> str:
-    # `@` belongs in the class: npm-style paths contain it, and stopping
-    # there left a trailing slash (→ an empty program name, " started
-    # running."). (Pass 1 defect, 2026-10-23)
     m = re.search(r"/[\w./@-]{2,160}", text)
     return m.group(0) if m else ""
 
@@ -112,8 +87,6 @@ def _prog(path: str) -> str:
 
 
 def sentence(ev: dict) -> str:
-    """One plain sentence, never a log line. Unknown tool + text → the first
-    120 characters."""
     return _sentence(ev.get("from_tool", ""), ev.get("text", ""))
 
 

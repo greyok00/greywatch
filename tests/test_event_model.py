@@ -1,6 +1,3 @@
-"""T1: Event model + 17-tool registry contract (owner orders: secops-mcp
-removed 2026-10-23; suricata dropped for a light net-watch; the cve-updater
-and the freshclam updater become trackable cards)."""
 import json
 import pathlib
 

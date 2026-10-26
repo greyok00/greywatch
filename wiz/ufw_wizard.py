@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-"""W1 — UFW rule wizard (plan 148): action → direction → port/proto →
-source → comment; preview via `ufw --dry-run` through the pkexec helper; apply
-the exact built command; verify with numbered status; rollback by rule number."""
 import shlex
 from rules import ufw_build, ValidationError
 from wiz import common
@@ -14,7 +10,6 @@ def preview(spec):
 
 def apply_rule(spec):
     cmd = ufw_build(spec)
-    # the helper runs: ufw <action> <direction> from <ip> [port/proto] [comment]
     args = cmd[1:]
     return common.run_helper("ufw-apply", args)
 

@@ -1,4 +1,3 @@
-"""T2: parser tests — REAL fixture lines, never-raise contract (G2.2 seed)."""
 import pathlib
 
 import pytest
@@ -12,8 +11,6 @@ REGISTRY = load_registry()
 
 
 def _lines(tool):
-    """Fixture lines that MUST parse. `!SKIP ` = noise line, verified None by
-    test_skip_lines_stay_none, excluded here."""
     f = FIXTURES / f"{tool}.txt"
     if not f.exists():
         return []
@@ -30,7 +27,6 @@ def test_every_tool_has_a_parser():
     assert set(PARSERS) == names
 
 
-# ── never-raise / junk contract (the G2.2 adversarial seed) ─────────────
 
 JUNK = ["", "   ", "\x00", "}{{{{", "a" * 5000, "\x00\x01\x02binary\x7f",
         '{"partial":', "not json but has braces }{{", "\n", "\t", "€©üñî",
@@ -62,12 +58,10 @@ def test_skip_lines_stay_none(tool):
                 f"{tool}: noise line produced an event: {line[:80]}"
 
 
-# ── per-tool severity map (plan line 90) ────────────────────────────────
 
 def test_responderd_severities():
     assert _ev("responderd", '{"ts": "2026-10-22 18:40:11", "action": "quarantine", "detail": "x"}').severity == "HIGH"
     assert _ev("responderd", '{"ts": "2026-10-22 18:40:11", "action": "kill", "detail": "x"}').severity == "HIGH"
-    # owner 2026-10-23: *_watch echoes = routine INFO (never displayed)
     assert _ev("responderd", '{"ts": "2026-10-22 18:46:52", "action": "tetragon_watch", "detail": "x"}').severity == "INFO"
     assert _ev("responderd", '{"ts": "2026-10-22 18:40:13", "action": "alert_local_only", "detail": "tick"}').severity == "INFO"
 

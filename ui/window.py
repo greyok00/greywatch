@@ -1,18 +1,3 @@
-"""greywatch window — rebuilt 2026-10-23 after the full visual audit.
-
-What changed, and why:
-- ONE Gtk.Stack instead of five overlapping scrolled windows. show_all() can
-  no longer reveal every screen at once, and an unknown key can never hide
-  the whole app (the old grey-screen bug).
-- File watchers are actually started, plus a 5-second fallback, so statuses
-  update while the window is open.
-- Manual scans call a real action and report honestly; the old code touched
-  a widget that did not exist and crashed every scan.
-- The Security screen is a real status log: every protection, its state in
-  words, its last activity, and controls to pause, resume, or open details.
-- Details open as a visible dialog instead of a panel below 17 cards.
-- Every event-derived string is escaped before Pango markup.
-"""
 import datetime as _dt
 import json
 import os
@@ -74,9 +59,6 @@ class MainWindow(Gtk.Window):
         self._wizard_win = None
         self._setup_win = None
         self._selected_tool = None
-        # Fresh unit truth right after a pause/resume, until the daemon's
-        # next status.json write supersedes it (otherwise the row contradicted
-        # the user's action for up to a minute).
         self._state_override = {}
         self._trust = TrustList()
         self.paused = PausedStore()
@@ -99,26 +81,18 @@ class MainWindow(Gtk.Window):
         root.append(self.stack)
 
         self._views = {}
-        # The theme comes FIRST: every view bakes theme colors into its
-        # Pango markup at build time (see _retheme), so a store created
-        # after the views left those colors frozen on a build that ran
-        # before any theme was applied (owner 2026-10-25).
         self._theme_store = ThemeStore(self)
         self._apply_saved_theme()
         self._build_all()
         self._show("tools")
         self._watchers()
         self.refresh()
-        # Every background GLib timer is tracked so that destroying the
-        # window kills them (the hardening leak-guard): a timer that fires
-        # after destroy touched freed widgets and made tests flake race.
         self._glib_ids = []
         self._glib_ids.append(
             GLib.timeout_add_seconds(5, self._periodic_refresh))
         self.connect("destroy", self._kill_timers)
 
     def _tick_id(self, fn, ms=200, seconds=False):
-        """timeout_add through the tracker; returns the source id."""
         sid = (GLib.timeout_add_seconds(seconds and ms or 0, fn)
                if seconds else GLib.timeout_add(ms, fn))
         self._glib_ids.append(sid)
@@ -134,11 +108,6 @@ class MainWindow(Gtk.Window):
         return False
 
     def _close_to_tray(self, *_a):
-        """close-request: the app CLOSES FOR REAL — owner order 2026-10-25
-        ("I CAN'T KILL IT AT ALL"): the old hide-to-tray made the ghost
-        unkillable whenever the panel icon was unreliable. No hiding. The
-        tray stays as a SUMMON only (it raises/presents the live window;
-        it never parks a hidden app)."""
         if self.quit_cb:
             self.quit_cb()           # the Application loop ends here
         else:
@@ -147,13 +116,10 @@ class MainWindow(Gtk.Window):
 
     def _apply_saved_theme(self):
         picked = load_setting()
-        # Only the two owner-facing choices are wearable; any other stored
-        # value (old pick, renamed kit theme) falls back to the default dark.
         name = picked if picked in THEME_CHOICES.values() \
             else dark_default(self._theme_store.names())
         self._theme_store.apply(name)
 
-    # ── rail ─────────────────────────────────────────────────────────────
     def _rail(self, parent):
         rail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         rail.add_css_class("gw-rail")
@@ -198,10 +164,6 @@ class MainWindow(Gtk.Window):
         self._show(key)
 
     def _show(self, key):
-        """Show ONE view. An unknown key falls back to Security — it can
-        never leave the window empty (the old grey-screen failure). Views
-        are built the FIRST time they are shown (RAM: the window at rest
-        carries only the Security home; a view materializes once and stays)."""
         if key not in self._builders:
             key = "tools"
         if key not in self._views:
@@ -212,15 +174,8 @@ class MainWindow(Gtk.Window):
             if k == key:
                 b.add_css_class("gw-active")
 
-    # ── build ────────────────────────────────────────────────────────────
     def _build_all(self):
-        # self._theme_store already exists (created and applied in __init__
-        # before any view is built — the view builders bake theme colors
-        # into their markup text).
         self._views = {}
-        # the Security home is real at startup; every other view is a
-        # builder, run the first time it is (or is asked to be) shown —
-        # including lazily through self._views[key] anywhere else.
         self._builders = {"tools": self._security_view,
                           "deep": self._tools_view, "logs": self._logs_view,
                           "help": self._help_view,
@@ -233,16 +188,9 @@ class MainWindow(Gtk.Window):
         self._views[key] = widget
 
     def _ensure_view(self, key):
-        """Build a view that has never been built, WITHOUT switching to it.
-        (Handlers outside the view used to do a bare `self._views[key]`
-        lookup to "ensure" the strip's widgets existed — but the dict only
-        holds BUILT views, so a lazy view raised KeyError right on the
-        user's path: pausing lynis/rkhunter from the Security page, pass
-        103.)"""
         if key not in self._views:
             self._add_view(key, self._builders[key]())
 
-    # ── Security: the full status log ────────────────────────────────────
     def _security_view(self):
         st = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         st.set_margin_top(22); st.set_margin_start(34); st.set_margin_end(34)
@@ -253,9 +201,6 @@ class MainWindow(Gtk.Window):
 
         frame = Gtk.Frame()
         frame.add_css_class("gw-card")
-        # columns 0-4 are visible; column 5 is the registry KEY (the display
-        # name is not an identifier — the old selection stored the label and
-        # every action then silently found no tool)
         self.list_store = Gtk.ListStore(str, str, str, str, str, str)
         lv = Gtk.TreeView(model=self.list_store)
         lv.set_headers_visible(True)
@@ -319,8 +264,6 @@ class MainWindow(Gtk.Window):
                 "Select one protection to pause it or view details.")
 
     def _restore_list_selection(self):
-        """Keep the user's choice across refreshes (updating rows in place
-        normally preserves it; re-select defensively if a rebuild happened)."""
         sel = self.list_view.get_selection()
         _model, it = sel.get_selected()
         if self._selected_tool and it and \
@@ -338,7 +281,6 @@ class MainWindow(Gtk.Window):
         if self._selected_tool:
             self._open_detail(self._selected_tool)
 
-    # ── Tools: cards + scan strip ────────────────────────────────────────
     def _tools_view(self):
         tools = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         tools.set_margin_top(26); tools.set_margin_start(34); tools.set_margin_end(34)
@@ -421,9 +363,6 @@ class MainWindow(Gtk.Window):
             row.append(b)
         pause = Gtk.Button(label="Pause")
         pause.set_sensitive(bool(tool.get("unit")))
-        # the label flips to "Resume" while paused (line below in the
-        # refresh) — so the ACTION must flip with it, or clicking
-        # "Resume" re-offers "Pause it?" forever (the 2026-10-25 bug).
         pause.connect("clicked", lambda *_b, n=name:
                       self._resume_tool(n) if self.paused.is_paused(n)
                       else self._pause_tool(n))
@@ -439,9 +378,7 @@ class MainWindow(Gtk.Window):
         frame._pause_btn = pause
         return frame
 
-    # ── scans ────────────────────────────────────────────────────────────
     def _run_scan(self, mode: dict):
-        """The real action, injectable for tests. Returns (rc, message)."""
         if mode.get("scope") == "user":
             rc = subprocess.run(["systemctl", "--user", "start",
                                  mode["unit"]], capture_output=True,
@@ -481,9 +418,6 @@ class MainWindow(Gtk.Window):
                 self._scan_watch = [mode, 0]
                 self._tick_id(self._poll_scan, 2, seconds=True)
             elif mode.get("proc"):
-                # the helper detached a real process (clamscan, rkhunter,
-                # lynis): watch it so the ring lives exactly as long as the
-                # work does.
                 self._scan_watch = [mode, 0]
                 self._tick_id(self._poll_process, 2, seconds=True)
             elif mode.get("unit"):
@@ -516,8 +450,6 @@ class MainWindow(Gtk.Window):
         return False
 
     def _poll_process(self):
-        """Detached scans (clamscan, rkhunter, lynis) have no unit; their
-        process IS the progress. The ring stays until it exits."""
         if not self._scan_watch:
             return False
         mode, ticks = self._scan_watch
@@ -548,7 +480,6 @@ class MainWindow(Gtk.Window):
         if mode:
             self._start_scan(None, mode)
 
-    # ── pause / resume ───────────────────────────────────────────────────
     def _pause_selected(self):
         if self._selected_tool:
             self._pause_tool(self._selected_tool)
@@ -569,8 +500,6 @@ class MainWindow(Gtk.Window):
                 f"<span size='13000' font_family='Inter'>"
                 f"{escape(friendly_name(name))} has no service to pause.</span>")
             return
-        # Gtk.MessageDialog + Dialog.run() are GONE in GTK4: the same
-        # question, asked by a plain Gtk.Dialog answered via "response".
         dlg = Gtk.Dialog(title=f"Pause {friendly_name(name)}?",
                          transient_for=self, modal=True)
         dlg.add_button("Keep it running", Gtk.ResponseType.CANCEL)
@@ -601,12 +530,6 @@ class MainWindow(Gtk.Window):
         unit = tool.get("unit")
         action = "stop" if pause else "start"
 
-        # ── the App Firewall is a SWITCH, not a unit (regression fix
-        # 2026-10-25): the owner's Resume click used to route to tool-control
-        # with unit=greywatch.service — rejected by the allowlist, so nothing
-        # happened. Correct behavior: flip data/appfw/enable.json (user-owned
-        # file, NO password); the daemon's supervised re-arm (≤10 s) does
-        # the rest. Never reload the suite for a firewall decision.
         if name == "appfw":
             try:
                 from appfw.engine import write_enabled
@@ -636,7 +559,6 @@ class MainWindow(Gtk.Window):
 
     @staticmethod
     def _probe_unit(tool):
-        """Ask systemd the unit's real state right after we changed it."""
         unit = tool.get("unit")
         if not unit:
             return None
@@ -654,7 +576,6 @@ class MainWindow(Gtk.Window):
         return None
 
     def _effective_state(self, name, info, updated):
-        """Applied unit truth wins until status.json catches up."""
         ov = self._state_override.get(name)
         if not ov:
             return info.get("state", "UNKNOWN")
@@ -672,10 +593,6 @@ class MainWindow(Gtk.Window):
         return state
 
     def _display_state(self, name, info, updated):
-        """The state the person should SEE. The weekly CVE list is not a
-        service: a fresh cache is "up to date" even while its timer sits
-        between runs (owner 2026-10-23: a paused-looking update makes no
-        sense). Everything else is the real unit truth."""
         state = self._effective_state(name, info, updated)
         if name == "cve-updater":
             from ui import updates
@@ -684,7 +601,6 @@ class MainWindow(Gtk.Window):
         return state
 
     def _update_detail(self, name):
-        """"today 14:44"-style stamp for the two update tools, else ''."""
         from ui import updates
         if name == "cve-updater":
             info = updates.cve_list() or {}
@@ -712,9 +628,6 @@ class MainWindow(Gtk.Window):
                 msg = (f"Could not {'pause' if pause else 'resume'} "
                        f"{friendly_name(name)} (code {rc}).")
         if hasattr(self, "scan_status"):
-            # lazily-built views may not have created the strip yet — a
-            # toggle from another view must never crash mid-handler (the
-            # functional battery caught this 2026-10-25)
             self.scan_status.set_markup(
                 f"<span size='13000' font_family='Inter'>{escape(msg)}</span>")
         else:
@@ -731,7 +644,6 @@ class MainWindow(Gtk.Window):
         self.refresh()
         return False
 
-    # ── detail dialog ────────────────────────────────────────────────────
     def _open_detail(self, name):
         if self._detail_dialog:
             self._detail_dialog.destroy()
@@ -761,10 +673,6 @@ class MainWindow(Gtk.Window):
         wrap.set_hexpand(True)
         content.append(wrap)
 
-        # The old raw forms asked for jail names, log paths, YARA conditions
-        # and IP addresses — things nobody knows off the top of their head.
-        # The guided wizard answers those from THIS computer (owner
-        # 2026-10-23: "it should not require me typing anything").
         wizard_key = {"ufw": "ufw", "fail2ban": "fail2ban",
                       "tetragon": "tetragon", "arpwatch": "arpwatch",
                       "yara-watch": "yara", "yara-tmp-scan": "yara"}.get(name)
@@ -790,7 +698,6 @@ class MainWindow(Gtk.Window):
             events = daemon_mod.read_events(DATA_DIR / "events.jsonl", 8000)
         except OSError:
             events = []
-        # heartbeats are not activity; duplicates are grouped (Pass 1 defect)
         mine = [e for e in events if e.get("from_tool") == name
                 and not str(e.get("text", "")).startswith("check-in:")]
         mine.sort(key=lambda e: str(e.get("ts", "")), reverse=True)
@@ -802,7 +709,6 @@ class MainWindow(Gtk.Window):
             else:
                 grouped.append({"key": key, "count": 1, "ev": e})
         if not grouped:
-            # An empty box reads as a broken screen; say why it is empty.
             self._detail_store.append(
                 ["📭 Nothing recorded yet. An event is written only "
                  "when something happens."])
@@ -815,7 +721,6 @@ class MainWindow(Gtk.Window):
                 [f"{mark} {ts} {plain_sentence(e)}{suffix}   "
                  f"[{e.get('text', '')[:160]}]"])
 
-    # ── Logs ─────────────────────────────────────────────────────────────
     def _logs_view(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_top(26); box.set_margin_start(30); box.set_margin_end(30)
@@ -861,9 +766,6 @@ class MainWindow(Gtk.Window):
         except OSError:
             events = []
         grouped = []
-        # events.jsonl is not guaranteed to be time-ordered (source logs are
-        # merged), so sort before grouping — otherwise a 04:25 row appears
-        # above a 12:00 row (Pass 1 defect).
         ordered = sorted(events, key=lambda e: str(e.get("ts", "")),
                          reverse=True)
         for e in ordered:
@@ -887,7 +789,6 @@ class MainWindow(Gtk.Window):
                        f"{friendly_name(e.get('from_tool', ''))}",
                  e.get("text", "")[:400] + suffix])
 
-    # ── Help ─────────────────────────────────────────────────────────────
     def _help_view(self):
         from ui.plain import FRIENDLY
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
@@ -896,8 +797,6 @@ class MainWindow(Gtk.Window):
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
         intro.set_wrap(True)
-        # short lines only (runbook 04): every line below is one sentence.
-        # The full guide, with screenshots, fills this tab in Task D.
         help_one = "The ONE dashboard for every tool protecting this computer."
         help_two = "Everything is in plain English. Raw details are a click away."
         lines = [
@@ -945,8 +844,6 @@ class MainWindow(Gtk.Window):
             grid.append(card)
         box.append(grid)
         box.append(self._h2("Questions people ask"))
-        # FAQ (Task D): every string below is <=12 words (runbook 04
-        # short lines; runbooks/longtext.py flags longer literals).
         faq_lines = [
             ("What does greywatch do?",
              "One dashboard for every protection already on this computer."),
@@ -996,15 +893,10 @@ class MainWindow(Gtk.Window):
         box.append(deep)
         return self._scroll(box)
 
-    # ── Harden: baseline scan / review / apply / verify / undo ──────────
     def _harden_view(self):
         from ui.harden import HardenView
-        # headless-safe + injectable: the view defaults to the real
-        # controls file and the pkexec helper, but tests substitute fakes.
         return self._scroll(HardenView(win=self))
 
-    # ── Settings ─────────────────────────────────────────────────────────
-    # ── app-fw config toggles (Pass 4 leftovers, 2026-10-25) ────────────
     def _cfg6(self) -> bool:
         from appfw import config as acfg
         return bool(acfg.load(DATA_DIR).get("ipv6_enabled"))
@@ -1015,11 +907,9 @@ class MainWindow(Gtk.Window):
             cfg = acfg.load(DATA_DIR)
             cfg["ipv6_enabled"] = bool(check.get_active())
             acfg.save(DATA_DIR, cfg)
-            # mtime change → the daemon's supervised engine re-arms ≤10 s
         except Exception:
             pass
 
-    # ── Pass 4 leftovers: workspace preference + hardening truth ────────
     def _ws_pref(self) -> int:
         from ui.settings import ws_pref
         return ws_pref(DATA_DIR)
@@ -1032,7 +922,6 @@ class MainWindow(Gtk.Window):
             pass
 
     def _hardening_truth(self) -> str:
-        """Read-only live truth of the unit + watchdog (never fake-green)."""
         lines = []
         try:
             p = subprocess.run(
@@ -1061,9 +950,6 @@ class MainWindow(Gtk.Window):
         return "\n".join(lines)
 
     def _diag_truth(self) -> str:
-        """Diagnostics: what the daemon, snapshot, firewall and network are
-        doing RIGHT NOW. A stale snapshot is the tell-tale of a wedged
-        pipeline (2026-10-24) — this names it in plain words, evergreen."""
         lines = []
         try:
             p = subprocess.run(
@@ -1107,7 +993,6 @@ class MainWindow(Gtk.Window):
         return "\n".join(lines)
 
     def _on_diag_refresh(self, btn):
-        """Re-run the diagnostics off the UI thread; re-enable when done."""
         btn.set_sensitive(False)
         def run():
             text = self._diag_truth()
@@ -1125,8 +1010,6 @@ class MainWindow(Gtk.Window):
 
         theme_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         theme_row.append(Gtk.Label(label="Look of the app:"))
-        # TWO choices only (owner order 2026-10-25): Dark Mode / Light Mode
-        # backed by the greyok kit's own themes — never stripped names.
         self.theme_combo = Gtk.ComboBoxText()
         for label, kit in THEME_CHOICES.items():
             self.theme_combo.append(kit, label)
@@ -1230,7 +1113,6 @@ class MainWindow(Gtk.Window):
             ]))
         box.append(legend)
 
-        # ── App firewall: on/off + learning mode (owner 2026-10-23) ─────
         box.append(self._h2("App firewall: what may use the internet"))
         fw_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.fw_note = Gtk.Label(xalign=0)
@@ -1243,9 +1125,6 @@ class MainWindow(Gtk.Window):
         fw_row.append(self.fw_note)
         fw_row.append(self.fw_btn)
         box.append(fw_row)
-        # The result of Turn on/off belongs HERE. It used to be written to
-        # the Tools screen, so cancelling the password prompt made the
-        # button look dead (owner 2026-10-23: "WHY ISN'T APP FIREWALL RUNNING").
         self.fw_status = Gtk.Label(xalign=0)
         self.fw_status.set_xalign(0)
         self.fw_status.set_wrap(True)
@@ -1297,7 +1176,6 @@ class MainWindow(Gtk.Window):
             learn_btns.append(b)
         box.append(learn_btns)
 
-        # ── Updates: the two lists, with real timestamps ────────────────
         box.append(self._h2("Updates: virus definitions and the "
                             "security list"))
         self.updates_note = Gtk.Label(xalign=0)
@@ -1321,8 +1199,6 @@ class MainWindow(Gtk.Window):
             label="Sites on TRUSTED: allowed without asking. On BLOCKED: "
                   "never allowed. Subdomains included.", xalign=0))
         entry_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        # Same rule as everywhere else: a picker with sites this computer
-        # has actually seen (owner: "do not require any typing at all").
         self.trust_combo = Gtk.ComboBoxText.new_with_entry()
         for choice in discover.site_choices():
             self.trust_combo.append(
@@ -1339,7 +1215,6 @@ class MainWindow(Gtk.Window):
             b.connect("clicked", self._on_trust_add, verdict)
             entry_row.append(b)
         box.append(entry_row)
-        # A click that changes nothing must say why (Pass 3: silent no-op).
         self.trust_note = Gtk.Label(xalign=0)
         self.trust_note.set_xalign(0)
         self.trust_note.set_wrap(True)
@@ -1367,9 +1242,6 @@ class MainWindow(Gtk.Window):
         box.append(Gtk.Label(
             label=prog_one + "\n" + prog_two, xalign=0))
         app_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        # The program list is read from THIS computer: desktop entries and
-        # the running processes (owner 2026-10-23: "requires me typing in the
-        # direct path instead of searching or listing — that's not useful").
         self.app_combo = Gtk.ComboBoxText.new_with_entry()
         for prog in discover.programs():
             self.app_combo.append(prog["path"], prog["label"])
@@ -1418,8 +1290,6 @@ class MainWindow(Gtk.Window):
                 self.trust_store.append([verdict, e])
                 empty = False
         if empty:
-            # A blank box reads as a broken screen (Pass 2 lesson). Say
-            # what an empty list means; the row is not a site.
             self.trust_store.append(["", "Nothing trusted or blocked yet. "
                                          "Add a site above."])
 
@@ -1458,9 +1328,6 @@ class MainWindow(Gtk.Window):
             f"{'always allowed' if verdict == 'allow' else 'always blocked'}.")
 
     def _on_trust_remove(self, _btn):
-        # Capture the name FIRST: the refresh clears the view, and its
-        # cursor-changed handler wipes _trust_sel — the old order said
-        # "Removed None." right after a successful removal (Pass 2 defect).
         name = getattr(self, "_trust_sel", None)
         if name:
             self.trust.remove(name)
@@ -1474,10 +1341,8 @@ class MainWindow(Gtk.Window):
     def _app_selected(self, view):
         path, _col = view.get_cursor()
         name = self.app_store[path[0]][0] if path else None
-        # The empty-state row is not a program — never let it be "removed".
         self._app_sel = name if name in self.trust.apps_allow else None
 
-    # ── app firewall + learning mode ────────────────────────────────────
     def _fw_is_on(self) -> bool:
         try:
             snap = daemon_mod.load_status(str(DATA_DIR / "status.json"))
@@ -1492,8 +1357,6 @@ class MainWindow(Gtk.Window):
         self.fw_status.set_text(
             "Waiting for the admin password…" if not was_on else
             "Stopping the firewall…")
-        # The engine lives INSIDE the root daemon — no systemd unit to pause.
-        # The switch is a data file the daemon reconciles within ~2 minutes.
         try:
             (DATA_DIR / "appfw").mkdir(parents=True, exist_ok=True)
             (DATA_DIR / "appfw" / "enable.json").write_text(
@@ -1512,7 +1375,6 @@ class MainWindow(Gtk.Window):
                     if hasattr(self, "learn_for") else None) or "60"
             minutes = 60 * 24 * 365 if pick == "0" else int(pick)
             self._learn_store.start(minutes)
-            # learning and default-deny contradict each other
             if hasattr(self, "fw_block") and self.fw_block.get_active():
                 self._fw_mode_guard = True
                 self.fw_block.set_active(False)
@@ -1549,7 +1411,6 @@ class MainWindow(Gtk.Window):
         self._refresh_fw()
 
     def _learned(self) -> list:
-        """The daemon's ledger → one row per program+site, newest first."""
         path = DATA_DIR / "learning-seen.jsonl"
         cutoff = self._learn_cutoff()
         seen = {}
@@ -1578,7 +1439,6 @@ class MainWindow(Gtk.Window):
                 when = 0.0
             if when < cutoff:
                 continue
-            # Already decided? Then it is not something to review again.
             try:
                 if (app and self.trust.decide_app(app) == "allow") or \
                         (host and self.trust.decide(host)):
@@ -1699,7 +1559,6 @@ class MainWindow(Gtk.Window):
             quiet_b = "Turn learning on to record them. Tick strict to stop unknowns."
             self.learn_note.set_text(quiet_a + " " + quiet_b)
 
-    # ── updates ─────────────────────────────────────────────────────────
     def _refresh_updates(self):
         if not hasattr(self, "updates_note"):
             return
@@ -1758,9 +1617,6 @@ class MainWindow(Gtk.Window):
         return False
 
     def _on_app_browse(self, _btn):
-        """A real file picker: browsing is faster than spelling a path."""
-        # GTK4: FileChooserDialog + .run() are gone — the native chooser,
-        # answered through its "response" signal.
         dlg = Gtk.FileChooserNative(
             title="Choose the program to trust", transient_for=self,
             action=Gtk.FileChooserAction.OPEN)
@@ -1781,7 +1637,6 @@ class MainWindow(Gtk.Window):
         dlg.show()
 
     def _on_app_add(self, _btn, _x):
-        # A row pick wins over whatever is left in the entry.
         text = (self.app_combo.get_active_id()
                 or self.app_entry.get_text().strip())
         if not text:
@@ -1813,19 +1668,9 @@ class MainWindow(Gtk.Window):
         name = pick if pick in self._theme_store.themes \
             else dark_default(self._theme_store.names())
         if self._theme_store.apply(name):
-            # Deferred to the next idle: this callback still runs inside
-            # the combo's signal, and the rebuild below destroys that combo
-            # — killing the emitting widget mid-signal is a GTK hazard.
             self._tick_id(self._retheme, 0)
 
     def _retheme(self):
-        """A theme switch is more than a provider swap: some view text
-        carries the theme color BAKED into its Pango markup at build time
-        (plain.ink/soft/muted read themes.CURRENT once), and a provider
-        swap never regenerates those strings — dark-to-light left white
-        text on white panels (owner 2026-10-25). The views are built
-        lazily: drop every cached one, so the visible page rebuilds now
-        and the rest rebuild with fresh colors on their next visit."""
         visible = self.stack.get_visible_child_name()
         for key, widget in list(self._views.items()):
             self.stack.remove(widget)
@@ -1835,12 +1680,10 @@ class MainWindow(Gtk.Window):
         return False
 
     def _reload_trust(self, *_a):
-        """Re-read the trust file after a wizard run and repaint the lists."""
         self.trust.load()
         self._refresh_trust()
         self._refresh_apps()
 
-    # ── shared widgets ───────────────────────────────────────────────────
     @staticmethod
     def _h1(text):
         l = Gtk.Label(xalign=0)
@@ -1874,7 +1717,6 @@ class MainWindow(Gtk.Window):
         s.set_child(widget)
         return s
 
-    # ── live refresh ─────────────────────────────────────────────────────
     def _watchers(self):
         self._monitors = []
         for fname in ("events.jsonl", "status.json", "paused.json"):
@@ -1921,8 +1763,6 @@ class MainWindow(Gtk.Window):
         snap = daemon_mod.load_status(str(DATA_DIR / "status.json"))
         tools = snap.get("tools", {})
         updated = snap.get("updated")
-        # Paused tools are not running — a deliberate stop must not be
-        # counted as healthy, nor shouted about as a fault.
         paused_n = sum(1 for t in self.registry
                        if self.paused.is_paused(t["name"]))
         running = sum(1 for t in self.registry
@@ -1936,15 +1776,8 @@ class MainWindow(Gtk.Window):
                     if (tools.get(t["name"]) or {}).get("state")
                     in ("GREEN", "RED", "YELLOW"))
         if known == 0 and not self._state_override:
-            # First run (no snapshot yet) or an unreadable status.json.
-            # "17 protections need attention" blamed every tool for our own
-            # missing data — the rows all said "could not check"
-            # (Pass 3 defect, 2026-10-23).
             lead = "⚪ Status not available yet"
             tail = ("the monitor has not reported. Nothing was checked")
-            # A paused tool is still the owner's own choice — say so even in
-            # the first-run fallback, so amber pause rows never read as a
-            # fault the monitor reported.
             if paused_n:
                 tail += f" · {paused_n} paused by you, not a fault"
         else:
@@ -1964,9 +1797,6 @@ class MainWindow(Gtk.Window):
             f"{tail}</span>")
 
         now = _dt.datetime.now(_dt.timezone.utc)
-        # Update the rows IN PLACE. clear()+append() on every 5-second refresh
-        # destroyed the row selection (and the note) a few seconds after the
-        # user clicked — the real reason Pause/Resume appeared dead.
         fresh = len(self.list_store) != len(self.registry)
         if fresh:
             self.list_store.clear()
@@ -2002,8 +1832,6 @@ class MainWindow(Gtk.Window):
                     status_words(state, info.get("installed"),
                                  self.paused.is_paused(name))])
 
-        # the cards live on the deep (Tools) view; with lazy views it may
-        # not exist yet — the same guard pattern as fw_note/lights_store
         if hasattr(self, "card_widgets"):
             for t in self.registry:
                 frame = self.card_widgets.get(t["name"])
@@ -2013,7 +1841,6 @@ class MainWindow(Gtk.Window):
                 info = tools.get(name, {})
                 state = self._display_state(name, info, updated)
                 paused = self.paused.is_paused(name)
-                # check-ins are liveness, not activity (same rule as the daemon)
                 ev = next((e for e in reversed(events)
                            if e.get("from_tool") == name
                            and not str(e.get("text", "")).startswith(
@@ -2064,12 +1891,7 @@ class MainWindow(Gtk.Window):
         self._refresh_fw()
         self._refresh_updates()
 
-    # ── wizard ───────────────────────────────────────────────────────────
     def _open_setup_wizard(self):
-        """The Wizard rail button: open the SETUP WIZARD (six pages, one
-        window per master prompt). The guided per-tool wizards keep their
-        entry points — from the detail dialogs, and from the setup
-        wizard's welcome page."""
         from wizard.ui_pages import SetupWizardWindow
 
         if self._setup_win is not None:      # one setup window, not many
@@ -2088,9 +1910,6 @@ class MainWindow(Gtk.Window):
             parent=self,
             open_dashboard=open_dashboard,
             open_chooser=lambda *_a: self._open_wizard())
-        # A Gtk.Window never maps itself; without this the fresh window
-        # sat unpainted (black) on first open — found in the GUI walk
-        # (owner 2026-10-25). Present it exactly like the re-open path.
         self._setup_win.present()
         self._setup_win.connect(
             "destroy", lambda _w: setattr(self, "_setup_win", None))
@@ -2098,8 +1917,6 @@ class MainWindow(Gtk.Window):
     def _open_wizard_for(self, key):
         from ui.wizard import RuleWizard
         self._wizard_win = RuleWizard(key, parent=self)
-        # The wizard saves trust changes through its own TrustList; the
-        # Settings lists would stay stale until restart (Pass 2/3).
         self._wizard_win.connect("destroy", self._reload_trust)
 
     def _open_wizard(self):
@@ -2110,9 +1927,6 @@ class MainWindow(Gtk.Window):
 
         self._chooser = ToolChooser(on_pick=picked, parent=self)
         self._chooser.present()
-        # do not auto-highlight the first choice card; put focus on Cancel
-        # (GTK4 has no get_action_area; the chooser keeps its Cancel button
-        # reference itself)
         try:
             self._chooser.cancel_btn.grab_focus()
         except Exception:
@@ -2128,13 +1942,6 @@ def _theme_g():
 
 
 class ProgressCircle(Gtk.DrawingArea):
-    """A REAL progress ring: visible ONLY while a scan runs, animated while
-    the work is in flight, and it disappears when the scan ends — it used
-    to sit on screen saying "idle", then freeze at 100% after every scan
-    (owner 2026-10-23: "its a PROGRESS BAR. DO NOT JUST LEAVE IT AT
-    100%"). The scan tools do not publish a file counter, so the ring
-    animates and shows the real elapsed seconds; it never invents a
-    percentage."""
 
     def __init__(self):
         super().__init__()
@@ -2143,11 +1950,8 @@ class ProgressCircle(Gtk.DrawingArea):
         self._started = 0.0
         self._running = False
         self.set_size_request(170, 170)
-        # a scan-end hide() must stick: GTK4 has no show_all() to resurrect.
         self.hide()
         self.set_draw_func(self._draw)
-        # the pulse timer is tracked and released on destroy — a ring left
-        # running after its window died made later test pumps error.
         self._pulse_id = GLib.timeout_add(200, self._pulse)
         self.connect("destroy", self._stop_pulse)
 
@@ -2206,14 +2010,12 @@ class ProgressCircle(Gtk.DrawingArea):
         cr.arc(cx, cy, r, 0, 6.2832)
         cr.set_source_rgba(*_hex_rgba(T.get("line", "#2a3140")))
         cr.stroke()
-        # A comet that travels around the ring while the scan works.
         a0 = -1.5708 + 6.2832 * self._tick
         a1 = a0 + 1.9
         cr.arc(cx, cy, r, a0, a1)
         cr.set_source_rgba(*_hex_rgba(T["accent"]))
         cr.stroke()
         ink = _hex_rgba(T["ink"])
-        # real elapsed time in the middle
         cr.set_source_rgba(*ink)
         cr.select_font_face(T.get("display", "Inter"), 0, 0)
         cr.set_font_size(r * 0.42)
@@ -2221,7 +2023,6 @@ class ProgressCircle(Gtk.DrawingArea):
         _, _, tw, th, _, _ = cr.text_extents(txt)
         cr.move_to(cx - tw / 2, cy + th / 2)
         cr.show_text(txt)
-        # which scan, small above the number
         cr.set_font_size(r * 0.16)
         label = self.text[:16]
         _, _, lw, _lh, _, _ = cr.text_extents(label)

@@ -1,9 +1,3 @@
-"""tests/test_ui_harden.py — HardenView smoke tests (Task 6).
-
-Injected fakes only: never pkexec, never the shell, never the real
-controls file. The planfile-contract test asserts the exact JSON shape
-apply/harden.sh (Task 5) decodes.
-"""
 import json
 import sys
 import pathlib
@@ -23,9 +17,6 @@ from ui.harden import (HardenView, verby_args, planfile_entries,
 
 
 def _gtk_ready() -> bool:
-    """GTK4 defers real display init — init_check() alone returns True
-    headless and widget code then segfaults. A default display existing
-    is the honest probe; nothing else makes the module skip cleanly."""
     try:
         if not Gtk.init_check():
             return False
@@ -46,26 +37,13 @@ def pump(n=60):
             pass
 
 
-# ── GTK window-leak guard (banked requirement) ─────────────────────────
-# A MainWindow opened in a test stays MAPPED after the test on GTK4: the
-# app's close-request hides to tray, so the ghost window keeps piling up
-# on the owner's desktop (owner bug report: 6 accumulated, and closing
-# does nothing). Contract: every test closes AND destroys what it made,
-# no-tray path so a real close ends the window, and a session finalizer
-# enumerates the leftover toplevels as the safety net.
 def make_no_tray_window(**kw):
-    """The ONLY way to build a MainWindow in this module: no-tray so a
-    close/destroy really unmaps. (HardenView itself opens no toplevels;
-    this exists for future UI tests kept to the same rule.)"""
     from ui.window import MainWindow
     return MainWindow(tray_available=False, **kw)
 
 
 @pytest.fixture(autouse=True)
 def leak_guard():
-    """Per test: record the toplevels at entry; at exit close AND destroy
-    every toplevel that appeared during the test (HardenView makes none,
-    but any window a future test opens must not survive it)."""
     start = set(Gtk.Window.list_toplevels())
     yield
     for _ in range(10):                    # settle: let thread idle_adds land
@@ -90,10 +68,6 @@ def leak_guard():
 
 @pytest.fixture(scope="session", autouse=True)
 def no_greywatch_ghosts():
-    """Safety net: after EVERYTHING in this module ran, enumerate the
-    leftover toplevels and destroy every greywatch window left, then
-    assert none remain — the pytest battery must leave the owner's
-    desktop empty of greywatch windows."""
     yield
     for _ in range(10):
         pump(4)
@@ -108,7 +82,6 @@ def no_greywatch_ghosts():
                 w.destroy()
             except Exception:
                 pass
-    # windows of THIS process only: list_toplevels cannot see other apps
     leftover = []
     for w in Gtk.Window.list_toplevels():
         try:
@@ -151,8 +124,6 @@ CONTROLS = [
     Control("advisory-card", "docs", "Advisory: document the ARP policy",
             probe="true", severity="INFO", advisory=True),
 ]
-# runner: unsure-control's probe explodes; detector maps that to
-# CANT-CHECK (honesty rule). "true" -> PASS, anything else -> GAP.
 
 
 def fake_runner(line):
@@ -177,7 +148,6 @@ def test_scan_renders_one_card_per_finding():
     for want in ("Good control", "A gap the helper can fix",
                  "COULD NOT BE CHECKED", "Advisory"):
         assert want in joined, want
-    # NIST/CIS tags render on the cards
     assert "NIST CM-7" in joined and "CIS 1.1" in joined
 
 
@@ -204,7 +174,6 @@ def test_verby_args_maps_the_helper_contract():
     assert verby_args([["service-off", "ssh"]]) == {
         "verb": "service-off", "unit": "ssh"}
     assert verby_args([["pkg-upgrade"]]) == {"verb": "pkg-upgrade"}
-    # placeholder template: not resolvable in the GUI
     assert verby_args([["unit-install", "{{unit}}", "TRANCHE"]]) == {
         "verb": "unit-install", "unresolvable": True}
 
@@ -220,7 +189,6 @@ def test_planfile_json_matches_helper_contract():
                         fix=[["sysctl-set",
                               "kernel.unprivileged_bpf_disabled", "2"]])]
     plan, _adv = build_plan(
-        # GAP findings by hand; detector.scan already maps rc -> state
         [type("F", (), {"control_id": "hard-ssh", "state": "GAP",
                         "current": "active", "note": ""})(),
          type("F", (), {"control_id": "hard-bpf", "state": "GAP",
@@ -270,15 +238,12 @@ def test_undo_wired_to_latest_journal_entry(tmp_path):
     view._helper = fake_helper
     view._on_undo(None)
     pump()
-    # contract: run_helper("harden", ["undo", entry_id, journal-path])
     assert calls and calls[0][0] == "undo" and calls[0][1] == "hard-ssh"
     assert "restored" in view.verify_label.get_text()
     calls.clear()
 
 
 def test_failed_apply_looks_failed_not_green():
-    """The reviewer's stderr case: a RED verify whose rollback also failed
-    (ROLLBACK-FAILED on STDERR) must still be RED on the strip."""
     view = make_view(cant=False)
     view._helper = lambda args: (4, "APPLY a 0\nVERBIFY a 1\n",
                                  "ROLLBACK-SKIP a\nROLLBACK a\n")
@@ -298,16 +263,11 @@ def test_failed_apply_looks_failed_not_green():
 
 
 def test_failed_scan_never_reenables_apply():
-    """The reviewer's Important #1: a scan that CRASHES must keep Apply
-    off and say why — it must not display '0 checks done'."""
     def exploding_runner(_line):
         raise RuntimeError("kernel went away")
     controls = [Control("boom", "misc", "Boom", probe="boom",
                         severity="LOW")]
     view = HardenView(controls=controls, runner=exploding_runner)
-    # detector.scan swallows per-control probe errors (-> CANT-CHECK), so
-    # the WORKER failure is delivered directly: findings=None is the
-    # sentinel a crashed scan sends to the main thread.
     view._scan_done(None, list(controls))
     pump()
     assert not view.apply_btn.get_sensitive()
@@ -317,8 +277,6 @@ def test_failed_scan_never_reenables_apply():
 
 
 def test_unresolvable_fix_shown_on_the_card_at_review_time():
-    """The reviewer's Important #2: a GAP the GUI cannot plan (the
-    {{unit}}/TRANCHE template) says so ON THE CARD before any apply."""
     controls = [Control("template-control", "systemd-unit",
                         "Hardened unit template", probe="false",
                         severity="CRITICAL",
@@ -346,16 +304,12 @@ FAKE_CVE_CACHE = {
 
 
 def test_card_shows_the_display_only_cve_note():
-    """The reviewer's Important: cve_note was implemented and tested but
-    never rendered — the card must show it when the cache yields one,
-    and stay quiet when it does not."""
     view = HardenView(controls=CONTROLS, runner=fake_runner,
                       cve_cache=FAKE_CVE_CACHE)
     view._on_scan(None)
     pump()
     joined = "\n".join(_find_card_texts(view))
     assert "Relevant CVEs on record: CVE-2999-0417" in joined
-    # and a view with NO cache yields no note
     bare = HardenView(controls=CONTROLS, runner=fake_runner,
                       cve_cache={})
     bare._on_scan(None)

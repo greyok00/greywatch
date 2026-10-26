@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""W0 — arpwatch config wizard (plan 150): enable per-iface instances +
-/etc/default/arpwatch ARGS + per-iface env, journal verify."""
 from rules import arpwatch_env_file, ValidationError
 from wiz import common
 import subprocess

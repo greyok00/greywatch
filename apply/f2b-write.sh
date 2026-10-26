@@ -1,6 +1,4 @@
 #!/bin/bash
-# helper (pkexec only): write one jail.d + optional filter.d file pair, then
-# `fail2ban-client -x reload` (real verify). argv: JAIL LOGPATH MAXRETRY FINDTIME BANTIME FILTER [FAILREGEX]
 set -euo pipefail
 GW_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 [ $# -eq 7 ] || [ $# -eq 6 ] || { echo "usage: f2b-write.sh JAIL LOGPATH MAXRETRY FINDTIME BANTIME FILTER [FAILREGEX]" >&2; exit 64; }
@@ -12,9 +10,6 @@ FAILREGEX="${7:-}"
 [[ "$BANTIME" =~ ^[0-9]{1,7}$ ]] || { echo "bad bantime" >&2; exit 65; }
 JOURNAL_UNIT=""
 case "$LOGPATH" in
-  # This computer writes service logs to the journal, not to text files.
-  # `journal:<unit>` selects fail2ban's systemd backend for ONE validated
-  # unit name (owner 2026-10-23: the wizard must offer real sources).
   journal:*)
     JOURNAL_UNIT="${LOGPATH#journal:}"
     [[ "$JOURNAL_UNIT" =~ ^[A-Za-z0-9@._-]{1,64}$ ]] \

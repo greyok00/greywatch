@@ -1,5 +1,4 @@
 #!/bin/bash
-# helper (pkexec only): restore one file from the responder quarantine
 set -euo pipefail
 GW_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 GH="${GW_USER_HOME:-$(dirname "$GW_DIR")}"

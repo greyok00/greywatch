@@ -1,13 +1,3 @@
-"""REAL system information for the wizards (owner 2026-10-23: "this is not
-something anyone would know off the top of their head... it should not
-require me typing anything").
-
-Every list here is read from THIS computer: interfaces from the kernel,
-neighbours from the ARP table, ports from the listening sockets, programs
-from the desktop entries and /proc, logs from disk, services from systemd,
-and sites from the connections that are open right now. Nothing is invented
-and nothing raises: a missing tool simply yields an empty list.
-"""
 from __future__ import annotations
 
 import os
@@ -16,7 +6,6 @@ import re
 import shutil
 import subprocess
 
-# ── small robust runner ─────────────────────────────────────────────────
 def _run(argv, timeout=4) -> str:
     try:
         out = subprocess.run(argv, capture_output=True, text=True,
@@ -26,9 +15,6 @@ def _run(argv, timeout=4) -> str:
         return ""
 
 
-# ── network devices ─────────────────────────────────────────────────────
-# The kernel's own list. Virtual plumbing (veth pairs, docker bridges) is
-# noise for an ARP watcher, so it is filtered out; Wi-Fi sorts first.
 _VIRTUAL = re.compile(r"^(lo|veth|docker|br-|virbr|tun|tap|zt)")
 
 
@@ -55,9 +41,7 @@ def interfaces() -> list:
     return parse_interfaces(names)
 
 
-# ── this LAN's computers ────────────────────────────────────────────────
 def parse_neighbors(text: str) -> list:
-    """`ip neigh show` → usable hosts (skip FAILED / INCOMPLETE / docker)."""
     out, seen = [], set()
     for line in str(text or "").splitlines():
         parts = line.split()
@@ -85,7 +69,6 @@ def lan_hosts() -> list:
     return parse_neighbors(_run(["ip", "neigh", "show"]))
 
 
-# ── ports that are actually open on this machine ────────────────────────
 PORT_NAMES = {
     22: "SSH remote login", 53: "DNS", 80: "web", 443: "secure web",
     3306: "database", 5432: "database", 8080: "web app", 8443: "secure web app",
@@ -94,7 +77,6 @@ PORT_NAMES = {
 
 
 def parse_listening(text: str) -> list:
-    """`ss -tlnH` → ports bound on ALL addresses (reachable from outside)."""
     ports = {}
     for line in str(text or "").splitlines():
         fields = line.split()
@@ -117,7 +99,6 @@ def external_ports() -> list:
     return parse_listening(_run(["ss", "-tlnH"]))
 
 
-# ── sites this computer is talking to RIGHT NOW ─────────────────────────
 def parse_established(text: str) -> list:
     ips = []
     for line in str(text or "").splitlines():
@@ -134,8 +115,6 @@ def parse_established(text: str) -> list:
 
 
 def connected_sites() -> list:
-    """Reverse names for open web connections (the sites in use right now).
-    A name that cannot be resolved is left out — no invented entries."""
     out = []
     for ip in parse_established(_run(["ss", "-tnH", "state", "established"])):
         raw = _run(["getent", "hosts", ip], timeout=2).strip()
@@ -152,7 +131,6 @@ def _host_of(url: str) -> str:
     except ValueError:
         return ""
     host = host.lower().rstrip(".")
-    # a plain site name only: no localhost, no bare addresses
     if "." not in host or host in ("localhost",) or re.fullmatch(
             r"[\d.]+", host):
         return ""
@@ -160,9 +138,6 @@ def _host_of(url: str) -> str:
 
 
 def browser_sites(limit=40) -> list:
-    """Sites this person actually visited, read from the browser's OWN
-    history on this disk (copied first — the live file is locked). Local
-    only; nothing is sent anywhere."""
     import sqlite3
     import shutil
     import tempfile
@@ -172,7 +147,6 @@ def browser_sites(limit=40) -> list:
         for prof in pathlib.Path.home().glob(".mozilla/firefox/*.default*"):
             p = prof / "places.sqlite"
             if p.is_file():
-                # audit: log-only — SQL for the local history DB, never UI
                 dbs.append((p, "SELECT host FROM moz_places "
                                "WHERE host IS NOT NULL "
                                "ORDER BY last_visit_date DESC LIMIT 200"))
@@ -219,8 +193,6 @@ def browser_sites(limit=40) -> list:
 
 
 def site_choices() -> list:
-    """Everything the wizard can offer for a site, best first: what the
-    person already decided, what is in use now, then recent history."""
     out, seen = [], set()
     try:
         from ui.settings import TrustList
@@ -241,9 +213,7 @@ def site_choices() -> list:
     return out
 
 
-# ── programs: installed desktop entries + what is running now ───────────
 def _exec_path(exec_line: str) -> str:
-    """Desktop `Exec=` → the real program path (field codes stripped)."""
     line = str(exec_line or "").strip()
     if not line:
         return ""
@@ -255,7 +225,6 @@ def _exec_path(exec_line: str) -> str:
 
 
 def parse_desktop(files) -> list:
-    """files = iterable of (path, text). Returns [(friendly, program)]."""
     out, seen = [], set()
     for _path, text in files:
         name, exec_line = "", ""
@@ -310,7 +279,6 @@ def running_programs() -> list:
 
 
 def programs(limit=400) -> list:
-    """Friendly name + real path, installed apps first, then running ones."""
     found = {}
     for friendly, prog in parse_desktop(_desktop_files()):
         found.setdefault(prog, friendly)
@@ -321,9 +289,7 @@ def programs(limit=400) -> list:
             for path, name in items[:limit]]
 
 
-# ── logs and services ───────────────────────────────────────────────────
 def log_files(limit=80) -> list:
-    """Real log files on this disk (existence only; the helper reads them)."""
     out = []
     try:
         for p in sorted(pathlib.Path("/var/log").glob("*.log")):
@@ -349,7 +315,6 @@ def journal_units(limit=120) -> list:
 
 
 def enabled_jails() -> list:
-    """Jails already switched on in /etc/fail2ban (plain names, real file)."""
     out = []
     for d in (pathlib.Path("/etc/fail2ban/jail.d"),
               pathlib.Path("/etc/fail2ban/jail.local")):
@@ -371,7 +336,6 @@ def enabled_jails() -> list:
     return out
 
 
-# ── ready-made YARA rules (every one compiles with the real scanner) ────
 YARA_PRESETS = [
     {"key": "eicar", "title": "The EICAR test virus",
      "about": "The harmless industry test string. Proves the scanner works "
@@ -409,7 +373,6 @@ def yara_preset(key: str) -> dict | None:
 
 
 def yara_name(key: str, rules_dir=None) -> str:
-    """A valid, unused rule name — the person never types one."""
     rules_dir = str(rules_dir or pathlib.Path.home() / "yara-rules")
     base = "gw_" + re.sub(r"[^A-Za-z0-9_]", "_", key or "rule")
     name, n = base, 1
@@ -434,7 +397,6 @@ def yara_source(key: str, name: str) -> str:
     return "".join(parts)
 
 
-# ── fail2ban: plain-English patterns with their real regex ──────────────
 F2B_PATTERNS = [
     {"key": "failed-login",
      "title": "Failed login attempts",
@@ -463,7 +425,6 @@ def f2b_pattern(key: str) -> dict | None:
 
 
 def f2b_name(source: str) -> str:
-    """Jail name derived from what it watches — no typing."""
     stem = (source or "log").rsplit(":", 1)[-1].rsplit("/", 1)[-1]
     stem = stem.replace(".service", "").replace(".log", "")
     stem = re.sub(r"[^A-Za-z0-9_-]", "-", stem).strip("-") or "log"

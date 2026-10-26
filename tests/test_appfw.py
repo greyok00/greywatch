@@ -1,4 +1,3 @@
-"""tests/test_appfw.py — the app firewall's own battery (rebuilt, in-suite)."""
 import json
 import subprocess
 import socket
@@ -28,7 +27,6 @@ def _conn(**kw):
     return c
 
 
-# ── rules ────────────────────────────────────────────────────────────────
 def test_rule_validation_refuses_empty_operator():
     with pytest.raises(R.ValidationError):
         R.validate("x", "allow", "always", "process.path", "")
@@ -46,7 +44,6 @@ def test_store_persists_always_and_dedupes(tmp_path):
     st.add(R.rule_from_decision(
         _conn(process_path="/usr/bin/curl", dst_host="example.net"),
         "deny", "always"))
-    # same operator+value → dedupe, even under a different name
     st.add(R.validate("dup", "allow", "always", "process.path",
                       "/usr/bin/curl"))
     files = list((tmp_path / "rules").glob("*.json"))
@@ -54,10 +51,8 @@ def test_store_persists_always_and_dedupes(tmp_path):
     st2 = R.RuleStore(tmp_path / "rules")
     st2.reload()
     assert len(st2.all_rules()) == 1
-    # a site rule with a wildcard host matches subdomains, not lookalikes
     st2.add(R.validate("ads", "deny", "always", "dst.host", "*.ads.example"))
     assert st2.decide(_conn(dst_host="www.ads.example")).action == "deny"
-    # a look-alike host, from a NON-curl program: neither rule matches
     assert st2.decide(_conn(process_path="/usr/bin/other",
                             dst_host="notads.example")) is None
 
@@ -71,7 +66,6 @@ def test_session_rules_die_with_the_engine(tmp_path):
     assert st.decide(_conn(process_path="/usr/bin/python3")) is None
 
 
-# ── policy chain ─────────────────────────────────────────────────────────
 class FakeTrust:
     def __init__(self, allow=(), block=(), apps=None):
         self.allow, self.block = set(allow), set(block)
@@ -192,7 +186,6 @@ def test_fail_open_on_chain_error(tmp_path):
     assert (act, dur) == ("allow", "once")   # fail-open, never a lockout
 
 
-# ── resolve (fake /proc tree) ────────────────────────────────────────────
 def _fake_proc(tmp_path):
     netdir = tmp_path / "net"
     netdir.mkdir(parents=True)
@@ -232,7 +225,6 @@ def test_resolver_cache_survives_until_ttl(tmp_path):
     assert c2.pid == 999                 # served from the cache
 
 
-# ── engine ───────────────────────────────────────────────────────────────
 
 class _FakeSub:
     DEVNULL = -3

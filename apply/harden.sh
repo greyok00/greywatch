@@ -1,120 +1,8 @@
 #!/bin/bash
-# apply/harden.sh — pkexec helper for the hardening wizard (Tasks 5).
-# Fixed argv + case-statement verb allowlist; NO eval. The only command
-# whose ARGUMENTS come from the plan is a `bash -c` on the plan's own
-# fix/probe string — the planner validates that string before it is ever
-# written to the plan file, same trust level as the probes the detector
-# already runs.
-#
-# Usage:
-#   harden.sh apply <plan.json>       execute the plan, verify, rollback on failure
-#   harden.sh undo  <id> <journal>    restore before-values for one journal id
-#   harden.sh plan  <plan.json>       validate + echo the plan back (dry-run wiring)
-#   harden.sh verify <id> <journal>   re-run one journal id's entry probes
-#                                     and print VERBIFY lines (no restore)
-#   harden.sh --apply --undo --verify argv aliases of the bare verbs
-#                                     (accepted IN ADDITION; identical
-#                                     arg counts; unknown mode words
-#                                     still exit 2, named on stderr)
-#
-# Exit codes (documented contract):
-#   0  clean pass (apply: nothing failed; undo: restored and re-verified)
-#   2  entry-level failure (apply: a fix step exited nonzero, a plan entry
-#      was bad/skipped, or the backup/journal could not be written for an
-#      entry — that entry was NOT mutated; undo: a restore op failed)
-#   3  undo: before-values restored, but the plan's re-probes no longer
-#      pass — undo did its job, the system no longer verifies clean
-#   4  apply: a fix verified RED and was rolled back cleanly — the machine
-#      is back at its before-state, but the fix itself did not hold
-#   5  apply: the ROLLBACK ITSELF failed (a backup restore errored) — the
-#      machine may not be back at its before-state. 5 is the worst code
-#      and is never overwritten by a lesser one (no fall-through).
-#
-# Apply also appends one JSONL record per mutated entry to
-#   data/hardening-journal.jsonl
-# written BEFORE any mutation: a journal-write failure aborts that entry
-# with BACKUP-FAILED exactly like a backup failure (no journal entry =
-# no change). Each record is {"id", "ts", "before", "plan"} where
-# "before" holds base64 blobs of the file's true pre-mutation content
-# (or {"absent"} / the unit's enable+active state) and "plan" is the
-# entry itself so undo can re-probe with the planner's own probes.
-#
-# Plan JSON format (planner-written, helper-owned vocabulary):
-#   {"entries": [ {"id": "...",          # [A-Za-z0-9._-] only
-#                 "verb": "...",         # sh | unit-install | sysctl-set |
-#                                        # service-off | pkg-upgrade
-#                 "probe": "...",        # rc==0 means fixed (honored again here)
-#                 "probe_invert": bool,  # optional: rc!=0 means fixed
-#                 ... verb arguments ... } ]}
-# Verb arguments:
-#   sh            "cmd": "one shell line (the validated fix step)"
-#   unit-install  "path": "<unit file path>", "text": "<full unit text>"
-#   sysctl-set    "key": "<sysctl key>", "value": "<target value>"
-#   service-off   "unit": "<unit name to disable --now>" (before-state is
-#                 recorded in data/backups/harden/<id>/unit.was-enabled and
-#                 unit.was-active so rollback can enable/start it back)
-#
-# Changeset JSON (wizard-written, validated python-side by
-# wizard/changeset.py BEFORE handoff; re-gated here) is ALSO accepted at
-# the apply argv slot:
-#   {"version": 1, "journal_id": "<YYYYMMDD-HHMMSS>",
-#    "changes": [ {"control_id": "...", "action": "apply|verify|rollback",
-#                  "backup_path": "<plan-fragment path>"} ]}  # REQUIRED
-# backup_path shape (W5 round 1): per-pass fragment layout ONLY —
-#   data/harden/journal/<jid>/<name>.json (or absolute tail
-#   .../harden/journal/<jid>/<name>.json); '..' segments and unrelated
-#   absolute paths are refused, so a fragment from /tmp can never run
-#   its cmd/probe as root. apply/verify fragments MUST sit in this
-#   pass's dir; rollback fragments MUST sit in the TARGET pass dir.
-# Translation (kept at the TOP of the apply path; the inner loops are
-# untouched):
-#   * journal_id names the per-pass dir  data/harden/journal/<journal_id>/
-#     which the helper creates; pass backups and the pass journal
-#     (journal.jsonl) live under it (default plan-json runs keep the
-#     plain data/ layout).
-#   * action "apply"  -> the fragment JSON at backup_path ({"entries":
-#     [...]}: same vocabulary + same planner-trust level as a plan file)
-#     is spliced into the pass entries.
-#   * action "verify" -> the fragment's probes run as no-op sh entries
-#     (cmd "true"), so the existing probe pass prints their VERBIFY
-#     lines and nothing mutates.
-#   * action "rollback" -> served AFTER the main loops by re-entering
-#     the helper's undo pipeline per control_id. Its fragment sits in
-#     the pass dir it undoes (data/harden/journal/<target
-#     journal_id>/<control_id>.json) — dirname(backup_path)/journal.jsonl
-#     is the pass journal to undo from. A clean child rollback exits 3
-#     (restored, so the FIXED-state probe no longer passes — that is
-#     honesty, not failure) and is folded here as success.
-#   * applies run first, then verifies, then rollbacks — a changeset is
-#     batched, NOT a mid-pass sequencer; mixed ordering is not
-#     supported and the document cannot rely on intra-pass sequencing.
-# DUPLICATE same-id decision (W3's deferred minor, decided here at the
-# wiring gate): a changeset carrying the same control_id twice — e.g.
-# one apply and one rollback for one control — is REFUSED with the named
-# message CHANGES-DUP-ID and rc 2. One pass mutates each control at most
-# once; the per-pass journal keys its records by control_id, so a
-# same-id pair would collapse two directives into one ambiguous undo
-# record. Split passes if both are truly wanted. The python validator
-# (wizard/changeset.py) refuses the same shape.
-#
-# Before-values for every file touched are backed up to
-#   <repo>/data/backups/harden/<id>/<basename>.bak
-# (repo derived from this script's own location: script_dir/..). A backup
-# that never happens cannot silently mask a changed system: when the
-# pre-change file does not exist, a `.absent` marker is written instead
-# and rollback removes the installed file rather than restoring.
-#
-# The script is machine-agnostic: no hardcoded host paths beyond the
-# documented defaults below, no device identifiers or hardware fingerprints.
 set -uo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || exit 2
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd) || exit 2
-# GREYWATCH_DATA_DIR / GREYWATCH_TEST_SYSCTL_CONF exist ONLY for the
-# offline shell tests (tests/test_harden_shell.py): they redirect where
-# runtime state and the sysctl conf are written so no test ever touches
-# the real /etc or the repo's live data/. Production (pkexec) runs never
-# set them and use the defaults.
 DATA_DIR="${GREYWATCH_DATA_DIR:-$REPO_DIR/data}"
 BACKUP_ROOT="$DATA_DIR/backups/harden"
 JOURNAL_PATH="$DATA_DIR/hardening-journal.jsonl"
@@ -127,10 +15,6 @@ usage() {
 
 [ $# -ge 1 ] || usage
 MODE=$1
-# --apply/--undo/--verify are accepted aliases of the bare verbs (W5);
-# nothing else is. Only the literal lowercase words pass the gate and an
-# unknown word is refused with exit 2, named (or anonymized when it
-# would smuggle unprintables into the error line).
 case "$MODE" in
     apply|--apply) [ $# -eq 2 ] || usage ;;
     undo|--undo)   [ $# -eq 3 ] || usage ;;
@@ -138,8 +22,6 @@ case "$MODE" in
     plan)          [ $# -eq 2 ] || usage ;;
     *)
         if [[ "$MODE" =~ ^(--)?[A-Za-z-]+$ ]]; then
-            # printable (uppercase incl.) but not in the allowlist: say
-            # THAT, never the misleading "(unprintable)"
             echo "unknown verb: $MODE (not in the allowlist)" >&2
         else
             echo "unknown verb (not in the allowlist)" >&2
@@ -147,16 +29,12 @@ case "$MODE" in
         exit 2
         ;;
 esac
-# normalize the alias to the bare verb so every branch below stays bare
 MODE=${MODE#--}
 
 TD=$(mktemp -d "${TMPDIR:-/tmp}/harden.XXXXXX") || exit 2
 trap 'rm -rf -- "$TD"' EXIT
 
-# ---- small python3 bridges (no eval; JSON decoded, results emitted as
-# ---- argv or files, never re-assembled into shell by hand) ------------
 
-# get <entry.json> <key>  ->  print the value; bool renders as True/False
 get() {
     python3 - "$1" "$2" <<'PY'
 import json, sys
@@ -173,7 +51,6 @@ print(v)
 PY
 }
 
-# put_text <entry.json> <key> <dest.txt>  ->  write the key's text verbatim
 put_text() {
     python3 - "$1" "$2" "$3" <<'PY'
 import json, sys
@@ -189,7 +66,6 @@ with open(sys.argv[3], "w", encoding="utf-8") as fh:
 PY
 }
 
-# split_entries <plan.json> <outdir>  ->  one e.NNN.json per entry
 split_entries() {
     python3 - "$1" "$2" <<'PY'
 import json, sys, os
@@ -209,9 +85,6 @@ for i, e in enumerate(entries):
 PY
 }
 
-# sniff_shape <file>  ->  prints "changeset" | "plan" | "none" (nothing
-# only when the file is unreadable — the caller handles that with its
-# own message). A dict that is neither shape refuses named CHANGES-SHAPE.
 sniff_shape() {
     python3 - "$1" <<'PY'
 import json, sys
@@ -231,14 +104,6 @@ elif isinstance(d, list):
 PY
 }
 
-# changeset_translate <cfile> <entries-outdir> <rollback-list-file>
-# <error-file> <data-dir>  ->  validate the wizard handoff and build the
-# pass: applies spliced from their plan fragments into e.NNN.json,
-# verify entries as no-op sh, rollback rows (<control-id> TAB <target
-# pass journal>) one per line in the list file. Prints the journal id on
-# success. On refusal writes the named message to <error-file> and exits
-# 2 — the caller echoes it (filtered to printable) and exits 2 BEFORE
-# anything is executed.
 changeset_translate() {
     python3 - "$1" "$2" "$3" "$4" "$5" <<'PY'
 import json, os, re, sys
@@ -246,9 +111,6 @@ cfile, eout, rbf, errf, datadir = sys.argv[1:6]
 CS_ACTIONS = ("apply", "verify", "rollback")
 ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 JID_RE = re.compile(r"^[0-9]{8}-[0-9]{6}$")
-# backup_path shape of record (mirrors wizard/schema.json): per-pass
-# fragment layout only. '..' anywhere, whitespace, or an unrelated
-# absolute path is refused BEFORE this path is ever opened.
 FPATH_RE = re.compile(
     r"^(data/harden/journal/[0-9]{8}-[0-9]{6}/[A-Za-z0-9._-]+\.json"
     r"|/(?:[A-Za-z0-9._-]+/)*harden/journal/[0-9]{8}-[0-9]{6}/"
@@ -284,36 +146,23 @@ def resolve_bp(cid, action, bpath):
     RESOLVED absolute path every later open uses."""
     if not isinstance(bpath, str) or isinstance(bpath, bool):
         fail("CHANGES-BACKUP-PATH %s" % cid)
-    # traversal is named FIRST: '..' anywhere is its own refusal even
-    # when the layout pattern would also reject it
     if ".." in bpath.replace("\\", "/").split("/"):
         fail("CHANGES-BACKUP-PATH-TRAVERSAL %s" % cid)
     if not FPATH_RE.fullmatch(bpath):
         fail("CHANGES-BACKUP-PATH %s" % cid)
     cand = bpath if bpath.startswith("/") \
         else os.path.join(os.path.dirname(os.path.abspath(datadir)), bpath)
-    # SYMLINK bypass closed (W5 round 2): the string path can sit inside
-    # the pass dir while pointing through a symlink at /tmp — every later
-    # open/undo uses the FULLY RESOLVED path, and the scope compare runs
-    # on realpath of both sides.
     real = os.path.realpath(cand)
     parent = os.path.dirname(real)
     if action == "rollback":
-        # the directive's fragment sits in the TARGET pass dir whose
-        # journal it undoes: under <data>/harden/journal/<target-jid>/
         tgt_ok = parent.startswith(os.path.realpath(journal_root) + os.sep) \
             and JID_RE.fullmatch(os.path.basename(parent) or "")
         if not tgt_ok:
             fail("CHANGES-ROLLBACK-SCOPE %s" % cid)
-        # the journal itself is symlink-checked too: undo reads it as root
         tjr = os.path.realpath(os.path.join(parent, "journal.jsonl"))
         if os.path.dirname(tjr) != parent:
             fail("CHANGES-ROLLBACK-SCOPE %s" % cid)
         return real, tjr
-    # apply/verify: the fragment must sit in THIS pass's dir — a fragment
-    # from /tmp (or anywhere else on the machine, symlinked or not) could
-    # run its own root-privileged cmd/probe, so out-of-pass paths are
-    # refused.
     if parent != os.path.realpath(pass_dir):
         fail("CHANGES-BACKUP-PATH-SCOPE %s" % cid)
     return real, None
@@ -367,7 +216,6 @@ print(cs["journal_id"])
 PY
 }
 
-# sysctl_set <key> <value>  ->  append-or-replace in the hardening conf
 sysctl_set() {
     python3 - "$1" "$2" "$SYSCTL_CONF" <<'PY'
 import sys
@@ -384,25 +232,15 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 }
 
-# ok_plain_text: for values written INTO a file (sysctl conf lines) —
-# printable ASCII + space only, and never newline / ; | & ` \ : those are
-# the characters that could smuggle extra lines into the root conf or
-# fabricate other entries' verify-strip lines.
 ok_plain_text() {
     case "$1" in
         "") return 1 ;;
         *[![:print:]]*) return 1 ;;
     esac
-    # ; | & ` \ — checked via grep so no metacharacter appears in a bash
-    # pattern (a raw backtick in a case/[[]] pattern is a parse hazard).
     printf '%s' "$1" | grep -qE '[`|&;\\]' && return 1
     return 0
 }
 
-# worse_rc <code>: keep the WORST exit so far — no fall-through, so a
-# failed rollback's 5 is never clobbered by a later 4. Ladder (apply):
-# 0 clean < 2 entry/skip failure < 4 verified-RED-then-rolled-back-cleanly
-# < 5 the rollback itself failed.
 worse_rc() {
     case "$rc" in
         0) rc=$1 ;;
@@ -411,11 +249,6 @@ worse_rc() {
     esac
 }
 
-# capture_before <path>  ->  emit one pending journal line:
-#   ABSENT<TAB><path>             the file did not exist before
-#   B64<TAB><base64><TAB><path>   the file content, quoted for TSV travel
-# A read/permission OSError (anything but plain absence) exits 2 so the
-# caller aborts that entry with BACKUP-FAILED instead of guessing.
 capture_before() {
     python3 - "$1" <<'PY'
 import base64, pathlib, sys
@@ -432,12 +265,6 @@ sys.stdout.write(
 PY
 }
 
-# journal_write <entry.json> <id>  ->  append exactly one JSONL record to
-# data/hardening-journal.jsonl, building it from the pending lines left
-# in $TD/journal.tsv (the caller clears that file per entry). Stdlib
-# python only, values travel as argv/files, never re-assembled by hand.
-# Called BEFORE that entry mutates anything: a failure here aborts the
-# entry (caller emits BACKUP-FAILED, no mutation happens).
 journal_write() {
     python3 - "$JOURNAL_PATH" "$TD/journal.tsv" "$1" "$2" <<'PY'
 import json, sys
@@ -478,7 +305,6 @@ except OSError:
 PY
 }
 
-# ---- validation -------------------------------------------------------
 
 ok_id() {
     case "$1" in
@@ -496,7 +322,6 @@ ok_sysctl_key() {
     esac
 }
 
-# backup_of <id> <path>  ->  back up existing file or record ".absent" marker
 backup_of() {
     local bdir="$BACKUP_ROOT/$1" bfile
     bfile=$(basename -- "$2")
@@ -508,8 +333,6 @@ backup_of() {
     fi
 }
 
-# rollback_of <entry.json>  ->  restore that entry's before-value and reload;
-# returns nonzero and emits ROLLBACK-FAILED when the restore itself failed
 rollback_of() {
     local efile=$1 verb id path bdir bfile unit ret=0
     verb=$(get "$efile" verb)
@@ -535,10 +358,6 @@ rollback_of() {
             systemctl restart "$(basename -- "$path")" 2>/dev/null || ret=1
             ;;
         sysctl-set)
-            # Rollback prefers THIS id's own backup, then falls back to
-            # the pass-level snapshot the first sysctl entry took
-            # (later sysctl entries share that pristine snapshot — see
-            # the cp -n comment in the apply loop).
             snapped=0
             for snapdir in "$bdir" "$BACKUP_ROOT/_sysctl-snapshot"; do
                 if [ -f "$snapdir/99-greywatch-hardening.conf.bak" ]; then
@@ -579,7 +398,6 @@ rollback_of() {
     return 0
 }
 
-# run_probe <entry.json>  ->  rc via stdout, honoring probe_invert
 run_probe() {
     local probe probe_rc
     probe=$(get "$1" probe)
@@ -592,7 +410,6 @@ run_probe() {
     return "$probe_rc"
 }
 
-# ---- apply ------------------------------------------------------------
 
 rc=0
 if [ "$MODE" = "apply" ]; then
@@ -601,9 +418,6 @@ if [ "$MODE" = "apply" ]; then
     shape=$(sniff_shape "$planfile")
     case "$shape" in
         changeset)
-            # The wizard's changeset handoff: translate at the top (see
-            # the header contract), then fall through unchanged into the
-            # plan-json inner loops with the entries already built.
             csjid=$(changeset_translate "$planfile" "$TD" \
                 "$TD/rollback.list" "$TD/cs.err" "$DATA_DIR") \
                 || { cserr=$(cat -- "$TD/cs.err" 2>/dev/null)
@@ -613,8 +427,6 @@ if [ "$MODE" = "apply" ]; then
                          *) echo "$cserr" >&2 ;;
                      esac
                      exit 2 ; }
-            # Per-pass dir: journal + backups keyed by THIS pass's
-            # journal id (helper creates it; python references it).
             BACKUP_ROOT="$DATA_DIR/harden/journal/$csjid/backups"
             JOURNAL_PATH="$DATA_DIR/harden/journal/$csjid/journal.jsonl"
             mkdir -p -- "$BACKUP_ROOT" \
@@ -634,8 +446,6 @@ if [ "$MODE" = "apply" ]; then
     efiles=("$TD"/e.*.json)
     shopt -u nullglob
     if [ "${#efiles[@]}" -eq 0 ] && [ ! -s "$TD/rollback.list" ]; then
-        # A pass with nothing to mutate or undo must never silently
-        # exit 0: fail closed, named.
         echo "CHANGES-SHAPE (a pass carries no changes)" >&2
         exit 2
     fi
@@ -677,8 +487,6 @@ if [ "$MODE" = "apply" ]; then
                     printf '%s\n' "$(basename -- "$efile")" >> "$TD/skip.list"
                     continue
                 }
-                # Journal BEFORE mutation (same honesty contract as the
-                # backup): no journal entry means no change happened.
                 : > "$TD/journal.tsv"
                 capture_before "$path" >> "$TD/journal.tsv" \
                     || { echo "BACKUP-FAILED $id" >&2; rc=2
@@ -705,13 +513,6 @@ if [ "$MODE" = "apply" ]; then
                 fi
                 step_rc=0
                 if [ -f "$TD/sysctl.snapshot" ]; then
-                    # cp -n semantics, like ids: only the FIRST sysctl
-                    # entry of this pass snapshots the conf (into the
-                    # shared _sysctl-snapshot backup dir, where rollback
-                    # of every sysctl id can find it); a later entry must
-                    # NOT overwrite that pristine snapshot, or undoing an
-                    # earlier id would restore a state that already
-                    # contained entry-one's change.
                     :
                 else
                     backup_of "_sysctl-snapshot" "$SYSCTL_CONF" \
@@ -723,10 +524,6 @@ if [ "$MODE" = "apply" ]; then
                              printf '%s\n' "$(basename -- "$efile")" >> "$TD/skip.list"
                              continue; }
                 fi
-                # Journal per id, BEFORE mutation: each sysctl id gets its
-                # own true pre-change content (which is why the journal
-                # capture is per-entry even though the backup snapshot is
-                # once per pass).
                 : > "$TD/journal.tsv"
                 capture_before "$SYSCTL_CONF" >> "$TD/journal.tsv" \
                     || { echo "BACKUP-FAILED $id" >&2; rc=2
@@ -760,14 +557,9 @@ if [ "$MODE" = "apply" ]; then
                         > "$bdir/unit.was-enabled" \
                     || ! printf '%s\n' "${state_ac:-not-found}" \
                         > "$bdir/unit.was-active"; then
-                    # Unchecked marker writes used to mean a silent state
-                    # that rollback could not restore: apply the same
-                    # backup_of contract instead.
                     mkfail
                     continue
                 fi
-                # Journal BEFORE mutation: record the unit's live
-                # enable+active state for undo.
                 : > "$TD/journal.tsv"
                 printf 'STATE\t%s\t%s\t%s\n' "$unit" \
                     "${state_en:-not-found}" "${state_ac:-not-found}" \
@@ -785,12 +577,6 @@ if [ "$MODE" = "apply" ]; then
                 [ "$step_rc" -eq 0 ] || rc=2
                 ;;
             *)
-                # Verb/stdout injection guard: the verb line is never
-                # echoed verbatim from the plan — an embedded newline
-                # could fabricate a `VERBIFY <id> 0` line for another
-                # entry's id and fake GREEN on the UI strip. Anything
-                # that is not one bare lowercase word cannot even be
-                # named; it is skipped with a validated id instead.
                 if [[ "$verb" =~ ^[a-z-]+$ ]]; then
                     echo "verb not allowed: $verb" >&2
                 else
@@ -803,7 +589,6 @@ if [ "$MODE" = "apply" ]; then
         esac
     done
 
-    # Re-run every entry's probe as root (this process already IS root).
     for efile in "${efiles[@]}"; do
         grep -qxF "$(basename -- "$efile")" "$TD/skip.list" 2>/dev/null && continue
         id=$(get "$efile" id)
@@ -824,8 +609,6 @@ if [ "$MODE" = "apply" ]; then
             echo "VERBIFY $id $probe_rc"
             case "$verb" in
                 sh|pkg-upgrade)
-                    # Nothing was backed up for these verbs: refuse to
-                    # claim a rollback that would not restore anything.
                     echo "ROLLBACK-SKIP $id" >&2
                     worse_rc 4
                     ;;
@@ -834,10 +617,6 @@ if [ "$MODE" = "apply" ]; then
                         echo "ROLLBACK $id"
                         worse_rc 4
                     else
-                        # The rollback itself failed: THAT is the code
-                        # that must survive — a later entry's clean
-                        # rollback may not downgrade a 5 (worse_rc
-                        # keeps the worst; see the ladder comment).
                         worse_rc 5
                     fi
                     ;;
@@ -845,13 +624,7 @@ if [ "$MODE" = "apply" ]; then
         fi
     done
 
-    # Changeset rollback directives, AFTER the batch (applies -> verifies
-    # -> rollbacks; see the header contract): each control id re-enters
-    # the undo pipeline against this pass's journal. rc 3 from the child
-    # means "restored, and the FIXED-state probe now (honestly) fails" —
-    # success; anything worse than that is an entry-level failure.
     if [ -s "$TD/rollback.list" ]; then
-        # one TSV row per directive:  <control-id> TAB <target pass journal>
         while IFS=$'\t' read -r rjid rjpath; do
             [ -n "$rjid" ] || continue
             echo "CHANGES-ROLLBACK $rjid"
@@ -866,7 +639,6 @@ if [ "$MODE" = "apply" ]; then
     fi
 fi
 
-# ---- plan (dry-run wiring: validate then echo back) -------------------
 
 if [ "$MODE" = "plan" ]; then
     planfile=$2
@@ -876,22 +648,13 @@ if [ "$MODE" = "plan" ]; then
     echo
 fi
 
-# ---- undo -------------------------------------------------------------
 
-# ---- undo / verify ----------------------------------------------------
-# Both take journal id + journal path. undo restores first, then re-verify;
-# verify re-runs the entry probes ONLY (restore-free green check).
 if [ "$MODE" = "undo" ] || [ "$MODE" = "verify" ]; then
     jid=$2
     jpath=$3
     ! ok_id "$jid" && { echo "bad journal id" >&2; exit 2; }
     [ -r "$jpath" ] || { echo "journal not readable: $jpath" >&2; exit 2; }
 
-    # Each restored value is emitted as  KIND TAB <args>  so no shell
-    # metacharacter ever travels unquoted between python and bash:
-    #   B64    <base64-content>  <restore-path>
-    #   ABSENT <restore-path>                (remove the file again)
-    #   STATE  <unit> <was-enabled> <was-active>   (service-off units)
     python3 - "$jid" "$jpath" > "$TD/undo.tsv" <<'PY'
 import base64, json, sys
 jid, jpath = sys.argv[1], sys.argv[2]
@@ -981,7 +744,6 @@ PY
                 esac
                 ;;
             ABSENT)
-                # The path did not exist before: undo removes it again.
                 rm -f -- "$a" 2>/dev/null && {
                     echo "RESTORE-ABSENT $jid $a"
                     n=$((n + 1))
@@ -989,8 +751,6 @@ PY
                        [ "$rc" -eq 0 ] && rc=2; }
                 ;;
             STATE)
-                # service-off undo: restore the unit's enable+active
-                # state exactly as recorded (only if it was on).
                 if [ "$b" = "enabled" ]; then
                     systemctl enable -- "$a" 2>/dev/null || true
                 fi
@@ -1006,8 +766,6 @@ PY
     [ "$n" -gt 0 ] || { echo "no before-values for id: $jid" >&2; exit 2; }
     fi    # undo-only restore loop; verify mode skips straight to probing
 
-    # Re-verify with the journal entry's own plan probes, same reporting
-    # contract as apply.
     split_journal_plan() {
         python3 - "$jpath" "$jid" "$TD" <<'PY'
 import json, sys, os
@@ -1043,7 +801,6 @@ PY
             else
                 probe_rc=$?
                 echo "VERBIFY $id $probe_rc"
-                # A restore failure (2) outranks a verify miss (3).
                 [ "$rc" -eq 0 ] && rc=3
             fi
         done

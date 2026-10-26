@@ -1,5 +1,4 @@
 #!/bin/bash
-# helper (pkexec only): widen a scanner ban = ufw limit from that IP
 set -euo pipefail
 GW_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 [ $# -eq 1 ] || { echo "usage: widen-scan-ban.sh IP" >&2; exit 64; }

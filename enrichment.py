@@ -1,10 +1,3 @@
-"""Enrichment — Task 4: NIST CSF 2.0 + SP 800-53r5 tagging + CVE extraction.
-
-Contract (plan line 102): every event gets its tool's NIST function +
-controls from nist-map.json (map covers EVERY registry name — sync contract
-tested), and any CVE IDs present in the text are regex-validated and kept.
-Offline is a VALID state (weekly local cache, see cve-refresh.py).
-"""
 from __future__ import annotations
 
 import json
@@ -22,7 +15,6 @@ _cache: dict = {}
 
 
 def load_map(path=_MAP_PATH) -> dict:
-    """Load nist_defaults; cached module-wide."""
     global _cache
     if not _cache:
         _cache = json.loads(pathlib.Path(path).read_text())["nist_defaults"]
@@ -30,7 +22,6 @@ def load_map(path=_MAP_PATH) -> dict:
 
 
 def sync_map_names(registry: list) -> None:
-    """Raise AssertionError if any registered tool is missing from the map."""
     missing = [t["name"] for t in registry if t["name"] not in load_map()]
     assert not missing, f"nist-map missing tools: {missing}"
 
@@ -45,11 +36,6 @@ def extract_cves(text: str) -> list:
 
 
 def enrich(ev: Event) -> Event:
-    """Tag an event in-place with its tool's NIST function/controls + CVEs.
-
-    Unknown tool → untouched defaults (DETECT) with empty controls — an
-    enforced-by-test situation (sync contract) that must still never raise.
-    """
     defaults = load_map().get(ev.from_tool) or {"func": "DETECT", "controls": []}
     func = defaults["func"]
     assert _FUNC_RE.match(func)

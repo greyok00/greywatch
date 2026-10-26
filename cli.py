@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """greywatch CLI — L2, the full control plane (Task 6a; BUILT BEFORE the GUI).
 
     greywatch status
@@ -40,7 +39,6 @@ DATA_DIR = daemon_mod.DATA_DIR
 
 IP_RE = re.compile(rules.IP_RE)   # octet-bounded (from rules.py)
 JAIL_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-# restartable units: user-scope timers/services the owner already runs
 RESTART_WHITELIST = frozenset({
     "yara-tmp-scan.timer", "yara-watch.service",
     "clam-scan.timer", "aide-check.timer",
@@ -67,8 +65,6 @@ def cmd_status(_args) -> int:
     for name, info in sorted(snap["tools"].items()):
         state = info["state"]
         extra = ""
-        # The weekly list is not a service: show what the person cares about
-        # — whether the data is current (same rule as the GUI).
         if name == "cve-updater" and updates.cve_list() is not None:
             state = "GREEN" if updates.cve_is_fresh() else "YELLOW"
             info_cve = updates.cve_list() or {}
@@ -85,10 +81,6 @@ def cmd_status(_args) -> int:
 
 
 def _events_readable():
-    """The daemon (root) writes events.jsonl 0600. read_events() returns []
-    for ANY OSError — the GUI leans on that for a missing file, but for a
-    CLI run as plain grey it silently ate "permission denied" as "no
-    events". The CLI must say so (audit 2026-10-25: empty output, exit 0)."""
     path = DATA_DIR / "events.jsonl"
     if path.exists() and not os.access(path, os.R_OK):
         print("greywatch: events.jsonl is written by the root daemon and is "
@@ -125,7 +117,6 @@ def _render(e: dict) -> str:
 
 
 def cmd_tail(args) -> int:
-    """Follow events.jsonl (G3.2: injected events appear ≤1 s)."""
     import time
     path = DATA_DIR / "events.jsonl"
     if not path.exists():
@@ -181,7 +172,6 @@ def cmd_decisions(args) -> int:
 
 
 def _gather_specs():
-    """Decision specs from events.jsonl + which are answered."""
     answered = pending_ids(DATA_DIR / "decisions.jsonl")
     specs, seen = [], set()
     for e in _read_events():
@@ -227,8 +217,6 @@ def _orig_text(spec_id):
 
 
 def helper_exec(helper: str, args_list):
-    """pkexec ONLY, allowlisted helper script, argv-validated (never
-    shell=True). In tests, override via GREYWATCH_HELPER_CMD."""
     import os
     script = ROOT / "apply" / f"{helper}.sh"
     override = os.environ.get("GREYWATCH_HELPER_CMD")
@@ -243,7 +231,6 @@ def helper_exec(helper: str, args_list):
 
 
 def cmd_rules(args) -> int:
-    """`greywatch rules <tool> …` — the wizard builders (Task 8 reuses them)."""
     try:
         from rules import rules_main
     except ImportError:
@@ -301,21 +288,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def cmd_doctor(args) -> int:
-    """Doctor: diagnose + (with --fix) recover every tool. User-space + pkexec
-    whitelists only; never arms the network path."""
     import doctor as doctor_mod
     return doctor_mod.doctor(fix=args.fix, only=args.only)
 
 
 def cmd_setup(args) -> int:
-    """First-install tool setup/audit (owner order 2026-10-24): walks every
-    roster tool, reports READY/OFFLINE/BROKEN, lists exact remediation."""
     import setup as setup_mod
     return setup_mod.run()
 
 
 def cmd_action(args) -> int:
-    """Validated actions. Non-whitelisted restarts are REJECTED+explained."""
     if args.what == "restart":
         if args.target not in RESTART_WHITELIST:
             _fail(f"unit {args.target!r} is NOT restartable from greywatch. "

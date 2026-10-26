@@ -1,20 +1,3 @@
-"""Tray (GTK4 era) — the GTK4 app's window onto a GTK3 helper process.
-
-The ONLY tray that ever rendered correctly on this mate-panel is
-AyatanaAppIndicator3, a GTK3 binding. Since the app is GTK4, the tray now
-runs in its own tiny process (ui/tray_helper.py) and this module is the
-parent-side driver: it spawns the helper, feeds it badge/alert updates as
-JSON lines, and turns the helper's {"event": ...} lines back into the same
-on_show / on_quit callbacks app.py has always wired.
-
-Contract with app.py / decisions.py (unchanged):
-    Tray(badge_cb=...)   — spawns the helper; failure is non-fatal
-    tray.refresh_badge() — re-collects data, pushes an update; returns count
-    tray.on_show / .on_quit / .stop()
-
-Every IO failure is a print + no-tray — the app itself still opens. The
-helper dying (indicator host restart, crash) is caught the same way.
-"""
 import json
 import os
 import subprocess
@@ -34,7 +17,6 @@ def _offline(why) -> None:
 
 
 class Tray:
-    """Wrapper around the GTK3 tray-helper process."""
 
     def __init__(self, badge_cb=None, icon="greywatch", on_show=None,
                  on_quit=None, item_id="greywatch"):
@@ -47,7 +29,6 @@ class Tray:
         self._pending, self._alerts = 0, []
         self.start()
 
-    # ── helper process ──────────────────────────────────────────────────
     def start(self):
         try:
             self._proc = subprocess.Popen(
@@ -77,7 +58,6 @@ class Tray:
                 GLib.idle_add(self._fire, self.on_show or self._spawn_app)
             elif event == "quit":
                 GLib.idle_add(self._fire, self.on_quit)
-            # other events (ready) are protocol acks, not user actions
         self._proc = None
         GLib.idle_add(_offline, "helper exited")
 
@@ -99,7 +79,6 @@ class Tray:
 
     @staticmethod
     def _app_running() -> bool:
-        """True when another process holds data/gui.lock (the app itself)."""
         import fcntl
         import pathlib
         lock = pathlib.Path(_HELPER).resolve().parents[1] / "data" / "gui.lock"
@@ -112,8 +91,6 @@ class Tray:
             return True
 
     def _spawn_app(self):
-        """Fallback when no window handle exists: a new app.py self-dedupes
-        through the gui.lock (never a second dashboard)."""
         if self._app_running():
             if self.on_show:
                 self.on_show()
@@ -134,9 +111,7 @@ class Tray:
             pass
         self._proc = None
 
-    # ── badge + alerts (same data source as before) ─────────────────────
     def refresh_badge(self) -> int:
-        """Returns (pending+alerts) count; menu shows the actual alerts."""
         pending = 0
         alerts = []
         try:
@@ -155,7 +130,6 @@ class Tray:
                 spec = e.get("interaction")
                 if spec and spec.get("id") not in answered:
                     pending += 1
-                # feed_worthy() drops check-in heartbeats (routine noise)
                 if not feed_worthy(e):
                     continue
                 try:

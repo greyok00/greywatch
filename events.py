@@ -1,12 +1,3 @@
-"""Event model — the one event type the daemon, CLI and GUI all speak.
-
-Lifecycle: parsers (per tool, real log formats) -> enrichment (NIST/CVE tags)
--> daemon appends to events.jsonl -> CLI/GUI read. Interaction specs are added
-by the daemon's decision factory, never by parsers.
-
-`from_dict` is strict on purpose: foreign keys from a corrupted events file
-must fail loudly in tests, never silently mutate state.
-"""
 from __future__ import annotations
 
 import dataclasses
@@ -43,7 +34,6 @@ class Event:
 
 
 def normalize_event(tool: str, line: str) -> Optional[Event]:
-    """Dispatch to the per-tool parser. Unknown tool or parser decline -> None."""
     from parsers import PARSERS  # late import: parsers import events
 
     parser = PARSERS.get(tool)

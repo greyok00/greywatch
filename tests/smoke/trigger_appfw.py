@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-"""Trigger one REAL appfw interception: connect to TEST-NET-2 (RFC 5737).
-The engine routes it through rules + policy; the decision lands in
-data/appfw/events.jsonl within ~1 s when the engine is armed."""
 import socket, sys
 try:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

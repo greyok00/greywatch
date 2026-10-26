@@ -1,13 +1,6 @@
 #!/bin/bash
-# launch-ws3.sh — greywatch opens on ONE workspace and never leaves it.
-# Owner order 2026-10-24: the dashboard must never interrupt the workflow —
-# it launches (or is pulled) onto the chosen workspace, silently, no focus
-# steal, no sticky, no follow.
-# Usage: launch-ws3.sh [workspace]    (label is 1-based like the pager; 3 default)
 set -u
 GW="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
-# Workspace: an explicit argument wins; otherwise the owner's saved choice
-# (data/workspace.json, written by the Settings dropdown); otherwise 3.
 if [ -n "${1:-}" ]; then
   WS_LABEL="$1"
 else

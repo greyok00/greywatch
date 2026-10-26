@@ -1,6 +1,4 @@
 #!/bin/bash
-# helper (pkexec only): install one YARA rule under greywatch/ rules dir with
-# backup + index update. argv: RULENAME (the YAML body is staged by the wizard)
 set -euo pipefail
 GW_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 [ $# -eq 1 ] || { echo "usage: yara-write.sh RULENAME" >&2; exit 64; }

@@ -1,6 +1,4 @@
 #!/bin/bash
-# helper (pkexec only): install one TracingPolicy YAML (basename validated),
-# backup the old NN-name, verify load via journal is done by the wizard.
 set -euo pipefail
 GW_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 [ $# -eq 1 ] || { echo "usage: tetra-write.sh /etc/tetragon/tetragon.tp.d/NN-name.yaml" >&2; exit 64; }

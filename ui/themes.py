@@ -1,13 +1,3 @@
-"""greyok theme bridge for the GTK skin (owner order 2026-10-22: "MAKE THE
-THEME DARK AND USE THE GREYUIFRAMEWORK STYLES IN THE SETTINGS SO YOU CAN
-CHOOSE").
-
-The greyok kit (vendored to ui/themes.css, from the framework checkout)
-defines themes as `data-theme="NAME" { --el-*: value }` token blocks. GTK 3
-CSS has no var(), so this module PARSES the real tokens and GENERATES GTK
-CSS classes per picked theme. Setting persists in
-data/greywatch-ui-settings.json. DARK default (owner order).
-"""
 from __future__ import annotations
 
 import json
@@ -19,9 +9,6 @@ THEMES_CSS = ROOT / "ui" / "themes.css"
 SETTINGS_PATH = ROOT / "data" / "greywatch-ui-settings.json"
 DEFAULT_THEME = "console"           # dark, calm (GitHub-dark-like, blue accent)
 
-# The OWNER-FACING choice list (owner order 2026-10-25): exactly two, named
-# in plain words, each backed by ONE kit theme. Everything else in the kit
-# is internal — never stripped names, never a theme the picker offers.
 THEME_CHOICES = {"Dark Mode": "console", "Light Mode": "swiss"}   # owner pick 2026-10-25
 
 _TOKEN_RE = re.compile(r"--el-([a-z0-9-]+):\s*([^;]+);")
@@ -29,7 +16,6 @@ _THEME_RE = re.compile(r'\[data-theme="([a-z0-9-]+)"\]\s*\{([^}]*)\}', re.S)
 
 
 def load_themes(path=THEMES_CSS) -> dict:
-    """Parse the REAL greyok kit: {name: {token: value}}. Never raises."""
     try:
         text = pathlib.Path(path).read_text()
     except (OSError, ValueError):
@@ -43,20 +29,15 @@ def load_themes(path=THEMES_CSS) -> dict:
 
 
 def dark_default(names: list) -> str:
-    """The dark default theme actually present in the kit (never assumed)."""
     if DEFAULT_THEME in names:
         return DEFAULT_THEME
     return names[0] if names else ""
 
 
 CURRENT = dict()          # the applied theme's tokens; canvas widgets (the
-                          # progress circle) draw from here, from the THEME
 
 
 def gtk_css(tokens: dict) -> str:
-    """Render ONE greyok theme as GTK 3.24 CSS (no var(); direct values),
-    with a CONTRAST pass (owner: tokens sat too close) and full element
-    inheritance (rail/cards/CTA — no system black left behind)."""
     def tok(name, fallback):
         return tokens.get(name, fallback)
 
@@ -258,11 +239,8 @@ def load_setting(path=SETTINGS_PATH) -> str:
 
 
 class ThemeStore:
-    """Holds providers; switching a theme = remove + add CssProvider."""
 
     def __init__(self, widget, themes_css=THEMES_CSS):
-        # GTK4 (Pass 2 migration): providers hang off the Gdk.Display, not
-        # the Gtk3 screen — and the app already loads Gtk 4.0.
         import gi
         gi.require_version("Gtk", "4.0")
         from gi.repository import Gtk

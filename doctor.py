@@ -1,21 +1,3 @@
-"""doctor.py — greywatch DOCTOR: diagnose, recover, verify, fix defaults.
-
-Owner order 2026-10-24: situations like the 2026-10-24 outage need one tool
-that can (1) audit every roster tool from ground truth, (2) RECOVER it
-(restart units, rebuild first-run artifacts, re-enable timers, restore
-default settings), (3) VERIFY it functionally, so "the tools work" is a
-check, not a hope.
-
-    python3 cli.py doctor          # diagnose everything (read-only)
-    python3 cli.py doctor --fix    # apply SAFE fixes (user-space + whitelists)
-    python3 cli.py doctor --fix --deep   # + pkexec/root remediations
-
-Rules carried from setup.py (the outage lessons):
-  * the doctor NEVER arms the network path itself — appfw/fail2ban stay
-    OFFLINE until the relaunch gate; it can only PREPARE them.
-  * every applied fix is verified immediately; a fix that fails its check
-    is reported, not claimed.
-"""
 from __future__ import annotations
 
 import json
@@ -30,7 +12,6 @@ from registry import default_iface, load_registry
 ROOT = setup_mod.ROOT
 DATA_DIR = setup_mod.DATA_DIR
 
-# restartable units (the same whitelist the CLI restart action uses)
 SAFE_USER_UNITS = {
     "yara-tmp-scan.timer", "yara-watch.service",
     "clam-scan.timer", "aide-check.timer",
@@ -52,25 +33,19 @@ def _registry():
     return load_registry()
 
 
-# ── recover: restore a tool to its configured working state ─────────────
 def unit_needs_autostart(unit) -> bool:
-    """True = this safe autostart timer exists on disk but is disabled."""
     return unit in SAFE_TIMERS_ENABLE and subprocess.run(
         ["systemctl", "is-enabled", unit],
         capture_output=True, text=True).stdout.strip() != "enabled"
 
 
 def recover(name: str) -> dict:
-    """All actions SAFE: units from the whitelist only; artifacts rebuilt
-    in user space or via the tool's own pkexec helper; defaults rewritten
-    from the optimized config (never strict/never fail_open=false)."""
     done, failed = [], []
     spec = next((t for t in _registry() if t["name"] == name), None)
     if spec is None:
         return {"name": name, "ok": False, "error": "unknown tool"}
 
     unit = str(spec.get("unit") or "")
-    # 1. unit restart (user scope first, then system whitelist)
     if unit in SAFE_USER_UNITS:
         r = _run(["systemctl", "--user", "restart", unit])
         (done if r == 0 else failed).append(f"restart {unit} (user)")
@@ -78,7 +53,6 @@ def recover(name: str) -> dict:
         r = _run(["systemctl", "restart", unit])
         (done if r == 0 else failed).append(f"restart {unit} (system)")
 
-    # 2. first-run artifact rebuild
     if name == "aide":
         db = pathlib.Path("/var/lib/aide/aide.db")
         if not db.exists():
@@ -86,13 +60,11 @@ def recover(name: str) -> dict:
     if name == "rkhunter":
         log = pathlib.Path("/var/log/rkhunter.log")
         if not log.exists() or log.stat().st_size == 0:
-            # scan-now.sh is pkexec-whitelisted and runs rkhunter root-side
             r = subprocess.run(["pkexec", "/bin/bash", str(ROOT / "apply" / "scan-now.sh"),
                                 "rkhunter"], capture_output=True, text=True)
             (done if r.returncode == 0 else failed).append(
                 "rkhunter first scan via scan-now.sh" )
 
-    # 3. autostart repair
     if unit in SAFE_TIMERS_ENABLE:
         scope = SAFE_TIMERS_ENABLE[unit]
         extra = [] if scope == "system" else ["--user"]
@@ -100,7 +72,6 @@ def recover(name: str) -> dict:
         r = _run(["systemctl", "start", *extra, unit])
         (done if r == 0 else failed).append(f"enable+start {unit} ({scope})")
 
-    # 4. default settings repair (appfw config only — never enables it)
     if name == "appfw":
         from appfw import config
         cfg = config.load(DATA_DIR)
@@ -115,7 +86,6 @@ def recover(name: str) -> dict:
 
 
 def _default_repair(cfg: dict) -> list:
-    """Force the optimized defaults; anything already right returns [] ."""
     fixed = []
     want = {"fail_open": True, "strict_mode": False, "ipv6_enabled": False}
     if cfg.get("nfqueue_num", 111):

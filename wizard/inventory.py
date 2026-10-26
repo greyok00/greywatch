@@ -1,26 +1,3 @@
-"""wizard/inventory.py — Setup Wizard step-2 scan composition.
-
-stdlib only, GUI-free: the GTK pages (wizard/ui_pages.py) run this off the
-UI thread but never own its logic, and the master-prompt battery greps it
-without a display. It composes the probes wizard/detector.py exposes into
-the scan facts wizard/baseline.generate() consumes
-
-    packages | fresh_install | wireless | ufw_status | ipv6_disable
-
-plus `facts` — the raw ProbeResults — for the step-2 inventory words, and
-those words themselves (inventory_lines).
-
-Fresh-install rule (W6 banked): a data dir WITHOUT appfw/config.json is a
-fresh install, so the hardened posture is allowed to write there; with a
-config.json present this is an EXISTING install — the wizard never
-rewrites it (reconciliation rule 1: the breaking-posture flip waits for
-the owner's hand; the wizard is read-only over appfw/config.json).
-
-Identifier rule: only distilled booleans/lists/scalars survive; raw probe
-error text is NEVER echoed into the inventory (a CANT-CHECK probe reports
-"could not be checked" in plain words, never the exception's text — so a
-crash message that happened to carry a serial can never reach the GUI).
-"""
 from __future__ import annotations
 
 import pathlib
@@ -32,10 +9,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 NET_DIR = pathlib.Path("/sys/class/net")
 
-# The master prompt's auto-adaptation input list (inputs A): common
-# package-manager spellings. FRIENDLY is the plain-English name the scan
-# page shows; NIST_BY_PKG carries the framing tags the master prompt
-# named (SSH AC-17, Avahi CM-7, ClamAV SI-3, firewall SC-7).
 PACKAGES = (
     "openssh-server", "sshd", "avahi-daemon", "clamav", "freshclam",
     "docker.io", "podman", "ufw", "chrony", "ntpd", "systemd-timesyncd",
@@ -76,8 +49,6 @@ CANT_MARKER = "⚪"
 
 
 def fresh_install(data_dir) -> object:
-    """True = no appfw/config.json = fresh install; False = existing;
-    None = the data dir could not even be inspected (honest unknown)."""
     path = pathlib.Path(data_dir) / "appfw" / "config.json"
     try:
         return not path.exists()
@@ -86,9 +57,6 @@ def fresh_install(data_dir) -> object:
 
 
 def wireless_present(net_dir=NET_DIR) -> object:
-    """Is there WiFi hardware? Boolean only: a network interface whose
-    sysfs directory carries a `wireless` entry. Unreadable/missing /sys
-    class dir is an honest UNKNOWN — never asserted absence."""
     net_dir = pathlib.Path(net_dir)
     try:
         ifaces = [p.name for p in net_dir.iterdir()]
@@ -100,10 +68,6 @@ def wireless_present(net_dir=NET_DIR) -> object:
 
 
 def ufw_status(result) -> object:
-    """The UFW status word from a firewall_state ProbeResult, or None.
-
-    Only the PASS facts count; a failed or empty answer is UNKNOWN —
-    never coerced to "inactive" (an honest unknown is never a fact)."""
     if getattr(result, "state", None) != PASS:
         return None
     value = getattr(result, "value", None)
@@ -118,13 +82,6 @@ def ufw_status(result) -> object:
 
 
 def run_scan(runner=None, data_dir=None, net_dir=None) -> dict:
-    """Run the full step-2 battery and return the distilled scan.
-
-    data_dir: the repo's data dir (fresh-install detection keys on it).
-    net_dir:  /sys/class/net override (tests stub it with a temp dir).
-    runner:   an injected (line) -> (rc, out) probe runner (tests); the
-              default is the honest user-context prod_runner.
-    """
     runner = runner or detector.prod_runner
     data_dir = pathlib.Path(data_dir or DATA_DIR)
     net_dir = pathlib.Path(net_dir) if net_dir is not None else NET_DIR
@@ -151,8 +108,6 @@ def run_scan(runner=None, data_dir=None, net_dir=None) -> dict:
         "wireless": wireless_present(net_dir),
         "ufw_status": ufw_status(firewall),
         "ipv6_disable": answer(ipv6),
-        # raw probe results for the step-2 words (NOT consumed by
-        # baseline.generate, which reads only the distilled keys above)
         "facts": {
             "listening_ports": ports,
             "services_running": services,
@@ -167,13 +122,6 @@ def run_scan(runner=None, data_dir=None, net_dir=None) -> dict:
 
 
 def inventory_lines(scan: dict) -> list[str]:
-    """The step-2 plain-English words, one line per inventory fact.
-
-    CANT-CHECK facts render the shared white phrase "could not be
-    checked" (the caller marks those lines white); the exception text a
-    crashing probe raised is never echoed here — a probe failure is
-    always the same three words, so no identifier can ride it in.
-    """
     out: list[str] = []
     packages = scan.get("packages")
     packages = packages if isinstance(packages, dict) else {}
@@ -186,7 +134,6 @@ def inventory_lines(scan: dict) -> list[str]:
                        + (f" — NIST {nist}" if nist else ""))
         elif state is None:
             out.append(f"{_cap(label)}: {CANT_WORDS}")
-    # Listening ports: ports only, never pids or process names.
     ports = _value(scan, facts_key="listening_ports")
     if ports is not None:
         shown = ", ".join(str(int(p)) for p in sorted(ports)) or "none found"
@@ -234,7 +181,6 @@ def inventory_lines(scan: dict) -> list[str]:
 
 
 def _value(scan: dict, facts_key: str):
-    """Distill one fact ProbeResult: its PASS value, else None."""
     facts = scan.get("facts") or {}
     probe = facts.get(facts_key)
     if probe is None:

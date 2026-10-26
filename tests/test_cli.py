@@ -1,7 +1,3 @@
-"""T6a: CLI tests — render fixtures, answer-once, validation, filters.
-
-Never root; the helper exec is overridden via GREYWATCH_HELPER_CMD.
-"""
 import json
 import pathlib
 import sys
@@ -14,7 +10,6 @@ import cli
 
 
 def run(argv):
-    """Run the CLI with a fresh SystemExit/return contract; capture code."""
     try:
         rc = cli.main(argv)
         return rc
@@ -28,7 +23,6 @@ def data_env(tmp_path, monkeypatch):
     data.mkdir(parents=True)
     monkeypatch.setattr(cli, "DATA_DIR", data)
     monkeypatch.setenv("GREYWATCH_HELPER_CMD", "/bin/true")
-    # the daemon's read helpers read from this dir
     import greywatch_daemon as gd
     monkeypatch.setattr(gd, "DATA_DIR", data)
     return data
@@ -69,7 +63,6 @@ EV_INFO = {"from_tool": "clamav", "severity": "INFO",
            "interaction": None}
 
 
-# ── rendering + filters ──────────────────────────────────────────────────
 
 def test_render_fixture_lines(capsys, data_env):
     seed(data_env, [EV_QUAR, EV_BAN, EV_PLAIN, EV_INFO])
@@ -106,17 +99,14 @@ def test_status_renders_snap(capsys, data_env):
     assert "2 pending decision(s)" in out
 
 
-# ── decisions + answer-once ──────────────────────────────────────────────
 
 def test_decisions_pending_and_answer_roundtrip(capsys, data_env):
     seed(data_env, [EV_QUAR, EV_PLAIN])
     rc = run(["decisions", "--pending"])
     out = capsys.readouterr().out
     assert rc == 0 and "responderd:aaaaaa" in out and "keep-quarantine" in out
-    # answer roundtrip (helper stubbed ok)
     rc = run(["answer", "responderd:aaaaaa", "restore"])
     assert rc == 0
-    # answer-once
     rc = run(["answer", "responderd:aaaaaa", "restore"])
     assert rc == 1                      # rejected
     out = capsys.readouterr().err
@@ -131,7 +121,6 @@ def test_answer_unknown_id_and_invalid_option(capsys, data_env):
     assert run(["answer", "responderd:aaaaaa", "warp-drive"]) == 1  # option invalid
 
 
-# ── action validation ────────────────────────────────────────────────────
 
 def test_non_whitelisted_restart_rejected_with_explanation(capsys, data_env):
     rc = run(["action", "restart", "ufw.service"])
@@ -161,9 +150,6 @@ def test_unknown_command_exit_2(capsys, data_env):
 
 
 def test_rules_wizard_dispatch_prints_usage(capsys, tmp_path):
-    """The appfw rule wizard is live (Task 8 done): the bare `rules` verb
-    prints its usage; unknown wizards are named on stderr; the wizard's
-    own store-touching paths are covered in test_appfw_wizard."""
     try:
         rc = run(["rules"])
     except SystemExit:

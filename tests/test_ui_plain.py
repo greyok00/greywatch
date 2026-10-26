@@ -1,5 +1,3 @@
-"""Plain-English sentences: every tool event must read as one full sentence
-(the owner's rule: "imagine I know nothing about computers")."""
 from ui.plain import sentence, without_mark
 
 

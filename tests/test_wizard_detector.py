@@ -1,10 +1,3 @@
-"""Tests for wizard.detector — table-driven, injected fakes, stdlib only.
-
-No real shell is touched: every probe receives a fake runner (callable)
-or an injectable path/env so tests are fully offline. The no-hardware-ID
-battery asserts that no probe output ever contains a MAC/serial/uuid
-shape — the identifier-free constraint from the plan.
-"""
 from __future__ import annotations
 
 import pathlib
@@ -43,13 +36,7 @@ def assert_no_identifiers(value):
         assert not pat.search(text), f"identifier leaked: {text!r}"
 
 
-# ── fake runner builder ─────────────────────────────────────────────────
 class FakeRunner:
-    """Responds to a table of command prefixes: {substring: (rc, out)}.
-
-    Anything unmatched raises RuntimeError (real command misbehavior).
-    Escalation prefixes are refused outright, mirroring prod_runner.
-    """
 
     def __init__(self, table):
         self.table = table
@@ -67,7 +54,6 @@ def ok(rc, out):
     return (rc, out)
 
 
-# ── pkg_has (dpkg -> rpm -> pacman chain) ────────────────────────────────
 PKG_CASES = [
     ({"dpkg --version": ok(0, ""),
       "dpkg -s nginx": ok(0, "Package: nginx\nStatus: install ok installed")},
@@ -105,8 +91,6 @@ def test_pkg_has_rejects_malformed_names(name):
 
 
 def test_pkg_has_chain_continues_after_exception():
-    # dpkg present but its query raises -> the chain moves on to pacman
-    # instead of dying; the raised note is kept if nothing answers.
     class Picky(FakeRunner):
         def __call__(self, line):
             if line.startswith("dpkg -s"):
@@ -126,7 +110,6 @@ def test_pkg_has_chain_continues_after_exception():
     assert res2.state == CANT and "dpkg" in res2.note
 
 
-# ── services_running ────────────────────────────────────────────────────
 def test_services_running_parses_unit_names_only():
     table = {"systemctl": ok(0, (
         "  UNIT                 LOAD   ACTIVE SUB     DESCRIPTION\n"
@@ -143,7 +126,6 @@ def test_services_running_systemctl_fails():
     assert res.state == CANT and res.value is None
 
 
-# ── listeners (ports only) ──────────────────────────────────────────────
 LISTENER_CASES = [
     ({"ss -tuln": ok(0, (
         "Netid State  Recv-Q Send-Q Local Address:Port Peer Address:Port\n"
@@ -166,8 +148,6 @@ def test_listeners(table, expected):
 
 
 def test_listeners_never_keeps_process_names():
-    # Even if a hostile ss build appends pids/names, the parser stores
-    # ports only.
     table = {"ss -tuln": ok(0, (
         "tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(\"sshd\",pid=999)\n"))}
     res = listeners(runner=FakeRunner(table))
@@ -175,7 +155,6 @@ def test_listeners_never_keeps_process_names():
     assert_no_identifiers(res.value)
 
 
-# ── firewall_state ──────────────────────────────────────────────────────
 def test_firewall_state_tables_and_ufw():
     table = {"nft list tables": ok(0, "table inet filter\ntable ip nat\n"),
              "ufw status": ok(0, "Status: active\n")}
@@ -201,7 +180,6 @@ def test_firewall_state_keeps_nft_when_ufw_raises():
 
     res = firewall_state(runner=UfwBoom({
         "nft list tables": ok(0, "table inet filter\n")}))
-    # Real nft facts survive the ufw sub-probe failure — partial honesty.
     assert res.state == CANT
     assert res.value == ["nft:table inet filter"]
     assert "ufw" in res.note
@@ -224,7 +202,6 @@ def test_firewall_state_no_tools_at_all_is_cant():
     assert res.state == CANT and res.value is None
 
 
-# ── sysctl_get ──────────────────────────────────────────────────────────
 def test_sysctl_get_scalar():
     res = sysctl_get("net.ipv4.ip_forward", runner=FakeRunner({
         "sysctl -n ": ok(0, "0\n")}))
@@ -242,7 +219,6 @@ def test_sysctl_get_cant():
     assert res.state == CANT
 
 
-# ── disk_encrypted ──────────────────────────────────────────────────────
 def test_disk_encrypted_true_from_crypttab(tmp_path):
     tab = tmp_path / "crypttab"
     tab.write_text("sda3_crypt /dev/disk/by-uuid/xyz none luks\n")
@@ -259,8 +235,6 @@ def test_disk_encrypted_true_from_lsblk(tmp_path):
 
 
 def test_disk_encrypted_crypt_word_elsewhere_is_not_a_hit(tmp_path):
-    # A mountpoint/label mentioning "crypt" lives in the NAME column, which
-    # `lsblk -o TYPE` never prints — this must NOT read as encrypted.
     res = disk_encrypted(runner=FakeRunner({
         "lsblk -o TYPE": ok(0, "TYPE\ndisk\npart\npart\n")}),
         crypttab_path=tmp_path / "absent")
@@ -280,14 +254,12 @@ def test_disk_encrypted_cant_when_all_sources_unreadable(tmp_path):
 
 
 def test_disk_encrypted_never_returns_device_names(tmp_path):
-    # The lsblk body may still contain hostile text — none of it persists.
     res = disk_encrypted(runner=FakeRunner({
         "lsblk -o TYPE": ok(0, "crypt\n0f1e2d3c4b5a6f7e8d9c0b1a\n")}),
         crypttab_path=tmp_path / "absent")
     assert res.value is True and assert_no_identifiers(res.value) is None
 
 
-# ── desktop_env ─────────────────────────────────────────────────────────
 def test_desktop_env():
     assert desktop_env({"XDG_CURRENT_DESKTOP": "GNOME"}).value == "GNOME"
     assert_no_identifiers(desktop_env({"XDG_CURRENT_DESKTOP": "KDE"}).value)
@@ -300,7 +272,6 @@ def test_desktop_env_unset_is_cant_check():
     assert desktop_env({"XDG_CURRENT_DESKTOP": ""}).value == ""
 
 
-# ── form_factor (battery presence boolean) ──────────────────────────────
 def test_form_factor_laptop():
     with tempfile.TemporaryDirectory() as td:
         for n in ("BAT0", "AC"):
@@ -332,14 +303,12 @@ def test_form_factor_never_returns_dir_names():
     assert res.value is True and assert_no_identifiers(res.value) is None
 
 
-# ── disk_space ──────────────────────────────────────────────────────────
 class _Usage:
     def __init__(self, total, free):
         self.total, self.free = total, free
 
 
 def test_disk_space_gb():
-    # Value deliberately a LIST to keep the boolean-or-list shape.
     res = disk_space("/backup", usage_fn=lambda p: _Usage(512 * 1024 ** 3,
                                                           128 * 1024 ** 3))
     assert res.state == PASS and res.value == [512.0, 128.0]
@@ -352,7 +321,6 @@ def test_disk_space_cant_on_error():
     assert disk_space("/nope", usage_fn=boom).state == CANT
 
 
-# ── whole-inventory sweep: shape + identifier-free ──────────────────────
 def test_all_probe_values_safe_and_shaped():
     runner = FakeRunner({
         "dpkg --version": ok(0, ""), "dpkg -s ssh": ok(0, ""),
@@ -382,7 +350,6 @@ def test_all_probe_values_safe_and_shaped():
 
 
 def test_prod_runner_reused_and_user_context():
-    # The wizard reuses hardening.detector's prod_runner; escalation refused.
     assert prod_runner is __import__("hardening.detector",
                                      fromlist=["prod_runner"]).prod_runner
     with pytest.raises(RuntimeError):

@@ -1,5 +1,4 @@
 #!/bin/bash
-# helper (pkexec only): unban one IP in one jail, strictly validated
 set -euo pipefail
 [ $# -eq 2 ] || { echo "usage: unban-ip.sh JAIL IP" >&2; exit 64; }
 JAIL="$1" IP="$2"

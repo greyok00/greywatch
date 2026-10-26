@@ -1,5 +1,3 @@
-# greywatch.service — the ONE root-privileged monitor (plan Task 5; verified vs
-# doc/unit-template.conf cross-check table, G2.7)
 [Unit]
 Description=greywatch — one root-privileged security monitor daemon
 Documentation=file:__GW_HOME__/README.md
@@ -14,19 +12,9 @@ ExecStart=/usr/bin/python3 __GW_HOME__/greywatch_daemon.py
 Restart=always
 RestartSec=5
 
-# STABILIZATION UNIT (2026-10-25): the namespace directives (ProtectSystem/
-# PrivateTmp/ReadWritePaths) are SUSPENDED while the 226/NAMESPACE churn is
-# chased — the daemon must run before it can be hardened. Re-tighten ONE
-# directive at a time, verifying each (the hardening plan's own rule).
-# Everything else (Restart=always, caps, RuntimeDirectory for the worker
-# socket) stays. The heartbeat file + watchdog timer are RETIRED in favor
-# of Type=notify + WatchdogSec (owner decision 2026-10-25).
 RuntimeDirectory=greywatch
 RuntimeDirectoryMode=0755
 PrivateTmp=true
-# Raised 2026-10-25: the old 10%/200M pair starved the main loop into the
-# exact lockup it was meant to prevent. The live unit carries the same
-# values via greywatch.service.d/limits.conf.
 CPUQuota=50%
 MemoryMax=768M
 Nice=5

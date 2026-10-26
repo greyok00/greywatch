@@ -1,12 +1,3 @@
-"""Decision factory — the ONE pipeline (plan line 51).
-
-interaction_for(event) -> spec dict | None:
-    {"id", "question", "options": [{"id","label","helper","args"}]}
-
-Helper ids are from a FIXED allowlist — the factory never emits free-form
-strings, and pkexec (Phase 3) is restricted to exact helper scripts.
-An answer is exactly once per id (recorded in decisions.jsonl by the daemon).
-"""
 from __future__ import annotations
 
 import datetime as _dt
@@ -29,16 +20,12 @@ DECISIONS_PATH = pathlib.Path(__file__).resolve().parent / "data" / "decisions.j
 
 
 def _spec(ev, question, options) -> dict:
-    # id from STABLE content hash: must match across daemon/CLI/GUI processes
     digest = hashlib.md5(f"{ev.from_tool}|{ev.ts}|{ev.text}".encode()).hexdigest()[:6]
     return {"id": f"{ev.from_tool}:{digest}", "question": question,
             "options": options}
 
 
 def interaction_for(ev) -> dict | None:
-    """Turn an actionable event into a decision spec with allowlisted helpers.
-    Helper args (IP/file paths) are extracted HERE, daemon-side, so the
-    CLI/GUI never pass free-form strings to helpers."""
     if ev is None or ev.interaction:        # spec already attached (appfw)
         return ev.interaction if ev else None
     tool, text = ev.from_tool, ev.text.lower()
@@ -60,7 +47,6 @@ def interaction_for(ev) -> dict | None:
         ])
 
     if tool == "fail2ban" and "near-ignoreip" in text:
-        # heuristic marker added by the daemon after 3+ re-bans in the window
         return _spec(ev, "Fail2ban flagged a near-ignoreip case:", [
             {"id": "keep", "label": "Keep ban", "helper": "keep-scan-ban", "args": [ip]},
             {"id": "unban", "label": "Unban IP", "helper": "unban-ip", "args": [ip]},
@@ -69,7 +55,6 @@ def interaction_for(ev) -> dict | None:
 
 
 def record_answer(decisions_path, spec_id: str, option_id: str) -> bool:
-    """Answer-once: appends {"id","option","ts"}; False if id already answered."""
     decisions_path = pathlib.Path(decisions_path)
     decisions_path.parent.mkdir(parents=True, exist_ok=True)
     seen = set()
@@ -89,8 +74,6 @@ def record_answer(decisions_path, spec_id: str, option_id: str) -> bool:
 
 
 def pending_ids(decisions_path) -> set:
-    """Answered ids from decisions.jsonl (everything with a spec is pending
-    until its id appears here)."""
     decisions_path = pathlib.Path(decisions_path)
     if not decisions_path.exists():
         return set()
@@ -104,7 +87,6 @@ def pending_ids(decisions_path) -> set:
 
 
 def sanitize(spec: dict) -> dict | None:
-    """Validate a spec before surfacing: helper ids ∈ allowlist only."""
     try:
         assert spec["id"] and spec["question"]
         options = spec["options"]

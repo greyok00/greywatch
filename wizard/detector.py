@@ -1,17 +1,3 @@
-# wizard/detector.py — Setup Wizard system-inventory probes.
-# stdlib only. Reuses hardening.detector's runner-injection machinery and
-# prod_runner (user-context, refuses privilege escalation) rather than
-# duplicating it. Every probe is user-context and PATH-safe; every probe
-# returns a ProbeResult whose value is a boolean, a list of scalar strings,
-# or (for sysctl) a single scalar string — never freeform dumps.
-#
-# Honesty rule (carried from hardening.detector): a probe that cannot run
-# yields CANT-CHECK, never a silent PASS or a fabricated default.
-#
-# Identifier rule: NO hardware identifiers leave these probes. Battery
-# detection reports only "a battery is present" (laptop fact, boolean).
-# Listener parsing keeps PORTS only — ss is called without -p, and no
-# pids/process names/usernames are stored even if the tool printed them.
 from __future__ import annotations
 
 import pathlib
@@ -24,8 +10,6 @@ Result = tuple[int, str]
 
 CANT_CHECK = CANT  # re-exported so wizard callers share the vocabulary
 
-# What a battery directory looks like in /sys/class/power_supply (the
-# BAT prefix is the kernel convention; no serial/uuid/MAC is ever read).
 _BATTERY_PREFIX = "BAT"
 
 _NO_PORT = 0  # ports are >= 1; 0 means "discard this token"
@@ -43,11 +27,9 @@ def _cant(exc):  # noqa: ANN001
 
 
 def _run(runner, line: str) -> Result:
-    """Run one probe line through the injected runner (shlex-safe args)."""
     return runner(line)
 
 
-# ── package manager probes ──────────────────────────────────────────────
 _PKG_MANAGERS = (
     ("dpkg", " -s {name}"),          # deb-family: dpkg -s pkg
     ("rpm", " -q {name}"),           # rpm-family
@@ -56,7 +38,6 @@ _PKG_MANAGERS = (
 
 
 def _manager_alive(runner, mgr: str) -> bool:
-    """A manager is present when its version check runs (rc==0)."""
     try:
         rc, _ = runner(f"{mgr} --version")
     except Exception:  # noqa: BLE001
@@ -65,13 +46,6 @@ def _manager_alive(runner, mgr: str) -> bool:
 
 
 def pkg_has(name: str, runner=prod_runner) -> ProbeResult:
-    """Is `name` installed? dpkg -s -> rpm -q -> pacman -Q fallback chain.
-
-    True when any installed-state check succeeds (rc==0); False when a
-    manager exists and reports the package absent; CANT-CHECK when no
-    package manager is available or the query itself misfires. Only the
-    boolean survives — command output is discarded.
-    """
     pkg = str(name).strip()
     if not pkg or any(c in pkg for c in " \t\n\r;`$&|<>?!'\"%,/"):
         return ProbeResult(FAIL, None, "empty or malformed package name")
@@ -87,7 +61,6 @@ def pkg_has(name: str, runner=prod_runner) -> ProbeResult:
         if rc == 0:
             return ProbeResult(PASS, True)
         if rc == 1:
-            # rc==1 is the manager's "not installed" outcome.
             return ProbeResult(PASS, False)
         return ProbeResult(FAIL, None, f"{mgr} query failed (rc={rc})")
     if notes:  # a manager existed but its query could not run
@@ -95,14 +68,7 @@ def pkg_has(name: str, runner=prod_runner) -> ProbeResult:
     return ProbeResult(CANT, None, "no package manager found (dpkg/rpm/pacman)")
 
 
-# ── systemd services ────────────────────────────────────────────────────
 def services_running(runner=prod_runner) -> ProbeResult:
-    """Running service unit names from `systemctl list-units
-    --type=service --state=running --no-pager`.
-
-    Extracts only the first column (unit names ending in .service) from
-    plain listing lines. No pids, descriptions or cgroup paths are kept.
-    """
     line = "systemctl list-units --type=service --state=running --no-pager"
     try:
         rc, out = _run(runner, line)
@@ -113,22 +79,13 @@ def services_running(runner=prod_runner) -> ProbeResult:
     units = []
     for raw in out.splitlines():
         parts = raw.split()
-        # Row shape: UNIT LOAD ACTIVE SUB DESCRIPTION[...]. The ACTIVE
-        # (parts[2]) and SUB (parts[3]) columns say "active running".
         if (len(parts) >= 5 and parts[0].endswith(".service")
                 and parts[2] == "active" and parts[3] == "running"):
             units.append(parts[0])
     return ProbeResult(PASS, sorted(set(units)))
 
 
-# ── network listeners (ports only) ──────────────────────────────────────
 def listeners(runner=prod_runner) -> ProbeResult:
-    """Listening ports from `ss -tuln` — PORTS ONLY.
-
-    The probe invokes ss WITHOUT -p (no process info is ever requested)
-    and parsing stores only the numeric port of the local address. If the
-    tool ever printed pids/names they are never parsed or retained.
-    """
     try:
         rc, out = _run(runner, "ss -tuln")
     except Exception as exc:  # noqa: BLE001
@@ -140,8 +97,6 @@ def listeners(runner=prod_runner) -> ProbeResult:
         cols = raw.split()
         if len(cols) < 5 or cols[0] in ("State", "Netid"):
             continue
-        # Local Address:Port is the 5th column; IPv6 "[::]:22" still splits
-        # cleanly on the FINAL colon.
         port = _safe_port(cols[4].rpartition(":")[2])
         if port:
             ports.add(port)
@@ -156,11 +111,7 @@ def _safe_port(tok: str) -> int:
     return p if 1 <= p <= 65535 else _NO_PORT
 
 
-# ── firewall state ──────────────────────────────────────────────────────
 def firewall_state(runner=prod_runner) -> ProbeResult:
-    """Firewall posture as scalar strings: nft table names that exist and
-    ufw's status word. Only names/words — never rules dumps or counters.
-    """
     facts: list[str] = []
     notes: list[str] = []
     try:
@@ -170,7 +121,6 @@ def firewall_state(runner=prod_runner) -> ProbeResult:
     else:
         if rc == 0:
             facts.extend(f"nft:{t.strip()}" for t in out.splitlines() if t.strip())
-        # nft absent (rc!=0) is tolerated: ufw may still answer.
     ufw_ok = False
     try:
         rc, out = _run(runner, "ufw status")
@@ -182,20 +132,15 @@ def firewall_state(runner=prod_runner) -> ProbeResult:
                 facts.append(f"ufw:{out.split(':', 1)[1].strip().lower()}")
                 ufw_ok = True
             else:
-                # rc==0 but unparsable output: honesty beats silence.
                 notes.append("ufw: rc=0 but output unparsable")
-        # ufw absent (rc!=0) is tolerated.
     if not facts and not ufw_ok:
-        # No firewall tooling answered — posture is unknowable, not "none".
         return ProbeResult(CANT, None,
                            "; ".join(notes) or "no firewall state tool available")
     state = PASS if not notes else CANT  # partial failure keeps facts, flags note
     return ProbeResult(state, facts, "; ".join(notes))
 
 
-# ── sysctl ──────────────────────────────────────────────────────────────
 def sysctl_get(key: str, runner=prod_runner) -> ProbeResult:
-    """One scalar sysctl value via `sysctl -n <key>`, validated key name."""
     if not key or not key.replace(".", "").replace("-", "").replace("_", "").isalnum() \
             or " " in key or key != key.strip():
         return ProbeResult(FAIL, None, "malformed sysctl key")
@@ -208,17 +153,8 @@ def sysctl_get(key: str, runner=prod_runner) -> ProbeResult:
     return ProbeResult(PASS, out.strip().splitlines()[0].strip() if out.strip() else "")
 
 
-# ── disk encryption ─────────────────────────────────────────────────────
 def disk_encrypted(runner=prod_runner,
                    crypttab_path=pathlib.Path("/etc/crypttab")) -> ProbeResult:
-    """Is the disk encrypted? BOOLEAN ONLY.
-
-    Keyed on the lsblk TYPE column (`lsblk -o TYPE` is used so mountpoint
-    or label text like /data/crypto-backup can never trigger a false
-    hit): true only when a trimmed row equals 'crypt'. /etc/crypttab being
-    readable and non-empty also counts. No device names, uuids or mapping
-    labels are returned — output is discarded after the check.
-    """
     lsblk_ok = lsblk_hit = False
     try:
         rc, out = _run(runner, "lsblk -o TYPE")
@@ -232,10 +168,6 @@ def disk_encrypted(runner=prod_runner,
         text = crypttab_path.read_text(encoding="utf-8")
     except OSError:
         text = ""
-    # A real mapping line is `name device [secret] [options]`. Fedora ships
-    # a comments-only sample crypttab — comments/blank lines are NOT
-    # encrypted volumes (the false "this disk is encrypted" bug). Only
-    # lines with an ID and a device count.
     crypttab_hit = any(
         line.strip() and not line.strip().startswith("#")
         and len(line.strip().split()) >= 2
@@ -247,13 +179,7 @@ def disk_encrypted(runner=prod_runner,
     return ProbeResult(PASS, lsblk_hit or crypttab_hit)
 
 
-# ── desktop environment ─────────────────────────────────────────────────
 def desktop_env(env=None) -> ProbeResult:
-    """XDG_CURRENT_DESKTOP as a scalar string (injectable for tests).
-
-    The variable being UNSET is honest CANT-CHECK (the session may not be
-    a graphical one); a set-but-empty value still passes as "".
-    """
     import os
     if env is None:
         env = os.environ
@@ -263,15 +189,8 @@ def desktop_env(env=None) -> ProbeResult:
     return ProbeResult(PASS, str(value))
 
 
-# ── form factor (laptop fact, identifiers-free) ─────────────────────────
 def form_factor(runner=prod_runner,
                 power_supply_dir=pathlib.Path("/sys/class/power_supply")) -> ProbeResult:
-    """Laptop fact via battery-directory PRESENCE only.
-
-    True when any entry name in /sys/class/power_supply starts with 'BAT'
-    (a boolean fact — the directory listing itself is never returned, so
-    no serial/manufacturer/model strings can leak).
-    """
     try:
         entries = [p.name for p in power_supply_dir.iterdir()]
     except OSError as exc:
@@ -280,14 +199,8 @@ def form_factor(runner=prod_runner,
     return ProbeResult(PASS, is_laptop)
 
 
-# ── disk space for backup planning ──────────────────────────────────────
 def disk_space(path="/",
                usage_fn=None) -> ProbeResult:
-    """[total_gb, free_gb] via shutil.disk_usage — sizes, not device names.
-
-    Returned as a LIST (not a tuple) so every probe value stays in the
-    boolean-or-list shape the schema guarantees.
-    """
     fn = usage_fn or shutil.disk_usage
     try:
         st = fn(path)

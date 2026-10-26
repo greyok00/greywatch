@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-"""greywatch_daemon — L1, the ONE root-privileged monitor (Task 5, plan 105).
-
-Loop (real run): one collector per registry read-source → parse → enrich →
-events.jsonl → atomic status.json; hourly trim of events.jsonl to 20 000;
-60 s unit-state check (RED on failed unit, YELLOW on unreadable/missing log).
-Decision specs are attached daemon-side by decisions_factory; answers land in
-decisions.jsonl and are executed ONLY through allowlisted pkexec helpers.
-
-Test surface: every unit (registry/checker/collectors) is injectable; the
-same state machine runs with fake collectors in tests and real journalctl +
-inotify tailers in production. `--once` makes a single bounded pass.
-"""
 from __future__ import annotations
 
 import argparse
@@ -40,10 +27,6 @@ ROOT = pathlib.Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 EVENTS_PATH = DATA_DIR / "events.jsonl"
 
-# The desktop user whose user-scope units this daemon reports on. The daemon
-# runs as root, and root may NOT connect to a user's session bus directly
-# ("Failed to connect to user scope bus ... Operation not permitted"), so the
-# query is run through runuser as that user. Overridable for tests/other hosts.
 UI_USER = os.environ.get("GREYWATCH_UI_USER", "grey")
 try:
     import pwd as _pwd
@@ -57,9 +40,6 @@ TRIM_KEEP = 20_000
 
 
 def unit_checker_factory(command_ok=True):
-    """BATCHED production unit checker: ONE `systemctl is-active u1 u2...`
-    per scope (a per-tool subprocess each makes status writes take ~10 s,
-    which starved the queue into overflow churn)."""
     from registry import load_registry
     units_by_scope = {"root": [], "user": []}
     states = {"active": "active", "inactive": "inactive", "failed": "failed",
@@ -72,7 +52,6 @@ def unit_checker_factory(command_ok=True):
         env = None
         if scope == "user":
             if os.geteuid() == 0:
-                # root cannot reach the user bus directly; runuser can
                 cmd = ["runuser", "-u", UI_USER, "--", "env",
                        f"XDG_RUNTIME_DIR={UI_RUNTIME_DIR}",
                        f"DBUS_SESSION_BUS_ADDRESS=unix:path={UI_RUNTIME_DIR}/bus",
@@ -123,7 +102,6 @@ BAN_TRIGGER = 3
 
 
 class Daemon:
-    """State machine only — collectors are injectable (real or fake)."""
 
     def __init__(self, data_dir=DATA_DIR, registry=None, unit_checker=None,
                  max_events=MAX_EVENTS):
@@ -135,10 +113,6 @@ class Daemon:
         self.events_path = self.data_dir / "events.jsonl"
         self.status_path = self.data_dir / "status.json"
         self.decisions_path = self.data_dir / "decisions.jsonl"
-        # net-watch's own log must EXIST from startup: the state machine
-        # reads "log missing" as YELLOW/needs-attention, and this log is
-        # only written on the first IDS finding — a quiet network reads
-        # as a fault forever otherwise (found 2026-10-25).
         (self.data_dir / "netwatch-events.jsonl").touch(exist_ok=True)
         self.queue = BoundedQueue(5000)
         self._ban_windows = {}      # ip → deque of epoch timestamps
@@ -147,16 +121,9 @@ class Daemon:
         self._malformed = []        # batched malformed.log lines
         self.forever_mode = False   # run_forever(): skip each log's history
         self._last_snap = None      # last write_status() result (heartbeats)
-        # main-loop liveness stamp (2026-10-25 lockup): the systemd
-        # WATCHDOG=1 ping is GATED on this, so a wedged main loop gets the
-        # unit restarted instead of being petted to death by a separate
-        # thread that knows nothing about the loop's health.
         self._beat = 0.0
 
-    # ── the single path a line travels ──────────────────────────────────
     def consume(self, tool: str, line: str):
-        """parse → enrich → interaction spec → events.jsonl. Never raises.
-        The shared kernel lane (ufw) reroutes apparmor lines by content."""
         if tool == "ufw" and "apparmor=" in line:
             tool = "apparmor"
         if tool == "suricata" and '"event_type"' in line \
@@ -173,9 +140,6 @@ class Daemon:
         try:
             self._ban_heuristic(ev)
             enrich(ev)
-            # passive light-IDS lanes (port scan / burst / denial cluster):
-            # analyzer ingests EVERY parsed event; its findings come back
-            # through the mirror — never blocks, never raises
             try:
                 if getattr(self, "netwatch", None) is None:
                     from netwatch import NetWatch
@@ -197,8 +161,6 @@ class Daemon:
         return ev
 
     def flush_outbox(self) -> int:
-        """ONE append+close per flush cycle (batched; per-line open/close was
-        the throughput killer under steady traffic)."""
         with self._lock:
             if not self._outbox:
                 return 0
@@ -207,22 +169,12 @@ class Daemon:
             with self.events_path.open("a") as f:
                 f.write("\n".join(batch) + "\n")
         except OSError:
-            # re-queue on transient failure (bounded by trim)
             with self._lock:
                 self._outbox = batch + self._outbox[:2000]
             return 0
         return len(batch)
 
     def heartbeat(self):
-        """ALL tools report at least once every 15 min (owner order): a
-        check-in per tool, visible in Logs, hidden from the highlight feeds.
-
-        The words must match the tool's REAL state. The old fixed
-        "alive, running normally" said the same thing for a dead service as
-        for a live one — the Logs screen showed green while Security showed
-        red (Pass 1 defect, 2026-10-23). Severity follows the state so the
-        Logs dot agrees with the Security lights; check-ins stay out of the
-        activity feeds (feed_worthy() knows them by their prefix)."""
         now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
         tools = (self._last_snap or {}).get("tools", {})
         lines = []
@@ -240,8 +192,6 @@ class Daemon:
             elif state == "YELLOW":
                 text, sev = "check-in: needs attention", "MEDIUM"
             else:
-                # No snapshot (or the probe could not answer): never claim
-                # "running normally" on a guess.
                 text, sev = "check-in: status not available yet", "MEDIUM"
             ev = {"from_tool": t["name"], "severity": sev,
                   "text": text,
@@ -252,8 +202,6 @@ class Daemon:
             self._outbox.extend(lines)
 
     def _ban_heuristic(self, ev):
-        """fail2ban: 3+ re-bans of one IP inside the window → near-ignoreip
-        decision candidate (plan: fail2ban near-ignoreip → unban/keep)."""
         if ev.from_tool != "fail2ban" or not ev.text.startswith("Ban"):
             return
         ip = ev.text.rsplit("— ", 1)[-1].strip()
@@ -270,8 +218,6 @@ class Daemon:
         self._malformed.append(f"{tool}\t{line[:300]}")
 
     def flush_malformed(self) -> int:
-        """Batched + capped malformed log (per-line open/close was a burn;
-        unbounded growth a leak)."""
         with self._lock:
             if not self._malformed:
                 return 0
@@ -295,10 +241,6 @@ class Daemon:
 
     @staticmethod
     def tool_installed(tool) -> bool | None:
-        """Real probe: True = the unit is listed, False = the command
-        succeeded and it is NOT listed, None = the probe could not answer.
-        The old version passed an empty argv element for root units and
-        treated empty output as "installed", so a fake unit returned True."""
         unit = tool.get("unit")
         if unit:
             probe = unit
@@ -338,15 +280,12 @@ class Daemon:
                 return True
         return None
 
-    # ── status ───────────────────────────────────────────────────────────
     def write_status(self):
         if hasattr(self.unit_checker, "invalidate"):
             self.unit_checker.invalidate()      # fresh batched unit query
-        # the owner's installed/not-installed truth (no guessing)
         for t in self.registry:
             t["_installed"] = self.tool_installed(t)
         snap = snapshot(self.registry, self.unit_checker)
-        # deliberate pauses are a state the owner chose, not a fault
         try:
             paused = set(json.loads(
                 (DATA_DIR / "paused.json").read_text()).get("paused") or [])
@@ -355,8 +294,6 @@ class Daemon:
         for name in paused:
             if name in snap["tools"]:
                 snap["tools"][name]["paused"] = True
-        # appfw engine = ours alone (owner 2026-10-23: rebuilt in-suite);
-        # state text is informational, never a RED state.
         try:
             eng = getattr(self, "appfw_engine", None)
             snap["appfw_engine"] = ("running" if eng is not None and
@@ -364,7 +301,6 @@ class Daemon:
                                     "off (owner switch in data/appfw)")
         except Exception:
             pass
-        # P0-e component honesty: supervised tailers + engine supervision
         try:
             snap["components"] = {
                 **(self.supervisor.snapshot()
@@ -386,8 +322,6 @@ class Daemon:
             info = snap["tools"].get(ev["from_tool"])
             if info is None:
                 continue
-            # "check-in: alive" heartbeats are liveness, not activity — they
-            # made every row say "5 min ago" and hid the real last event
             if info["last_event"] is None and not str(
                     ev.get("text", "")).startswith("check-in:"):
                 info["last_event"] = ev["ts"]
@@ -399,7 +333,6 @@ class Daemon:
         write_status(str(self.status_path), snap)
         return snap
 
-    # ── trim (hourly in prod; capped here for tests) ────────────────────
     def trim_events(self):
         try:
             lines = self.events_path.read_text().splitlines()
@@ -414,13 +347,6 @@ class Daemon:
         os.replace(tmp, self.events_path)
         return len(lines) - len(keep)
 
-    # ── appfw engine: HEADLESS (owner 2026-10-23: "i need it running
-    # headless, not with the gui. we should be controlling it inside of
-    # this"). Answers instantly — never blocks a connection:
-    #   trust-list hit → allow/deny ALWAYS (rule saved by the engine)
-    #   otherwise      → allow ONCE (fail-open default) + the ask is
-    #                    emitted as a NON-BLOCKING decision event; making
-    #                    it permanent = trust list / CLI rule.
     def start_appfw(self):
         from appfw.engine import Engine, read_enabled
         if not read_enabled(self.data_dir):
@@ -444,9 +370,6 @@ class Daemon:
             self.appfw_engine = None
 
     def _appfw_event(self, text: str):
-        """Mirror an intercept as an event (tool=appfw) — non-blocking; a
-        plain copy also lands in data/appfw/events.jsonl (the tool's own
-        log source, registry-driven like every other tool)."""
         try:
             from events import Event
             from enrichment import enrich
@@ -461,13 +384,9 @@ class Daemon:
             with log.open("a") as f:
                 f.write(text[:500] + "\n")
         except Exception as e:
-            # never silent: stderr lands in the systemd journal even when a
-            # structured write is impossible
             print("appfw mirror write failed:", e, flush=True)
 
     def _netwatch_event(self, severity: str, text: str):
-        """Mirror an IDS finding (tool=net-watch) — non-blocking; the plain
-        copy lands in data/netwatch-events.jsonl (the tool's own log)."""
         try:
             from events import Event
             from enrichment import enrich
@@ -486,20 +405,10 @@ class Daemon:
 
     @staticmethod
     def _appfw_default_ask(spec):
-        """Instant headless answer; the decision event carries the trust
-        options so the UI/CLI can make it permanent without any modal."""
         return ("allow", "once")
 
-    # ── learning mode (owner 2026-10-23) — the switches live in
-    # appfw.policy.Policy, built by the engine itself from data_dir; the
-    # daemon holds no separate copy of that logic.
 
-    # ── update schedule self-heal (root) ────────────────────────────────
     def ensure_updates(self):
-        """An enabled but inactive timer NEVER fires — the weekly security
-        list silently stopped that way (owner 2026-10-23: "don't leave the
-        update here as paused"). Start it, and refresh a stale cache now.
-        Offline is a valid outcome; nothing here can hurt."""
         for t in self.registry:
             unit = str(t.get("unit") or "")
             if not unit.endswith(".timer"):
@@ -533,13 +442,7 @@ class Daemon:
             except OSError:
                 pass
 
-    # ── real collectors ─────────────────────────────────────────────────
     def build_collectors(self):
-        """One collector per unique journal/log source from the registry.
-
-        Shared logs are claimed by the first tool with them (yara-tmp-scan
-        is state_only); journal sources become JournalTailer instances.
-        """
         out, claimed = [], set()
         for t in self.registry:
             for src in t.get("logs", []):
@@ -551,8 +454,6 @@ class Daemon:
                     if arg:
                         if self.forever_mode:
                             arg += " -n 0"    # follow-only: no history replay
-                        # kernel lane pre-gate keeps [UFW + apparmor; auditd
-                        # noise (1000+/s on a busy box) dies at the tailer
                         flt = ["[UFW", "apparmor="]
                         out.append(JournalTailer(t["name"], arg,
                                                  self.queue.put_nowait,
@@ -577,9 +478,7 @@ class Daemon:
                 return [t]
         return []
 
-    # ── lifecycle ────────────────────────────────────────────────────────
     def collect_burst(self, tailers, settle=1.5):
-        """Start tailers, let them land on the queue, stop them (test/once)."""
         for t in tailers:
             t.start()
         time.sleep(settle)
@@ -597,9 +496,6 @@ class Daemon:
 
     def run_forever(self, tailers=None, unit_interval=60, trim_interval=3600,
                     stop=None):
-        """Real mode. The queue drains CONTINUOUSLY (0.5 s cadence so it never
-        overflows during normal traffic); write_status runs on the 60 s unit
-        check; trim hourly. Never exits except on stop."""
         self.forever_mode = True
         stop = stop or threading.Event()
         self._beat = time.monotonic()
@@ -611,7 +507,6 @@ class Daemon:
         except Exception as e:
             served = False
             print("appfw engine unavailable:", e)
-        # Keep the update schedule alive without a person remembering it.
         try:
             threading.Thread(target=self.ensure_updates, daemon=True).start()
         except Exception:
@@ -622,28 +517,20 @@ class Daemon:
         self.supervisor = Supervisor()
         for t in live:
             t.start()
-            # supervised launcher: health = the tailer's own thread; a dead
-            # inotify/journal tailer re-spawns within one loop cycle
             self.supervisor.register(
                 f"tail:{getattr(t, 'tool', 'journal')}", target=t.start,
                 health=lambda t=t: getattr(t, "_thread", None) is not None
                 and t._thread.is_alive(), latched_target=False)
-        # systemd-native watchdog (owner decision 2026-10-25): ping
-        # WATCHDOG=1 every 10 s; the manager restarts beyond WatchdogSec=30
         threading.Thread(target=self._watchdog_ping_loop, args=(stop,),
                          daemon=True, name="watchdog-ping").start()
         status_at = time.monotonic() + unit_interval
         trim_at = time.monotonic() + trim_interval
         heartbeat_at = time.monotonic() + 900      # every tool: 15-min check-in
-        # P0-e engine supervision (≤10 s detect): rearm when enabled+dead;
-        # breaker parks after 3 failures/60 s (quiet reset 300 s); switch-off
-        # stops the engine whenever seen.
         engine_check_at = time.monotonic() + 10
         engine_fails: list[float] = []
         while not stop.is_set():
             self._beat = time.monotonic()
             try:
-                # drain until empty (never a churned backlog between cycles)
                 for _ in range(10):
                     got = self.queue.drain(2000)
                     if not got:
@@ -660,8 +547,6 @@ class Daemon:
                 if now >= engine_check_at:
                     engine_check_at = now + 10
                     eng = getattr(self, "appfw_engine", None)
-                    # a Settings config.json change re-arms (ruleset + lane
-                    # options land without a daemon restart)
                     if eng is not None and eng.running and eng.config_changed():
                         self.stop_appfw()
                         eng = None
@@ -681,15 +566,12 @@ class Daemon:
                                 else:
                                     engine_fails.append(now_t)
                             except Exception as e:
-                                # never silent: the owner reads the ledger
                                 engine_fails.append(now_t)
                                 try:
                                     self._appfw_event(
                                         f"appfw engine arm failed: {e}")
                                 except Exception:
                                     pass
-                        # breakered: parked; surfaced in the snapshot —
-                        # NEVER fake-green
                     elif not armed_now and eng is not None and eng.running:
                         self.stop_appfw()
                         print("greywatch appfw engine: stopped (switch off)")
@@ -702,20 +584,9 @@ class Daemon:
             except Exception:
                 pass                       # one loop-iteration survival rule
             stop.wait(0.5)
-        # clean stop: tear the engine down so nothing is left queued; a
-        # SIGKILL leaves the table behind — 'bypass' keeps traffic flowing
-        # and the next install is delete-then-add idempotent
         self.stop_appfw()
 
     def _watchdog_ping_loop(self, stop) -> None:
-        """Type=notify watchdog: WATCHDOG=1 every 10 s (WatchdogSec=30).
-        Also the boot READY comes from main(). The old heartbeat file +
-        greywatch-watchdog.timer are RETIRED (owner decision).
-
-        GATED on main-loop liveness (2026-10-25 lockup): this thread must
-        never pet the watchdog on behalf of a main loop that is wedged.
-        A beat older than 8 s means the loop has not completed an
-        iteration — stop pinging and let systemd restart the unit."""
         from appfw.sd_notify import notify
         while not stop.is_set():
             try:
@@ -729,10 +600,6 @@ class Daemon:
 
 
 def read_events(events_path, limit=None):
-    """Last `limit` events, oldest→newest. TAIL-READ (bounded): reads from
-    the END of the file in chunks — the old full-file parse made every GUI
-    refresh re-read 28 MB (the 'super slow' app). Missing → []; malformed
-    lines skipped."""
     try:
         f = open(events_path, "rb")
     except OSError:
@@ -768,7 +635,6 @@ def read_events(events_path, limit=None):
 
 
 def appfw_enabled(data_dir=None) -> bool:
-    """The owner's engine switch, mirrored here for tests and the CLI."""
     from appfw.engine import read_enabled
     return read_enabled(data_dir or str(DATA_DIR))
 
@@ -796,11 +662,6 @@ def main(argv=None) -> int:
         once = d.run_once(settle=args.settle)
         print(json.dumps(once))
         return 0
-    # battery 2026-10-24: no signal handler existed — systemd's stops hung
-    # out the full TimeoutStopSec (and with WatchdogSec=30 the restart
-    # cycles compounded). Wire SIGTERM/SIGINT/CLEANUP to the run's stop
-    # Event so every exit path is the CLEAN teardown (engine off + nft
-    # table removed), never a dangling stop job.
     import signal, threading
     _stop = threading.Event()
 

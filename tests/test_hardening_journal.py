@@ -1,4 +1,3 @@
-"""tests.test_hardening_journal"""
 import base64
 import json
 
@@ -16,7 +15,6 @@ def test_two_entries_newest_first(tmp_path):
     assert latest["id"] == "e2"
     assert latest["plan"] == ["step2"]
     assert "ts" in latest
-    # file ends with a newline
     assert path.read_bytes().endswith(b"\n")
 
 
@@ -43,7 +41,6 @@ def test_blob_roundtrip(tmp_path):
     before = {"svc.service": {"path": "/etc/systemd/system/svc.service", "mode": 420,
                               "blob": base64.b64encode(b"bytes\xff\x00").decode()}}
     assert journal.write_entry(path, "b1", before, ["restore b1"])
-    # stored as one JSON line, no binary leakage
     line = path.read_text().splitlines()[0]
     assert json.loads(line)["before"]["svc.service"]["blob"].endswith("AA==")
     out = journal.read_entry(path, "b1")

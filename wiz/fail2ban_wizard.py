@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-"""W2 — Fail2ban wizard (plan 147): pattern → REAL sample lines → live regex
-check → jail defaults 3600/600/3 → preview → apply (f2b-write helper) →
-verify (`fail2ban-client status <jail>`) → rollback (backups + reload)."""
 from rules import fail2ban_jail, fail2ban_filter, ValidationError
 from wiz import common
 
@@ -17,9 +13,6 @@ def build(jail, logpath, pattern, bantime=3600, findtime=600, maxretry=3,
 
 
 def test_regex(pattern, sample_lines):
-    """Live-regex gate: the pattern must match at least one REAL sample.
-    <HOST> is a fail2ban placeholder, not regex — expand it first so the
-    gate tests the pattern a jail will actually see (battery 2026-10-24)."""
     import re
     rx = re.compile(pattern.replace("<HOST>",
         r"(?P<host>[0-9]{1,3}(?:\.[0-9]{1,3}){3})"))
@@ -50,7 +43,6 @@ def verify(jail):
 
 
 def rollback(build_dict):
-    """Restore the .bak jail/filter file and reload."""
     ok = common.restore_backup(build_dict["paths"]["jail"] + ".bak",
                                build_dict["paths"]["jail"])
     if build_dict["filter"]:

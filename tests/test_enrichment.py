@@ -1,4 +1,3 @@
-"""T4: enrichment — NIST map sync contract, CVE extraction, offline cache."""
 import http.server
 import importlib.util
 import json
@@ -56,14 +55,12 @@ def test_enrich_never_raises_on_unknown_tool():
 
 
 def test_cve_regex_validated():
-    # 4-7 digit IDs valid per spec; cve-nope / short-year / 8-digit rejected
     assert extract_cves("hits CVE-2026-1234 and cve-nope and CVE-26-001 and CVE-2026-22222222") \
         == ["CVE-2026-1234"]
     assert extract_cves("CVE-2026-2222222 stays") == ["CVE-2026-2222222"]
     assert extract_cves("none here") == []
 
 
-# ── cve-refresh: offline exit 0 + reason; stubbed online → cache ────────
 
 def _serve(body: bytes):
     class H(http.server.BaseHTTPRequestHandler):

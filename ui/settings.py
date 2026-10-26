@@ -1,12 +1,3 @@
-"""Settings — TrustList (owner order 2026-10-23: "I NEED SOME SORT OF TRUST
-LIST TO AUTO BLOCK SITES") + theme persistence.
-
-The app-fw engine consults the TrustList BEFORE popping a dialog:
-- auto_allow: matched dst host → answered `allow, always` (no prompt)
-- auto_block: matched dst host → answered `deny, always` (no prompt)
-Entries match by suffix (subdomain-aware); patterns are plain strings.
-Stored in data/trust-list.json (user-writable — no root, no helper).
-"""
 from __future__ import annotations
 
 import json
@@ -56,9 +47,6 @@ class TrustList:
     def add(self, entry: str, verdict: str) -> bool:
         if not self._valid(entry):
             return False
-        # Re-read first: the wizard writes through its OWN TrustList, so a
-        # stale in-memory set here silently erased the wizard's site on the
-        # next Settings save (Pass 2/3 defect, 2026-10-23).
         self.load()
         if entry.startswith("*."):
             entry = entry          # keep wildcard form
@@ -92,14 +80,12 @@ class TrustList:
         return False
 
     def decide(self, host: str) -> str | None:
-        """'allow' | 'block' | None (None = ask the user as normal)."""
         if self._match(self.block, host):
             return "block"
         if self._match(self.allow, host):
             return "allow"
         return None
 
-    # ── trusted PROGRAMS (owner 2026-10-23: "or add trusted apps") ──────
     @staticmethod
     def _valid_app(entry: str) -> bool:
         if not isinstance(entry, str):
@@ -122,17 +108,6 @@ class TrustList:
         return self.save()
 
     def decide_app(self, process_path: str, process_args=None) -> str | None:
-        """'allow' when the program is trusted; None otherwise.
-
-        Three forms are accepted:
-          /path/to/binary      an exact executable
-          name                 a basename (e.g. a shell command)
-          /path/to/folder/     a trusted project folder
-        Interpreter-run tools (python3 ~/project/tool.py) report the
-        interpreter as the program, so a trusted folder also matches any
-        script argument that lives inside it. That is what lets the owner
-        allow a few trusted helper folders without trusting every
-        python3 process on the machine."""
         proc = str(process_path or "").strip()
         if not proc:
             return None
@@ -153,14 +128,6 @@ class TrustList:
 
 
 class LearningStore:
-    """App-firewall learning mode (owner 2026-10-23: "a LEARNING MODE where
-    it can learn as you do things and configure rules").
-
-    While learning is on, the front-end allows each connection ONCE and
-    records it in data/learning-seen.jsonl (the daemon writes that file).
-    Nothing permanent is created until the person approves a candidate in
-    the app — learning never quietly grants access forever.
-    """
 
     def __init__(self, path=None):
         self.path = pathlib.Path(path or (ROOT / "data" / "learning.json"))
@@ -198,12 +165,6 @@ class LearningStore:
 
 
 class FirewallModeStore:
-    """How the app firewall treats a connection nobody decided yet.
-
-    watch  = let it through (the calm default; nothing is blocked)
-    block  = deny it unless a trusted site/program already allows it
-    Stored in data/firewall-mode.json; the daemon reads it per connection.
-    """
 
     def __init__(self, path=None):
         self.path = pathlib.Path(path or (ROOT / "data" / "firewall-mode.json"))
@@ -230,8 +191,6 @@ class FirewallModeStore:
 
 
 class PausedStore:
-    """Which protections the owner paused ON PURPOSE (data/paused.json).
-    A deliberate pause is shown as "paused by you", never as a fault."""
 
     def __init__(self, path=None):
         self.path = pathlib.Path(path or (ROOT / "data" / "paused.json"))
@@ -264,11 +223,8 @@ class PausedStore:
             self.paused.discard(name)
         return self.save()
 
-# ── Dashboard workspace preference (Pass 4 leftover, 2026-10-25) ─────────
 
 def ws_pref(data_dir) -> int:
-    """The workspace the dashboard launches on (default 3, owner rule).
-    Missing/corrupt file ⇒ 3 — the standing preference, never junk."""
     try:
         import json as _json
         doc = _json.loads((pathlib.Path(data_dir) / "workspace.json")
@@ -280,7 +236,6 @@ def ws_pref(data_dir) -> int:
 
 
 def ws_set(data_dir, ws: int) -> bool:
-    """Atomic persist (P0-a machinery); clamps to 1–6."""
     try:
         from appfw.atomicio import write_json_atomic
         ws = int(ws)

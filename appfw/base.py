@@ -1,7 +1,3 @@
-"""appfw.base — shared types for the app firewall.
-
-Kept free of imports so every submodule can use them without a cycle.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,16 +5,11 @@ from dataclasses import dataclass, field
 DURATIONS = ("once", "until restart", "always")
 ACTIONS = ("allow", "deny", "reject")
 
-# Owner-permitted LOCAL services (2026-10-23, carried from the previous
-# rule chain): SearXNG (8888) and the headless-browser control port (8899).
-# Loopback only — a remote host can never match these, so permitting them
-# cannot open anything to the network.
 LOCAL_SERVICE_PORTS = frozenset({8888, 8899})
 
 
 @dataclass
 class Conn:
-    """One intercepted outbound connection, resolved from /proc."""
     protocol: str = "tcp"
     src_ip: str = ""
     src_port: int = 0
@@ -40,7 +31,6 @@ class Conn:
 
 
 def is_local_service(conn: "Conn") -> bool:
-    """True for the owner's permitted loopback services only."""
     ip = str(conn.dst_ip or "")
     local = (ip in ("127.0.0.1", "::1", "localhost")
              or ip.startswith("127.") or ip == "::1")

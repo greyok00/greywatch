@@ -1,7 +1,4 @@
 #!/bin/bash
-# greywatch — ROOT-GATED gate drills (G3.6/G3.8) — review before running.
-# Each wizard apply is sandbox-safe, verified for REAL effect, then rolled
-# back; post-state must equal pre-state.
 set -uo pipefail
 cd "$(dirname "$(readlink -f "$0")")/.."
 APP_IFACE="$(awk 'NR>1 && $2=="00000000" {print $1; exit}' /proc/net/route)"; [ -n "$APP_IFACE" ] || APP_IFACE=none

@@ -1,12 +1,3 @@
-"""hardening/apply.py — build the remediation plan, run it, re-verify.
-
-stdlib only. Filtering contract: only GAP findings on non-advisory
-controls whose first fix verb is allowlisted may enter the plan; any
-other state (PASS, FAIL, CANT-CHECK), any advisory control, and any fix
-in no other verb is kept out. An unknown verb on a non-advisory GAP
-control raises ValueError — that is the decorative-knob bug class the
-planner exists to catch, not to paper over.
-"""
 from __future__ import annotations
 
 ALLOWED_VERBS = frozenset(
@@ -26,11 +17,6 @@ def _first_verb(control):
 
 
 def build_plan(findings, controls) -> tuple[list[dict], list]:
-    """Split findings into an actionable plan and an advisories list.
-
-    plan: one dict per control — id, group, what, baseline, current,
-    severity, fix. advisories: findings for advisory controls, verbatim.
-    """
     by_id = {}
     for ctrl in controls:
         cid = getattr(ctrl, "id", None)
@@ -63,11 +49,7 @@ def build_plan(findings, controls) -> tuple[list[dict], list]:
     return plan, advisories
 
 
-# post-plan consolidation: plan_document is preview-only today (the GUI
-# renders its own card lines); it stays because the plain-CLI path should
-# converge on it — see run_pass below.
 def plan_document(plan: list[dict]) -> str:
-    """Plain-English preview: one line per planned change."""
     lines = [f"{e['id']}: {e['what']} (was {e['current'] or 'unknown'})"
              for e in plan]
     if not lines:
@@ -76,7 +58,6 @@ def plan_document(plan: list[dict]) -> str:
 
 
 def _run_fix(entry, helper_runner):
-    """Run one fix step. Returns the helper's return code."""
     if isinstance(entry, (list, tuple)):
         line = " ".join(str(part) for part in entry)
     else:
@@ -85,19 +66,7 @@ def _run_fix(entry, helper_runner):
     return int(rc)
 
 
-# post-plan consolidation: route Apply through run_pass once a
-# stdout-returning run_helper lands in wiz/common — today the GUI goes
-# through ui/harden.py + apply/harden.sh's own APPLY/VERBIFY parsing, so
-# this runner is test-only; keep the two paths honest until they merge
-# (a reviewer flagged exactly this drift).
 def run_pass(plan, helper_runner, reverify) -> list[tuple]:
-    """Execute each planned fix, then re-verify via detector re-scan.
-
-    helper_runner(line) performs the change; reverify(control_id) must
-    return "PASS" | "FAIL-PERSISTED" | "CANT-CHECK". Mapped to
-    GREEN / RED / AMBER; any other answer is treated as AMBER — an
-    unverifiable fix is never reported GREEN (honesty rule).
-    """
     results: list[tuple] = []
     for entry in plan:
         cid = entry["id"]

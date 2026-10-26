@@ -1,21 +1,3 @@
-"""ui/harden.py — the Harden rail view: scan, review, apply, verify, undo.
-
-GUI-only glue over hardening/controls + detector + apply (Tasks 1-5) and
-the pkexec helper apply/harden.sh (Task 5 contract). Rules baked in:
-
-- Scan runs the probes OFF the UI thread; findings render as plain-English
-  cards with the severity mark and NIST/CIS tags.
-- "Apply baseline" is disabled until a scan has finished AND disabled
-  entirely, with an explanatory tooltip, whenever ANY finding is
-  CANT-CHECK — an honest UI never applies around an unknown state
-  (detector.py honesty rule).
-- Apply runs the helper ONCE per pass (one password prompt): the plan is
-  written to a tmp planfile in the helper's exact JSON contract, then the
-  helper's APPLY/VERBIFY/ROLLBACK stdout lines become the verify strip.
-- Undo reverts the latest journal entry through the same helper; the
-  journal itself is the helper's, not this view's.
-- No auto-apply ever: the view opens with the scan button and words.
-"""
 from __future__ import annotations
 
 import json
@@ -41,13 +23,6 @@ JOURNAL_PATH = DATA_DIR / "hardening-journal.jsonl"
 
 
 def verby_args(fix) -> dict:
-    """One Control fix entry -> helper verb-arguments (Task 5 contract).
-
-    The first allowlisted fix step becomes the planfile entry's verb +
-    arguments. A `unit-install` entry still carrying the {{unit}}/TRANCHE
-    template markers is NOT resolvable in the GUI (unit name and hardened
-    unit text are per-deployment); it is reported as unresolvable so the
-    view can skip it honestly rather than ship a placeholder."""
     if not fix:
         return {}
     step = fix[0]
@@ -75,13 +50,6 @@ def verby_args(fix) -> dict:
 
 
 def planfile_entries(plan, controls) -> tuple[list[dict], list[dict]]:
-    """build_plan output -> helper planfile entries.
-
-    Returns (entries, skipped) — entries in helper vocabulary, skipped
-    listing control ids the GUI cannot plan (unresolvable unit-install).
-    Each entry carries the control's own probe + invert so the helper
-    re-verifies exactly what detector.py measured. build_plan's plan
-    dicts do not carry the probe; it is looked up from the controls."""
     probe_by_id = {getattr(c, "id", ""): c for c in (controls or [])}
     entries, skipped = [], []
     for e in plan:
@@ -98,11 +66,6 @@ def planfile_entries(plan, controls) -> tuple[list[dict], list[dict]]:
 
 
 def parse_apply_output(stdout: str) -> dict[str, str]:
-    """The helper's APPLY/VERBIFY/ROLLBACK lines -> id -> GREEN/RED/AMBER.
-
-    VERBIFY is the verified truth: 0 fixes GREEN, none-fixable probe is
-    AMBER, anything else RED. A ROLLBACK line (or ROLLBACK-SKIP) makes the
-    id RED regardless — a verified-then-rolled-back fix did not hold."""
     colors: dict[str, str] = {}
     for line in (stdout or "").splitlines():
         tok = line.split()
@@ -119,7 +82,6 @@ def parse_apply_output(stdout: str) -> dict[str, str]:
 
 
 class HardenView(Gtk.Box):
-    """Scan -> review cards -> apply once -> verify strip -> undo."""
 
     def __init__(self, win=None, controls=None, runner=None, helper=None,
                  journal_path=None, cve_cache=None):
@@ -135,10 +97,6 @@ class HardenView(Gtk.Box):
         self._findings = []
         self._scanned = False
         self._scanned_controls = []
-        # A theme switch rebuilds this view out from under any scan that is
-        # still running (worker threads idle_add into the OLD view) — with
-        # the flag, those callbacks no-op instead of reaching into a
-        # disposed widget (owner 2026-10-25).
         self._dead = False
         self.connect("destroy", self._on_dead)
 
@@ -189,7 +147,6 @@ class HardenView(Gtk.Box):
         self.append(self.verify_label)
         self._refresh_undo()
 
-    # ── window-helper reuse ────────────────────────────────────────────
     def _h1(self, text):
         if self._win is not None:
             return self._win._h1(text)
@@ -218,7 +175,6 @@ class HardenView(Gtk.Box):
                      f"weight='600'>{escape(text)}</span>")
         return l
 
-    # ── scan ───────────────────────────────────────────────────────────
     def _on_scan(self, _btn):
         self.status.set_text("Running baseline checks (a few seconds)…")
         self.apply_btn.set_sensitive(False)
@@ -231,8 +187,6 @@ class HardenView(Gtk.Box):
                 controls = load_controls(DATA_DIR)
         except Exception:
             controls = []
-        # Fresh CVE cache per scan (may be missing -> {}); a test that
-        # injects cve_cache= keeps its fake forever.
         if self._cve_cache is None:
             self._cve_cache = self._load_cve_cache()
 
@@ -243,8 +197,6 @@ class HardenView(Gtk.Box):
             except Exception as exc:              # never kill the UI
                 findings = None
                 GLib.idle_add(self._scan_failed, str(exc))
-            # findings=None on the failure path is a SENTINEL: _scan_done
-            # must not mistake a failed scan for "0 checks passed".
             GLib.idle_add(self._scan_done, findings, controls)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -284,10 +236,6 @@ class HardenView(Gtk.Box):
                 break
             self.cards.remove(child)
         cant = [f for f in findings if f.state == detector.CANT]
-        # Review-time honesty: a GAP whose fix the GUI cannot resolve
-        # (e.g. the {{unit}}/TRANCHE unit template) must be visible NOW,
-        # on the card, not only after Apply — and it cannot count toward
-        # what Apply would change.
         manual_ids = set()
         for f in findings:
             if f.state == detector.GAP:
@@ -325,10 +273,6 @@ class HardenView(Gtk.Box):
         return False
 
     def _load_cve_cache(self) -> dict:
-        """Read data/cve-cache.json for display-only CVE notes.
-
-        Missing or malformed file means no notes — an empty dict, never
-        an error surfacing to the scan."""
         try:
             raw = json.loads(
                 (DATA_DIR / "cve-cache.json").read_text(encoding="utf-8"))
@@ -337,10 +281,6 @@ class HardenView(Gtk.Box):
             return {}
 
     def _cve_note_for(self, fnd, control) -> str:
-        """The card's display-only CVE note, if one is on record.
-
-        A cache entry can link to the control directly by nist control
-        id or via its tools (nist-map). Deduped; "" when nothing links."""
         cache = self._cve_cache if isinstance(self._cve_cache, dict) else {}
         ids = [fnd.control_id] + list(
             getattr(control, "nist", None) or [])
@@ -356,8 +296,6 @@ class HardenView(Gtk.Box):
                  detector.CANT: "COULD NOT BE CHECKED"}
         advisory = bool(getattr(control, "advisory", False))
         if advisory:
-            # Advisory controls are read-only guidance: rendered, never
-            # planned, never applied (apply.py filters them out too).
             mark = "📄"
             words = {fnd.state: "ADVISORY (never applied)"}
         elif manual:
@@ -417,7 +355,6 @@ class HardenView(Gtk.Box):
         frame.set_child(box)
         return frame
 
-    # ── apply (ONE helper pass, one password prompt) ───────────────────
     def _on_apply(self, _btn):
         self.apply_btn.set_sensitive(False)
         self.status.set_text("Applying the baseline. One password prompt, "
@@ -427,9 +364,6 @@ class HardenView(Gtk.Box):
                                           self._scanned_controls)
             entries, skipped = planfile_entries(plan, self._scanned_controls)
             if not entries:
-                # Honest "no work", not a lock-up: the scan stays live for
-                # a re-run and Apply is greyed with the exact reason under
-                # the pointer instead of just silently unavailable.
                 self.apply_btn.set_sensitive(False)
                 self.apply_btn.set_tooltip_text(
                     "Each gap needs a manual change the helper cannot "
@@ -462,7 +396,6 @@ class HardenView(Gtk.Box):
         return False
 
     def _helper_out(self, args):
-        """The helper, run once, WITH its stdout kept for the strip."""
         if self._helper is not None:              # tests: injectable
             got = self._helper(args)
             if len(got) == 3:
@@ -476,8 +409,6 @@ class HardenView(Gtk.Box):
         else:                                        # owner runtime: pkexec
             cmd = ["pkexec", str(script)] + args
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        # BOTH streams: ROLLBACK-FAILED is echoed on stderr only. A failed
-        # rollback must never leave its id looking GREEN.
         return p.returncode, p.stdout or "", p.stderr or ""
 
     def _apply_done(self, rc, out, err, skipped):
@@ -498,7 +429,6 @@ class HardenView(Gtk.Box):
         self._refresh_undo()
         return False
 
-    # ── undo ───────────────────────────────────────────────────────────
     def _on_undo(self, _btn):
         entry = read_latest(self._journal)
         if not entry:

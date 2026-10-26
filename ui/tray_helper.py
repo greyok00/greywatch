@@ -1,23 +1,3 @@
-#!/usr/bin/env python3
-"""Tray helper — a GTK3 process that owns the panel icon.
-
-Why a separate process: the main app is GTK4 and AyatanaAppIndicator3 (the
-ONLY tray binding that has ever rendered correctly on this mate-panel) pulls
-GTK3 into whatever process loads it. Two GTK stacks in one process crash, so
-the tray lives here. The parent app talks to this helper over stdin/stdout,
-one JSON object per line:
-
-    parent → here:  {"cmd": "update", "pending": N,
-                     "alerts": [[tool, mark, text], ...]}
-                    {"cmd": "quit"}   (or a closed stdin = exit)
-    here → parent:  {"event": "ready"} on startup success
-                    {"event": "open"}  on menu Dashboard / alert items
-                    {"event": "quit"}  on menu Quit
-
-Everything here is GTK3 (Gtk.main loop, AyatanaAppIndicator3); nothing GTK4
-is ever imported. If the session bus or indicator host is missing this prints
-why and exits 1 — the parent treats that as "tray unavailable".
-"""
 import errno
 import fcntl
 import json
@@ -42,9 +22,6 @@ def send(obj) -> None:
 
 
 def build_menu(alerts, on_open, on_quit) -> Gtk.Menu:
-    """Dashboard / pending+alerts summary / the actual latest alerts / Quit —
-    same order the GTK3 tray used. Rebuilt fresh on every update: a rebuilt
-    menu is how ayatana indicators refresh."""
     menu = Gtk.Menu()
     dash = Gtk.MenuItem(label="Dashboard…")
     dash.connect("activate", lambda _m: on_open())
@@ -70,9 +47,6 @@ def main() -> int:
     indicator = AppIndicator.Indicator.new(
         ITEM_ID, ICON, AppIndicator.IndicatorCategory.APPLICATION_STATUS)
     indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
-    # direct asset path beats the theme lottery: with the name resolve the
-    # panel could render a libappindicator FALLBACK (blue shield) instead of
-    # our dark GW logo (2026-10-24 GUI pass finding).
     _logo = str(pathlib.Path(__file__).resolve().parents[1] / "assets"
             / "logo" / "greywatch-icon-128.png")
     if os.path.exists(_logo):
@@ -102,8 +76,6 @@ def main() -> int:
     buf = bytearray()
 
     def watcher():
-        # non-blocking read: a blocking readline() here would freeze the
-        # GTK main loop (and with it every D-Bus call on the tray item).
         try:                                 # idempotent — safe per tick
             fcntl.fcntl(fd, fcntl.F_SETFL,
                         fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
@@ -128,8 +100,6 @@ def main() -> int:
             handle(line.decode("utf-8", "replace"))
         return True
 
-    # a 250 ms poll keeps stdin off the GTK main loop and lets a dead parent
-    # (closed stdin) end the helper cleanly.
     GLib.timeout_add(250, watcher)
     send({"event": "ready"})
     Gtk.main()

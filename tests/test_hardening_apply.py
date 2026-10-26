@@ -1,4 +1,3 @@
-"""Tests for the apply planner: filtering, advisory split, run_pass mapping."""
 from hardening.apply import build_plan, plan_document, run_pass
 from hardening.controls import Control
 from hardening.detector import Finding

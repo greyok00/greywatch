@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-"""GATE 2 evidence battery — G2.2 parse flood + G2.3 rotation torture.
-
-Runs from a child process; parent checks exit code + printed numbers.
-Scratch files live ONLY in ~/greywatch/tmp/ and are deleted by the caller.
-No double reads, no lost lines (checksum by unique-line accounting).
-"""
 import os
 import random
 import shutil
@@ -32,7 +25,6 @@ def check(name, ok, detail=""):
     return ok
 
 
-# ── G2.2: adversarial parse flood ───────────────────────────────────────
 
 def flood():
     rng = random.Random(20261022)
@@ -65,7 +57,6 @@ def flood():
           f"peak={peak/1024/1024:.1f} MB, parsed-events={events}")
 
 
-# ── G2.3: rotation torture with checksums ───────────────────────────────
 
 def torture():
     root = os.path.join(TMP, "rot-tort")
@@ -100,7 +91,6 @@ def torture():
         return got
 
     def wait_and_drain(unique_seen, q, need, drain_unique):
-        """Wait until the tailer delivers the newest `need` unique lines."""
         seen_before = len(unique_seen)
         end = time.monotonic() + 5.0
         while time.monotonic() < end:
@@ -110,7 +100,6 @@ def torture():
             time.sleep(0.1)
         return False
 
-    # phase A: truncate ×5 — write, CONFIRM read (checksum-able), then truncate
     seq = 0
     for round_no in range(5):
         burst = [f"tr{seq + i}" for i in range(20)]
@@ -122,7 +111,6 @@ def torture():
         os.truncate(log, 0)
         time.sleep(0.3)             # > stat-tick blind window (50 ms)                      # truncate (all burst lines read)
 
-    # phase B: rotate ×5 — confirm current reads, mv away, recreate, confirm
     for round_no in range(5):
         drain_unique()
         os.rename(log, os.path.join(root, f"t.log.{round_no}"))
@@ -134,7 +122,6 @@ def torture():
         print(f"   B{round_no}: ok={okB} unique={len(unique_seen)} trace={list(t._trace)[-3:]}")
         time.sleep(0.1)
 
-    # phase C: delete+recreate ×5 — confirm reads, delete, recreate, confirm
     for round_no in range(5):
         drain_unique()
         os.remove(log)
@@ -146,7 +133,6 @@ def torture():
         print(f"   C{round_no}: ok={okC} unique={len(unique_seen)} trace={list(t._trace)[-3:]}")
         time.sleep(0.1)
 
-    # phase D: concurrent multi-file writes — 3 extra files
     others = [os.path.join(root, f"c{i}.log") for i in range(3)]
     extra_tailers = [FileTailer(p, f"c{i}", qcb) for i, p in enumerate(others)]
     for et in extra_tailers:
@@ -180,7 +166,6 @@ def torture():
     t.stop()
     drain_unique()
 
-    # final drain: everything still in files was seen
     with open(log) as f:
         still = {l.strip() for l in f if l.strip()}
     missing = still - unique_seen
@@ -189,18 +174,13 @@ def torture():
     check("G2.3 no line read twice", len(dropped) == 0, f"doubles={dropped[:5]}")
     check("G2.3 every surviving line counted", len(missing) == 0,
           f"missing={sorted(missing)[:5]}")
-    # 370 lines survive truncation (post-truncate 100 + rotate 75 + delete 75
-    # + concurrent 120); every one of them must have been read exactly once
     check("G2.3 all surviving lines seen", len(unique_seen) >= 370,
           f"unique_seen={len(unique_seen)} (expected ≥ 370 of 470)")
     shutil.rmtree(root, ignore_errors=True)
 
 
-# ── the same flood through the daemon's real path ───────────────────────
 
 def flood_through_daemon():
-    """100k lines through Daemon.consume — parser + enrichment + write;
-    process must survive and memory stays bounded."""
     root = os.path.join(TMP, "daemon-flood")
     shutil.rmtree(root, ignore_errors=True)
     os.makedirs(root)
@@ -229,7 +209,6 @@ def flood_through_daemon():
           f"consumed={alive_lines}")
     check("G2.2 daemon-path memory peak < 100 MB",
           peak < 100 * 1024 * 1024, f"peak={peak/1024/1024:.1f} MB")
-    # trim worked
     d.trim_events()
     shutil.rmtree(root, ignore_errors=True)
 

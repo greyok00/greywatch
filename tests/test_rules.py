@@ -1,5 +1,3 @@
-"""T8: rules builders + wizard helpers (validation gates) — real tools where
-they run as grey (yara), stubs elsewhere; never root."""
 import pathlib
 import subprocess
 import sys
@@ -16,7 +14,6 @@ from rules import (ValidationError, arpwatch_env_file, fail2ban_filter,
 from wiz import arpwatch_wizard, fail2ban_wizard, tetragon_wizard, yara_wizard
 
 
-# ── W1 UFW: exact string + validation ───────────────────────────────────
 
 def test_ufw_exact_string():
     spec = {"action": "deny", "direction": "in", "from": "203.0.113.9",
@@ -44,7 +41,6 @@ def test_ufw_rejects_every_bad_input():
                    "comment": "bad;rm -rf"})                         # comment
 
 
-# ── W2 Fail2ban: builder + validator rejects ────────────────────────────
 
 def test_fail2ban_jail_default_3600_600_3():
     lines = fail2ban_jail("gwtest", 3600, 600, 3, "/var/log/fail2ban.log", "gwtest")
@@ -69,7 +65,6 @@ def test_fail2ban_sample_gate():
     assert not fail2ban_wizard.test_regex(r"nomatch\d+", samples)
 
 
-# ── W3 Tetragon: policy yaml ────────────────────────────────────────────
 
 def test_tetragon_policy_shapes():
     b = tetragon_wizard.build("exec", "exec-tracer")
@@ -81,7 +76,6 @@ def test_tetragon_policy_shapes():
         tetragon_policy("nonsense", "x", {}, "log-only")
 
 
-# ── W4 YARA: REAL compile gate ──────────────────────────────────────────
 
 def test_real_yara_binary():
     assert pathlib.Path("/usr/bin/yara").exists()
@@ -103,7 +97,6 @@ def test_yara_hit_test(tmp_path):
     assert hit and "gw_eicar" in detail
 
 
-# ── W0 arpwatch ─────────────────────────────────────────────────────────
 
 def test_arpwatch_env_builder():
     lines = arpwatch_env_file("wlan0", "arpwatch", ["-N", "-p"], "")
@@ -116,7 +109,6 @@ def test_arpwatch_env_builder():
         arpwatch_env_file("ok0", "arpwatch", [], "filter;jam")
 
 
-# ── helper scripts: argv table executed for real (fail-closed) ──────────
 
 def _sh(script, *args):
     base = pathlib.Path(__file__).resolve().parents[1] / "apply"

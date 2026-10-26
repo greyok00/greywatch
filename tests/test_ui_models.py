@@ -1,4 +1,3 @@
-"""T6b: UI MODEL tests (headless — GTK is never imported in tests)."""
 import json
 
 from ui.models import (DecisionView, EventRow, filter_events, pending_badge,

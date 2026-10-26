@@ -1,18 +1,3 @@
-"""appfw.resolve — /proc-based process resolution.
-
-No kernel modules, no eBPF, and NO reverse DNS: parse /proc/net/{tcp,tcp6}
-for the socket inode of the matching tuple, then scan /proc/<pid>/fd/* for
-a socket:[inode] link and read that process's exe path and cmdline. This
-is the classic fallback method — slower per burst than a kernel tracer but
-dependency-free, and the result is cached by tuple.
-
-INCIDENT NOTE (2026-10-24, owner's machine-wide outage): an earlier version
-called reverse DNS inside the pump's hot path; one lookup stalled ~10 s per
-connection, expired this cache's own TTL between calls, filled the queue,
-and outbound traffic hung. Resolution is now /proc reads ONLY — a site-name
-rule applies when the name is known from context; otherwise IP/path rules
-decide. There is no query anywhere near the queue pump.
-"""
 from __future__ import annotations
 
 import os
@@ -27,7 +12,6 @@ _FILES = {"tcp": "tcp", "tcp6": "tcp6", "udp": "udp", "udp6": "udp6"}
 
 
 def _parse_net_file(path: pathlib.Path) -> list[tuple]:
-    """Rows of (local_ip, local_port, remote_ip, remote_port, inode)."""
     out = []
     try:
         lines = path.read_text().splitlines()[1:]
@@ -48,7 +32,6 @@ def _parse_net_file(path: pathlib.Path) -> list[tuple]:
 
 
 def _hex_ip(hexstr: str) -> str:
-    """Little-endian hex IPv4/IPv6 from /proc/net → dotted text."""
     try:
         if len(hexstr) == 8:
             import socket
@@ -66,7 +49,6 @@ def _hex_ip(hexstr: str) -> str:
 
 
 def load_sockets(proc_root: str = "/proc") -> dict:
-    """inode → (proto, local_ip, local_port, remote_ip, remote_port)."""
     root = pathlib.Path(proc_root)
     table = {}
     for proto, fname in _FILES.items():
@@ -80,7 +62,6 @@ def load_sockets(proc_root: str = "/proc") -> dict:
 
 
 def fd_owners(proc_root: str = "/proc", inodes: set | None = None) -> dict:
-    """inode → (pid, exe path, args). Only scans pids when asked."""
     root = pathlib.Path(proc_root)
     owners = {}
     want = set(inodes or ())
@@ -125,18 +106,6 @@ def fd_owners(proc_root: str = "/proc", inodes: set | None = None) -> dict:
 
 
 class Resolver:
-    """Cached resolver used by the engine. `resolve(conn)` fills in
-    pid/process_path/process_args; failures leave them empty (fail-open;
-    never block, never query).
-
-    INCIDENT-GRADE PERFORMANCE (2026-10-25 outage #2): the queue pump is a
-    single thread, so per-packet cost == the machine's ceiling. Now:
-    - owners are cached PER INODE for their lifetime (a live fd never
-      changes owner — one scan ever, per unseen socket);
-    - the /proc/net parse is a shared ~250 ms snapshot (one parse per
-      burst, never one per packet);
-    - repeat connections hit the tuple cache within its TTL.
-    Steady-state per-packet cost ≈ one dict lookup."""
 
     def __init__(self, proc_root: str = "/proc"):
         self.proc_root = proc_root

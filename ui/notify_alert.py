@@ -1,12 +1,3 @@
-"""ui.notify_alert — the ONE blocked-traffic square, owner-specced 2026-10-24.
-
-One single reusable notification per action-burst (no scrolling, no popup
-storm): every new app-fw DENY updates the same square in place with the
-count + the latest blocked item; its buttons are 'Unblock all' (allow-
-always every blocked program of the burst) and 'Review' (open the
-dashboard). Pure state lives in BlockedQueue (testable, no GTK); the gi
-calls are thin and lazily imported so tests never need a session bus.
-"""
 from __future__ import annotations
 
 import json
@@ -25,7 +16,6 @@ ALERTS_SETTING_PATH = ROOT / "data" / "greywatch-ui-settings.json"
 
 
 class BlockedQueue:
-    """The burst state for the square: newest denies, one replaceable text."""
 
     def __init__(self, data_dir):
         self.data_dir = pathlib.Path(data_dir)
@@ -33,8 +23,6 @@ class BlockedQueue:
         self.last_shown = 0.0
 
     def add_deny(self, app: str, host: str) -> str:
-        """New deny → burst item. Returns the square's TEXT (owner asked:
-        nothing scrolling — one square, refreshed, never a stack)."""
         self.burst = [b for b in self.burst if time.time() - b["ts"] < 600]
         self.burst.append({"app": app or "<unknown>", "host": host,
                            "ts": time.time()})
@@ -48,8 +36,6 @@ class BlockedQueue:
                 "Unblock all or review from the dashboard.")
 
     def unblock_all(self) -> list:
-        """Allow-forever each distinct blocked program of the burst —
-        written straight into the grey-owned store; no prompts, no pops."""
         s = RuleStore(self.data_dir / "appfw" / "rules")
         done = []
         for b in self.burst:
@@ -69,14 +55,11 @@ import re
 
 _DRE = re.compile(r"appfw (\S+) → (\S+) (allow|deny)\b")
 
-# master prompt §4: critical-event classes that deserve the desktop square
 CRITICAL_TOOLS = ("fail2ban", "yara-watch", "yara-tmp-scan", "rkhunter")
 CRITICAL_SEVS = ("HIGH", "CRITICAL")
 
 
 def parse_deny(text: str):
-    """Engine mirror line → {app, host, action} or None (lifecycle lines
-    ('appfw engine: …') never match)."""
     m = _DRE.search(str(text or ""))
     if not m:
         return None
@@ -84,9 +67,6 @@ def parse_deny(text: str):
 
 
 def critical_filter(events) -> list:
-    """ONE shared square for critical events (master prompt §4): the newest
-    wins, coalesced — never a stack. Pure: input event dicts, output
-    (tool, text) pairs, oldest-first."""
     out = []
     for e in events or ():
         if not isinstance(e, dict):
@@ -98,7 +78,6 @@ def critical_filter(events) -> list:
 
 
 class CriticalEvents:
-    """Coalescing state for the critical square: count + latest, bounded."""
 
     SEEN_WINDOW = 600.0
 
@@ -120,7 +99,6 @@ class CriticalEvents:
 
 
 class NotifyAlert:
-    """The square. GTK/libnotify thin; fake-friendly for tests."""
 
     APP = "greywatch"
     SUMMARY = "App firewall"
@@ -141,10 +119,6 @@ class NotifyAlert:
         return Notify
 
     def show(self, text: str) -> None:
-        """ONE replaceable square — .update() reuses it, always.
-        Owner alert switch (order 2026-10-25 "STOP THE POPUPS"): the
-        ui-settings file may carry "alerts": true to re-enable; the
-        DEFAULT is silent (popups off, dashboard state stays truthful)."""
         try:
             cfg = (json.loads(ALERTS_SETTING_PATH.read_text())
                    if ALERTS_SETTING_PATH.exists() else {})
@@ -188,8 +162,6 @@ class NotifyAlert:
 
 
 class CriticalSquare(NotifyAlert):
-    """The critical-events square (fail2ban/YARA/rkhunter): same
-    replace-one-square machinery, a different summary word."""
 
     SUMMARY = "Security: critical event"
     APP = "greywatch-critical"

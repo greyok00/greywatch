@@ -1,4 +1,3 @@
-"""tests/test_wiz_pending.py — the pending (learning) pipeline end-to-end."""
 import json
 import pathlib
 import sys
@@ -24,10 +23,8 @@ def test_pending_lifecycle(wiz_env):
     st = RuleStore(wiz_env / "appfw" / "rules")
     rule = R.validate("p-api", "allow", "always", "dst.host", "api.example")
     st.add_pending(rule)
-    # the CLI sees it and NEVER enforces it before approval
     assert aw.appfw_main(["pending"]) == 0
     assert st.decide(_conn("api.example")) is None
-    # promote = the ONLY exit into persistent rules
     assert aw.appfw_main(["promote", "p-api"]) == 0
     st.reload()
     assert st.decide(_conn("api.example")).action == "allow"
@@ -41,7 +38,6 @@ def test_revoke_declines_without_promoting(wiz_env):
     st.add_pending(rule)
     assert aw.appfw_main(["revoke", "p-tracker"]) == 0
     st.reload()
-    # gone from pending, NOT in allow-always, never enforced
     assert st.pending_rules() == []
     assert st.decide(_conn("tracker.example")) is None
     allow_path = wiz_env / "appfw" / "rules" / "allow-always.json"
@@ -51,8 +47,6 @@ def test_revoke_declines_without_promoting(wiz_env):
 
 
 def test_engine_learned_pair_can_flow_to_pending(wiz_env):
-    """The engine's learning path records the pair; a pending rule in the
-    store is what the approve queue shows — the two agree on names."""
     st = RuleStore(wiz_env / "appfw" / "rules")
     learned = R.validate(f"appfw-app-{pathlib.Path('/usr/bin/curl').name}",
                          "allow", "always", "process.path", "/usr/bin/curl")

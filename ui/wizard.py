@@ -1,15 +1,3 @@
-"""THE WIZARD (owner 2026-10-23: "a wizard that can do ALL of them") —
-Stage 1 = pick the tool (big plain buttons); Stage 2 = a guided Assistant
-for THAT tool: one plain question per page, a plain confirm, the real apply
-through the validated builders + helpers.
-
-Every answer is a PICK, not typing (owner 2026-10-23: "this is not
-something anyone would know off the top of their head... it should not
-require me typing anything"). The lists come from this computer through
-ui.discover: real neighbours, real ports, real services, real logs, real
-interfaces, and ready-made rules that the real scanner compiles. Names are
-generated, never asked for.
-"""
 import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
@@ -49,7 +37,6 @@ def _hint(text):
 
 
 class ToolChooser(Gtk.Dialog):
-    """Stage 1: WHAT do you want to set up? Big plain buttons."""
 
     def __init__(self, on_pick, parent=None):
         super().__init__(title="Wizard: what do you want to set up?")
@@ -121,7 +108,6 @@ class ToolChooser(Gtk.Dialog):
 
 
 class RuleWizard(Gtk.Assistant):
-    """Stage 2: the guided flow for ONE tool (plain words on every page)."""
 
     def __init__(self, tool: str, parent=None):
         super().__init__()
@@ -162,7 +148,6 @@ class RuleWizard(Gtk.Assistant):
             return True          # the assistant's own close flow handles it
         return False
 
-    # ── page helpers ────────────────────────────────────────────────────
     def _page(self, title, body=None, inner=None,
               kind=Gtk.AssistantPageType.CONTENT, complete=True):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -225,12 +210,9 @@ class RuleWizard(Gtk.Assistant):
         self.set_page_type(done, Gtk.AssistantPageType.SUMMARY)
         done.append(self._done_body)
 
-    # ── per-tool flows ───────────────────────────────────────────────────
     def _pages_site(self):
         act = _combo([("allow", "TRUST it: allowed automatically"),
                       ("block", "BLOCK it: denied automatically")], 0)
-        # A picker, not a typing box: the sites already on the list, the ones
-        # in use right now, and recent browser history (all read locally).
         site = Gtk.ComboBoxText()
         site.set_size_request(440, -1)
         scan = Gtk.Button(label="Scan again")
@@ -354,8 +336,6 @@ class RuleWizard(Gtk.Assistant):
         file_box.append(file_label)
         file_box.append(browse)
 
-        # GTK4 has no show_all()/no_show_all(): rows are shown or hidden
-        # explicitly (update_complete() below sets both).
         src_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         src_box.append(src)
         src_box.append(unit)
@@ -510,7 +490,6 @@ class RuleWizard(Gtk.Assistant):
         self._add_done()
 
     def _pick_f2b_file(self, file_label, on_resp):
-        """GTK4: the native chooser, answered via its response signal."""
         dlg = Gtk.FileChooserNative(
             title="Choose the log file to watch", transient_for=self,
             action=Gtk.FileChooserAction.OPEN)
@@ -521,7 +500,6 @@ class RuleWizard(Gtk.Assistant):
         dlg.connect("response", on_resp)
         dlg.show()
 
-    # ── confirm text (plain, per tool) ───────────────────────────────────
     def _on_prepare(self, _a, page):
         if self.get_page_type(page) != Gtk.AssistantPageType.CONFIRM:
             return False
@@ -583,7 +561,6 @@ class RuleWizard(Gtk.Assistant):
             return f"journal:{unit}" if unit else ""
         return self._f2b_file
 
-    # ── the real apply per tool ──────────────────────────────────────────
     def _on_apply(self, *_a):
         w, t = self.w, self.tool
         try:

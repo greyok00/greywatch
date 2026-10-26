@@ -1,29 +1,3 @@
-"""tests/test_wizard.py — W6 master-prompt battery, condensed.
-
-The Setup Wizard end-to-end with NO privilege escalation and NO live
-helper: the scan runs on injected probe fakes (run_scan's runner), the
-apply/undo passes run on a recording stub helper, and the GTK pages run
-only in tests that have a display (module-skip otherwise, the
-leak-guard pattern from tests/test_ui_harden.py).
-
-Banked contracts pinned here:
-  * probe accuracy — the step-2 scan distills ONLY booleans/lists/scalars
-    from the fakes, and fresh-install detection keys on the ABSENCE of
-    appfw/config.json.
-  * adaptive preview — every Current/Recommended cell in the table is the
-    card's OWN value from baseline.generate (never invented).
-  * schema validation — smuggle payloads (newline ids, metachar ids,
-    unknown controls, traversal backup paths) are refused BEFORE the
-    helper; an unvalidatable pass writes nothing and calls the helper
-    never.
-  * rollback round-trip — ONE --apply helper call per pass, ONE --undo
-    call carrying <journal_id> <pass journal path>.
-  * safety defaults — nothing auto-applies: flag/install-prompt cards are
-    the owner's hand; an existing appfw/config.json is NEVER rewritten by
-    a wizard pass.
-  * no-hardware-ID greps — no MAC/serial/uuid shape survives any wizard
-    output or document.
-"""
 import datetime
 import json
 import pathlib
@@ -44,12 +18,9 @@ from wizard.inventory import inventory_lines, run_scan    # noqa: E402
 
 DATA_DIR = ROOT / "data"
 
-# ── probe fakes (the runner answers ONLY the wizard's exact probe lines) ─
 
 
 class FakeRunner:
-    """(line) -> (rc, out). A line it was not programmed for raises: the
-    prod battery must not silently fake answers either."""
 
     def __init__(self, table, fail_lines=()):
         self.table = dict(table)
@@ -103,8 +74,6 @@ def _fake_scan_table():
     }
 
 
-# exact per-package coverage check (the distillation list, not the raw
-# inventory): PACKAGES from inventory are the probed aliases
 from wizard.inventory import PACKAGES   # noqa: E402  (after table above)
 
 
@@ -120,7 +89,6 @@ def test_run_scan_distills_fakes(tmp_path):
     (net / "wlp0s1" / "wireless").touch()
     runner = FakeRunner(_fake_scan_table())
     scan = run_scan(runner=runner, data_dir=tmp_path, net_dir=net)
-    # distillation: booleans, scalars, lists — nothing freeform survives
     assert scan["packages"]["openssh-server"] is True
     assert scan["packages"]["sshd"] is False
     assert scan["packages"]["clamav"] is False
@@ -131,7 +99,6 @@ def test_run_scan_distills_fakes(tmp_path):
     assert scan["facts"]["listening_ports"].value == [22]
     assert scan["facts"]["services_running"].value == ["ssh.service"]
     assert "nft:table ip filter" in scan["facts"]["firewall"].value
-    # only the programmed probes were asked (no extra shell round-trips)
     assert "ss -tuln" in runner.asked and "ufw status" in runner.asked
 
 
@@ -155,11 +122,9 @@ def test_scan_is_honest_on_probe_failure(tmp_path):
     assert scan["facts"]["listening_ports"].state == "CANT-CHECK"
     lines = inventory_lines(scan)
     assert any(l == "Listening ports: could not be checked" for l in lines)
-    # the exception's text never rides into the inventory words
     assert all("stub blowup" not in l for l in lines)
 
 
-# ── adaptive preview: the table carries the cards' OWN values ────────────
 
 
 def _ctrl(**kw):
@@ -205,8 +170,6 @@ def test_cards_carry_real_current_and_recommended():
     by_id = {c["control_id"]: c for c in cards}
     rows = preview_rows(cards)
     assert {r["control_id"] for r in rows} == set(by_id)
-    # nothing the scan told the cards is replaced a row-side: the table's
-    # cells ARE the cards' cells (never defaults re-invented here)
     for r in rows:
         card = by_id[r["control_id"]]
         assert r["current"] == (card.get("current", "") or "")
@@ -223,13 +186,10 @@ def test_adaptive_table_skip_rules():
     from wizard.baseline import generate
     ids = lambda scan: {c["control_id"] for c in
                         generate(scan, _rule_controls(), "workstation")}  # noqa: E731
-    # SSH absent: SSH cards skipped entirely
     assert "sshd-running" not in ids(
         _rule_scan(packages={"openssh-server": False, "clamav": False}))
-    # no WiFi hardware: wireless cards skipped
     assert "wifi-wireless-hardening" not in ids(
         _rule_scan(wireless=False))
-    # existing install: fresh-install card flags, never pre-checks
     existing = generate(_rule_scan(fresh_install=False), _rule_controls(),
                         "workstation")
     ipv6 = next(c for c in existing
@@ -248,7 +208,6 @@ def test_break_risk_medium_starts_unticked():
     assert "break your workflow" in cards[0]["risk"]
 
 
-# ── schema validation and the apply/undo round-trip (stub helper) ───────
 
 
 def _applyable_controls():
@@ -267,7 +226,6 @@ def _applyable_controls():
 
 
 class RecordingHelper:
-    """The stub pkexec: records EVERY argument vector it is handed."""
 
     def __init__(self, rc=0, out="", err=""):
         self.calls: list[list[str]] = []
@@ -299,21 +257,16 @@ def test_apply_pass_one_helper_call_and_fragments(tmp_path):
     doc = tmp_path / "pass.json"
     report = apply_pass(controls, cards, jid, doc, tmp_path, helper)
     assert report["errors"] == []
-    # EXACTLY ONE helper call, --apply, the doc path
     assert helper.calls == [["--apply", str(doc)]]
     rows = preview_rows(cards)
     assert [r["control_id"] for r in rows] == ["kernel-kptr", "avahi-stop"]
-    # the verby-strip parsed both facts GREEN
     assert report["colors"] == {"kernel-kptr": "GREEN",
                                 "avahi-stop": "GREEN"}
-    # fragments landed in the per-pass dir
     frag = ui_pages.fragment_path(tmp_path, jid, "kernel-kptr")
     assert frag.exists()
     body = json.loads(frag.read_text(encoding="utf-8"))
     assert body["entries"][0]["verb"] == "sysctl-set"
     assert body["entries"][0]["key"] == "kernel.kptr_restrict"
-    # the validated doc is REAL and stays until the worker's finally
-    # unlinks it (the coordinator applies; the UI temp cleans up)
     assert doc.exists() and json.loads(doc.read_text(encoding="utf-8"))[
         "version"] == 1
 
@@ -326,11 +279,9 @@ def test_undo_pass_one_helper_call_round_trip(tmp_path):
         "", encoding="utf-8")
     result = undo_pass(jid, tmp_path, helper)
     assert result["undoed"] is True
-    # ONE call: --undo <journal_id> <pass journal path>
     assert helper.calls == [["--undo", jid,
                              str(pass_journal_path(tmp_path, jid))]]
     assert "restored" in result["words"]
-    # rc 3: restore landed but re-probes no longer pass — honest words
     assert undo_pass(jid, tmp_path, RecordingHelper(rc=3, err="x"))[
         "undoed"] is False
     assert "no longer pass" in undo_pass(
@@ -342,7 +293,6 @@ def test_smuggle_changesets_refused_before_the_helper(tmp_path):
     controls = _applyable_controls()
     helper = RecordingHelper()
     jid = now_journal_id(datetime.datetime(2026, 10, 25, 9, 30, 5))
-    # the SAME payloads W3 named — every one must refuse and stay inert
     doc = tmp_path / "pass.json"
     for smuggled in (
         {"version": 1, "journal_id": "20261025-093000\nEVIL",
@@ -364,8 +314,6 @@ def test_smuggle_changesets_refused_before_the_helper(tmp_path):
         assert not doc.exists()           # nothing written, nothing ran
         assert not (tmp_path / "harden").exists()
         assert helper.calls == []         # the helper was never reached
-    # unknown-control card ALONE -> apply_pass fails closed as a skip:
-    # the unknown id is never executed, never planned, no doc, no helper
     unknown_only = [{"control_id": "smuggled-id", "checked": True,
                      "action": "apply"}]
     report = apply_pass(controls, unknown_only, jid, doc, tmp_path, helper)
@@ -388,7 +336,6 @@ def test_apply_pass_refuses_when_nothing_is_applyable(tmp_path):
     assert not (tmp_path / "harden").exists()
 
 
-# ── safety defaults ──────────────────────────────────────────────────────
 
 
 def test_existing_appfw_config_never_rewritten_by_a_pass(tmp_path):
@@ -406,21 +353,15 @@ def test_existing_appfw_config_never_rewritten_by_a_pass(tmp_path):
                         tmp_path / "pass.json", tmp_path, helper)
     assert report["errors"] == [] and helper.calls
     assert config.read_text(encoding="utf-8") == before
-    # fresh-install detection is NOT bypassed: with config.json present
-    # this was an existing install and the scan says so
     scan = run_scan(runner=FakeRunner(_fake_scan_table()),
                     data_dir=tmp_path, net_dir=tmp_path)
     assert scan["fresh_install"] is False
 
 
 def test_wizard_defaults_offline_and_no_autoapply():
-    # the wizard's own module carries the vocabulary, no product names,
-    # and the vocabulary names nothing owner-unapproved
     text = (ROOT / "wizard" / "ui_pages.py").read_text(encoding="utf-8")
     assert "pkexec" in text          # the owner-runtime helper is named
     assert "subprocess.run" in text
-    # no silent-switch flag anywhere: the only helper verbs are the two
-    # owner-gated ones, --apply (one confirm dialog) and --undo
     assert "--auto" not in text
 
 
@@ -429,12 +370,9 @@ def test_theme_rule_framework_choices_only():
     text = (ROOT / "wizard" / "ui_pages.py").read_text(encoding="utf-8")
     for name in ("coffee", "greyok", "add-on", "addon"):
         assert name not in text.lower()
-    # the framework's own picker keeps exactly the framework themes; the
-    # wizard adds none and strips none
     assert sorted(THEME_CHOICES) == ["Dark Mode", "Light Mode"]
 
 
-# ── no-hardware-ID greps over wizard outputs and documents ──────────────
 
 MAC = re.compile(r"\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b")
 SERIAL = re.compile(r"\bserial\b", re.IGNORECASE)
@@ -465,7 +403,6 @@ def test_no_hardware_identifiers_in_wizard_outputs(tmp_path):
                                   rc=0, out="VERBIFY kernel-kptr 0\n"))
     texts = (list(inventory_lines(scan)) + [json.dumps(doc)]
              + [json.dumps(c) for c in cards] + apply_report["white"])
-    # a nasty probe blowup (identifier in the message) never leaks either
     nasty = run_scan(runner=FakeRunner(
         _fake_scan_table(), fail_lines=("ss -tuln", "lsblk -o TYPE")),
         data_dir=tmp_path, net_dir=tmp_path)
@@ -477,7 +414,6 @@ def test_no_hardware_identifiers_in_wizard_outputs(tmp_path):
 
 
 def test_strip_honesty_states():
-    # parse_strip uses ui.harden's rules VERBATIM over BOTH streams
     assert parse_strip("VERBIFY kernel-kptr 0\n", "")[
         "colors"] == {"kernel-kptr": "GREEN"}
     assert parse_strip("APPLY kernel-kptr 0\n", "")["colors"] == {}
@@ -489,13 +425,11 @@ def test_strip_honesty_states():
         "colors"] == {"kernel-kptr": "RED"}
     assert parse_strip("ROLLBACK kernel-kptr\n", "")[
         "colors"] == {"kernel-kptr": "RED"}
-    # a refused pass is WHITE — never guessed green
     refused = parse_strip("", "CHANGES-scope backup path refused")
     assert refused["colors"] == {}
     assert refused["white"] and "refused" in refused["white"][0]
     silent = parse_strip("", "")
     assert silent["colors"] == {} and silent["white"]
-    # a colour the strip cannot attribute stays WHITE in the widget render
     assert ui_pages.WHITE_MARK == "⚪"
 
 
@@ -508,7 +442,6 @@ def test_journal_id_grammar_and_paths(tmp_path):
         "journal.jsonl"
 
 
-# ── GTK pages (display only; leak-guard pattern) ────────────────────────
 
 gi = pytest.importorskip("gi")
 gi.require_version("Gtk", "4.0")
@@ -516,9 +449,6 @@ from gi.repository import Gtk, GLib    # noqa: E402
 
 
 def _gtk_ready() -> bool:
-    """GTK4 defers real display init — init_check() alone returns True
-    headless and widget code then segfaults. A default display existing
-    is the honest probe; nothing else makes the module skip cleanly."""
     try:
         if not Gtk.init_check():
             return False
@@ -540,9 +470,6 @@ def pump(n=60):
 
 
 def drain(seconds=0.05, n=6):
-    """Drain the GLib main context WITH blocking passes but bounded: a
-    short timeout is armed as the stop event, so `may_block=True` never
-    waits longer than `seconds` per pass."""
     ctx = GLib.main_context_default()
     source = GLib.timeout_source_new(int(seconds * 1000) or 1)
     hit = {"now": False}
@@ -562,12 +489,6 @@ def drain(seconds=0.05, n=6):
 
 @pytest.fixture(autouse=True)
 def leak_guard():
-    """Creation-time guard, not teardown-time: no test maps a window
-    (nothing is ever presented), and teardown hides FIRST — set_visible
-    (False) unmaps WITHOUT a running main loop, while destroy() alone
-    does not — then destroys, then drains the GLib main context so the
-    next test starts clean (the release gate: ZERO visible windows at
-    any point of a run)."""
     start = set(Gtk.Window.list_toplevels())
     yield
     new = [w for w in Gtk.Window.list_toplevels() if w not in start]
@@ -597,13 +518,6 @@ def leak_guard():
 
 @pytest.fixture(scope="module", autouse=True)
 def no_greywatch_ghosts():
-    """Session/module safety net (release gate). BASELINE first: only the
-    toplevels THIS MODULE creates can ever be cleaned — the owner's live
-    greywatch GUI (another process) and its windows are untouchable, and
-    destroy() on a foreign X window must never be issued. At module end:
-    hide + destroy + drain every NEW greywatch toplevel and assert no NEW
-    VISIBLE greywatch window remains — zero test-created windows on the
-    owner's desktop at any point of the run."""
     start = set(Gtk.Window.list_toplevels())
     yield
     for _ in range(6):
@@ -698,7 +612,6 @@ def test_preview_table_rows_and_toggle(tmp_path):
     pump(10)
     ids = [w._table_store[i][0] for i in range(len(w._table_store))]
     assert "clamav-installed" in ids or ids, "table filled from cards"
-    # the table's text columns ARE the cards' cells
     first = w._table_store[0]
     card = next(c for c in w._cards if c["control_id"] == first[0])
     assert first[3 + 1] in (card["current"] or "",)     # Current col
@@ -836,9 +749,6 @@ def test_setup_wizard_window_hosted_and_destroyed():
     assert win.wizard.stack.get_child_by_name("verify") is not None
 
 def test_finish_enable_all_start_all_one_call(tmp_path, monkeypatch):
-    """Completion contract: reaching finish turns every protection ON —
-    ONE helper call (tool-control start-all) + the app-fw switch flips
-    user-scope (enable.json) — and the note reports it honestly."""
     w = _wizard(controls=_applyable_controls(), data_dir=tmp_path)
     calls: list[list[str]] = []
 
@@ -867,8 +777,6 @@ def test_finish_enable_all_start_all_one_call(tmp_path, monkeypatch):
 
 
 def test_finish_enable_all_button_manual_rerun(tmp_path, monkeypatch):
-    """The Enable-all button stays and can re-run when rc != 0 — and the
-    honest yellow note appears instead of a false green."""
     w = _wizard(controls=_applyable_controls(), data_dir=tmp_path)
     calls: list[list[str]] = []
 

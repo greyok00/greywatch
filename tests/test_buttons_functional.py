@@ -1,13 +1,3 @@
-"""tests/test_buttons_functional.py — REAL functional button verification.
-
-The owner's demand (2026-10-25): "buttons must work — not a checklist and
-clicks." Every control here is verified by its PERSISTED EFFECT in a
-sandboxed data directory: the appfw resume writes the real switch file
-(sandboxed), learning/strict/workspace write the real JSON stores, the
-battery button produces its honest report. System-unit toggles verify down
-to the exact privileged command (pkexec cannot take a password inside a
-test — those are the MANUAL-CONFIRM buttons, named honestly in the verdict).
-"""
 import json
 import pathlib
 import sys
@@ -25,9 +15,6 @@ from gi.repository import GLib  # noqa: E402
 
 
 def _gtk_ready() -> bool:
-    """GTK4 defers real display init — init_check() alone returns True
-    headless and widget code then segfaults. A default display existing
-    is the honest probe; nothing else makes the module skip cleanly."""
     try:
         from gi.repository import Gdk, Gtk
         if not Gtk.init_check():
@@ -65,8 +52,6 @@ class CheckStub:
 
 
 def _make_win(monkeypatch, tmp_path):
-    """A real dashboard whose file writes land in the sandbox, so the
-    EFFECTS are assertable without touching the live machine."""
     monkeypatch.setattr("ui.window.DATA_DIR", tmp_path)
     monkeypatch.setattr("ui.window.LearningStore",
                         lambda: us.LearningStore(tmp_path / "learning.json"))
@@ -90,7 +75,6 @@ def test_appfw_resume_writes_the_real_switch(monkeypatch, tmp_path):
     assert _j(switch) == {"enabled": True}      # THE REAL EFFECT
     win._toggle_tool("appfw", pause=True)       # PAUSE
     assert _j(switch) == {"enabled": False}
-    # and none of this touches greywatch.service (allowlist stays honest)
     assert win.by_name["appfw"]["unit"] == "greywatch.service"
 
 
@@ -102,8 +86,6 @@ def test_learning_toggle_persists_and_stops_cleanly(monkeypatch, tmp_path):
     win._on_learning_toggle(CheckStub(False))
     doc = _j(tmp_path / "learning.json")
     assert doc["until"] == 0                    # stop clears it
-    # (block-unknown is NOT touched by the stop path — the strict
-    # checkbox test covers that store separately)
 
 
 def test_strict_checkbox_persists_block_unknown(monkeypatch, tmp_path):
@@ -122,9 +104,6 @@ def test_workspace_combo_persists_the_choice(monkeypatch, tmp_path):
 
 def test_pause_on_a_real_tool_issues_the_exact_privileged_command(
         monkeypatch, tmp_path):
-    """The button's job is: run tool-control stop <unit>. The password step
-    is pkexec — MANUAL-CONFIRM by the owner. Everything the button controls
-    before that checkpoint is asserted here, argument-exact."""
     seen = []
 
     def fake_run_helper(name, argv):
@@ -142,8 +121,6 @@ def test_pause_on_a_real_tool_issues_the_exact_privileged_command(
 
 def test_every_registered_tool_with_a_unit_is_reachable_by_name(
         monkeypatch, tmp_path):
-    """No tool with a unit may be unreachable from the pause/resume lane —
-    the appfw regression that started this. Sandbox: all writes land in tmp."""
     monkeypatch.setattr("ui.window.DATA_DIR", tmp_path)
     monkeypatch.setattr("ui.window.LearningStore",
                         lambda: us.LearningStore(tmp_path / "l.json"))
@@ -153,5 +130,4 @@ def test_every_registered_tool_with_a_unit_is_reachable_by_name(
     for name, tool in win.by_name.items():
         if tool.get("unit") and name != "appfw":
             assert tool.get("scope") in ("root", "user"), name
-    # appfw is the switch lane and MUST exist as a registered tool
     assert "appfw" in win.by_name and win.by_name["appfw"]["unit"]

@@ -1,4 +1,3 @@
-"""Tests for hardening.detector — injected runner, invert flag, CANT-CHECK."""
 from hardening.detector import scan, prod_runner
 
 
@@ -24,7 +23,6 @@ def test_invert_flag():
 
 
 def test_fields_and_control_objects():
-    # Finding carries control id + captured output; Control dataclass also works.
     f = scan([C(id="c1")], runner=lambda l: (1, "not set"))[0]
     assert f.control_id == "c1" and f.current == "not set"
     from hardening.controls import Control
@@ -38,8 +36,6 @@ def test_prod_runner_runs_user_context():
 
 
 def test_prod_runner_refuses_sudo():
-    # sudo (or any root escalation) must never be attempted -> raised error,
-    # which the detector maps to CANT-CHECK.
     try:
         prod_runner("sudo ls")
     except RuntimeError:

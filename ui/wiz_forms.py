@@ -1,6 +1,3 @@
-"""Per-tool CONFIG WIZARDS as detail-page forms (owner 2026-10-23: "where
-is the wizards?"). Each form: plain-English label, builder-validated,
-apply through the pkexec helpers, PREVIEW before apply."""
 import pathlib
 import gi
 gi.require_version("Gtk", "4.0")
@@ -15,9 +12,6 @@ def _entry(hint, default=""):
 
 
 def _friendly(e) -> str:
-    """rules.ValidationError talks in field IDs ("from-ip invalid: ...").
-    On screen the app says it in words (Pass 3, 2026-10-23). The raw text
-    is never shown to the person."""
     msg = str(e)
     for ident, words in (("from-ip", "the computer address"),
                          ("logpath", "the log file path"),
@@ -30,12 +24,6 @@ def _friendly(e) -> str:
 
 
 def form_for(tool: str, result_box) -> Gtk.Widget | None:
-    """The tool's config panel; result_box = Gtk.Label for outcomes.
-
-    The CALLER places result_box (the detail page packs it under the form).
-    It must not be added to the form here: packing one widget twice is a
-    Gtk-CRITICAL and the label silently stays inside the form box
-    (found 2026-10-23 while opening every tool's detail page)."""
     if tool == "appfw":
         return _appfw(result_box)
     if tool == "ufw":
@@ -62,10 +50,7 @@ def _row(label, widget):
     return b
 
 
-# ── UFW: block/allow an IP + port ───────────────────────────────────────
 def _appfw(result):
-    """The app-fw rule form (owner's main lane): preview then store — the
-    rule lands in the grey-owned store instantly (no popups, no helpers)."""
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     box.set_margin_top(10)
     kind = Gtk.ComboBoxText()
@@ -158,7 +143,6 @@ def _ufw(result):
     return box
 
 
-# ── FAIL2BAN: one jail ──────────────────────────────────────────────────
 def _fail2ban(result):
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     box.set_margin_top(10)
@@ -190,7 +174,6 @@ def _fail2ban(result):
     return box
 
 
-# ── TETRAGON: one tracing policy ────────────────────────────────────────
 def _tetragon(result):
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     box.set_margin_top(10)
@@ -226,7 +209,6 @@ def _tetragon(result):
     return box
 
 
-# ── YARA: a rule with a REAL compile gate ───────────────────────────────
 def _yara(result):
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     box.set_margin_top(10)
@@ -259,7 +241,6 @@ def _default_iface() -> str:
     return ""
 
 
-# ── ARPWATCH: per-iface config ──────────────────────────────────────────
 def _arpwatch(result):
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     box.set_margin_top(10)

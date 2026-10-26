@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-"""W3 — Tetragon wizard (plan 148): exec/connect/file → presets copied from
-the REAL policies → log-only/block → YAML → pkexec write → journal verify →
-rollback (remove + unload via restart, owner-gated)."""
 from rules import tetragon_policy, ValidationError
 from wiz import common
 
@@ -27,7 +23,6 @@ def apply_policy(b, payload_path=None):
 
 
 def verify(b):
-    """journal check that tetragon loaded the policy."""
     import subprocess
     try:
         out = subprocess.run(["journalctl", "-u", "tetragon", "-n", "20", "--no-pager"],
@@ -39,8 +34,6 @@ def verify(b):
 
 
 def rollback(b):
-    """Owner-gated: remove the drop-in (backup restored); unload requires a
-    tetragon restart — recorded, attempted ONLY when allowed."""
     bak = b["target"] + ".bak"
     ok = common.restore_backup(bak, b["target"])
     return ok

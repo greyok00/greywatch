@@ -1,10 +1,3 @@
-"""rules.py — config rule BUILDERS (Task 8 / wiz/*, CLI `greywatch rules`).
-
-Pure functions: validated spec dict → EXACT command list / file content /
-preview. No I/O here; apply/verify/rollback run through wiz/common (pkexec
-helpers only, allowlisted). Every tool's wizard and the CLI reuse THE SAME
-builders (plan line 151).
-"""
 from __future__ import annotations
 
 import pathlib
@@ -16,7 +9,6 @@ NAME_RE = r"^[A-Za-z0-9_.-]{1,64}$"
 
 
 def rules_main(args) -> int:
-    """`greywatch rules <tool> …` dispatch — the appfw wizard first."""
     tool = getattr(args, "tool", "") or ""
     rest = list(getattr(args, "rest", None) or [])
     if tool == "appfw":
@@ -45,13 +37,8 @@ def _match(value, pattern, what):
     return value
 
 
-# ── W1: UFW ──────────────────────────────────────────────────────────────
 
 def ufw_build(spec: dict) -> list:
-    """EXACT ufw command TOKENS, in ufw's real argument order:
-    ufw ACTION DIRECTION from IP [to any] [port PORT proto PROTO] [comment C].
-    Wizard flow (plan): ask action → direction → port/proto → source →
-    comment — the FLOW differs from the wire order by design."""
     action = _match(spec.get("action", ""), r"^(allow|deny|reject|limit)$", "action")
     direction = _match(spec.get("direction", ""), r"^(in|out)$", "direction")
     cmd = ["ufw", action, direction]
@@ -77,16 +64,12 @@ def ufw_exact_string(spec: dict) -> str:
 
 
 def ufw_rollback(cmd: list) -> list:
-    """`ufw delete <num>` per plan — the numbered-status position is what the
-    wizard records right after applying."""
     return ["ufw", "delete", "@num"]
 
 
-# ── W2: Fail2ban ─────────────────────────────────────────────────────────
 
 def fail2ban_jail(jail: str, bantime: int, findtime: int, maxretry: int,
                   logpath: str, filter_name: str) -> list:
-    """jail.d/<name>.local lines, modeled on the real suricata-egress.local."""
     _match(jail, JAIL_RE, "jail")
     for name, val in (("bantime", bantime), ("findtime", findtime)):
         if not isinstance(val, int) or val < 1 or val > 8640000:
@@ -107,7 +90,6 @@ def fail2ban_jail(jail: str, bantime: int, findtime: int, maxretry: int,
 
 
 def fail2ban_filter(pattern: str) -> list:
-    """filter.d/<name>.conf failregex; rejects dangerous chars and empty."""
     if not isinstance(pattern, str) or not (1 <= len(pattern) <= 400):
         raise ValidationError("pattern invalid")
     for ch in "\n;|&$\x00":
@@ -119,11 +101,8 @@ def fail2ban_filter(pattern: str) -> list:
     ]
 
 
-# ── W3: Tetragon ─────────────────────────────────────────────────────────
 
 def tetragon_policy(kind: str, name: str, selector: dict, action: str) -> list:
-    """YAML lines matching the REAL policies in /etc/tetragon/tetragon.tp.d/.
-    kind: exec|connect|file; action: log-only|block."""
     _match(name, NAME_RE, "name")
     if kind not in ("exec", "connect", "file_write"):
         raise ValidationError("kind invalid")
@@ -169,11 +148,8 @@ def tetragon_policy(kind: str, name: str, selector: dict, action: str) -> list:
     return lines
 
 
-# ── W4: YARA ─────────────────────────────────────────────────────────────
 
 def yara_source(rules: dict) -> list:
-    """Real /usr/bin/yara compile gate input. rules: {name: [(modifier, body)]}.
-    Returns index.yar lines; every name validated; body length capped."""
     lines = []
     for name, body in rules.items():
         _match(name, r"^[A-Za-z0-9_-]{1,64}$", "rule name")
@@ -193,14 +169,12 @@ def yara_index(entries) -> list:
     return [f'include "{e}"' for e in entries]
 
 
-# ── W0: arpwatch ─────────────────────────────────────────────────────────
 
 IFACE_RE = r"^[a-z0-9.]{2,15}$"
 ARGS_OK = frozenset({"-N", "-p", "-l", "-d"})
 
 
 def arpwatch_env_file(iface: str, runas: str, args_list, pcap_filter: str) -> list:
-    """/etc/arpwatch/$IFACE.iface (unit EnvironmentFile=-) builder."""
     _match(iface, IFACE_RE, "iface")
     _match(runas, r"^[A-Za-z0-9_-]{1,16}$", "runas")
     for a in args_list:

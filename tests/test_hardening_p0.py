@@ -1,9 +1,3 @@
-"""tests/test_hardening_p0.py — chaos + self-heal batteries (master prompt §7).
-
-Every P0 invariant gets a test that TRIES TO BREAK IT: interrupted atomic
-writes, corrupt rule files, bad entries, stale heartbeats, dying threads,
-breaker trips, legacy migration, and the never-auto-promote learning rule.
-"""
 import importlib.util
 import json
 import pathlib
@@ -23,7 +17,6 @@ from supervisor import Supervisor, Supervised
 from schemas import validate as V
 
 
-# ── P0-a: atomic writes survive a mid-write kill ─────────────────────────
 def test_atomic_write_survives_interrupt(tmp_path, monkeypatch):
     p = tmp_path / "f.json"
     write_json_atomic(p, {"a": 1})
@@ -39,7 +32,6 @@ def test_atomic_write_survives_interrupt(tmp_path, monkeypatch):
     assert json.loads(p.read_text()) == {"a": 2}
 
 
-# ── P0-d: corrupt containers + bad entries never poison the store ───────
 def test_store_tolerates_a_corrupt_file(tmp_path):
     d = tmp_path
     (d / "allow-always.json").write_text("{TOTALLY CORRUPT")
@@ -72,7 +64,6 @@ def test_schema_validator_basics():
     assert errs and "below min" in errs[0]
     assert V.validate({}, schema) and "missing required" in V.validate(
         {}, schema)[0]
-    # a self-ref rules file validates end-to-end
     doc = {"kind": "x", "rules": [{"name": "r", "action": "allow",
             "duration": "always", "op_kind": "dst.host",
             "op_value": "example.com", "created": 1}]}
@@ -80,7 +71,6 @@ def test_schema_validator_basics():
     assert V.validate_rules({"kind": "x", "rules": [{"op_value": ""}]})
 
 
-# ── P0-d: legacy migration (one-time, originals preserved) ──────────────
 def test_legacy_migration(tmp_path):
     legacy = tmp_path / "appfw-app-x-process-path.json"
     legacy.write_text(json.dumps(
@@ -92,12 +82,10 @@ def test_legacy_migration(tmp_path):
     assert (tmp_path / "legacy-backup" /
             "appfw-app-x-process-path.json").exists()
     assert not legacy.exists()
-    # idempotent: a second open migrates nothing new
     st2 = RuleStore(tmp_path)
     assert "appfw-app-x" in [r.name for r in st2.all_rules()]
 
 
-# ── P0-d: pending (learning) rules are NEVER auto-promoted ──────────────
 def test_pending_never_auto_promotes(tmp_path):
     st = RuleStore(tmp_path)
     rule = R.validate("p-endpoint", "allow", "always", "dst.host",
@@ -114,7 +102,6 @@ def _conn(host):
     return Conn(dst_host=host)
 
 
-# ── P0-d: session rules die at start/stop (deliberate) ──────────────────
 def test_session_rules_die_at_start(tmp_path):
     st = RuleStore(tmp_path)
     st.add(R.validate("tmp", "deny", "until restart", "process.path",
@@ -129,7 +116,6 @@ def _conn_path(path):
     return Conn(process_path=path)
 
 
-# ── P0-e: supervised restart + circuit breaker ──────────────────────────
 def test_supervisor_restarts_a_dead_thread():
     s = Supervisor()
 
@@ -141,7 +127,6 @@ def test_supervisor_restarts_a_dead_thread():
     u.start()
     time.sleep(0.2)
     assert u.supervise() == "running"
-    # simulate death: swap in a finished thread
     u.thread = threading.Thread(target=lambda: None)
     u.thread.start()
     u.thread.join()
@@ -184,14 +169,12 @@ def test_delegated_launcher_restarts_a_dead_tailer():
                health=lambda: t._thread is not None and t._thread.is_alive(),
                latched_target=False)
     t.start()                                   # manual launch: started==1
-    # now the worker thread dies; dead >2 s ⇒ the supervisor re-launches
     t._thread.join()
     s.units["tail:x"].last_start = time.monotonic() - 3.0
     state = s.check_all()["tail:x"]
     assert state == "restarted" and len(started) == 2
 
 
-# ── P0-b: the watchdog decision (imported from the doc script) ──────────
 def _watchdog():
     spec = importlib.util.spec_from_file_location(
         "gw_watchdog", ROOT / "doc" / "greywatch_watchdog.py")

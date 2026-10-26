@@ -1,10 +1,3 @@
-"""tests/test_engine_worker.py — the native transport, end-to-end (grey-side).
-
-The REAL worker binary needs CAP_NET_ADMIN; these tests drive the engine's
-decision half against tests/fake_worker.py over the REAL sockets, with a
-fake subprocess standing in for the compiled binary. Verdict contract:
-PKT in → resolve → decide → ALLOW/DROP out; fail-open on policy errors.
-"""
 import json
 import os
 import pathlib
@@ -50,7 +43,6 @@ def _engine(tmp_path, monkeypatch, workers=3):
 
 
 def _fake_popen(argv, env=None, **k):
-    """Runs the fake worker in-place of the compiled binary."""
     return subprocess.Popen([sys.executable, str(ROOT / "tests" /
                                                     "fake_worker.py"), "3"],
                             env=env)
@@ -60,7 +52,6 @@ def test_pkts_get_verdicts_through_real_sockets(tmp_path, monkeypatch):
     eng, events = _engine(tmp_path, monkeypatch)
     acfg.save(tmp_path, {**acfg.DEFAULTS, "ipv6_enabled": False})
     assert eng.start()
-    # fake worker sends 3 PKTs; verdicts come back within the window
     time.sleep(1.5)
     verdicts = [e for e in events if "answered: allow" in e
                 or "ALLOW" in e or "allow" in e]
@@ -91,8 +82,6 @@ def test_engine_refuses_to_arm_with_switch_off(tmp_path):
 
 
 def test_worker_missing_binary_refuses_to_arm(tmp_path, monkeypatch):
-    """A half-built worker refuses to arm (never half-broken): binary gone,
-    gcc source gone → start() fails with an honest event."""
     (tmp_path / "appfw").mkdir(parents=True, exist_ok=True)
     eng = Engine(tmp_path, socket_dir=str(tmp_path),
                  worker_bin=tmp_path / "missing-worker",

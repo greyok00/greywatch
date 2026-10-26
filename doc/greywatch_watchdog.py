@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-"""greywatch_watchdog.py — the unit watchdog (P0-b, root timer job).
-
-Called by greywatch-watchdog.timer every 15 s. If /run/greywatch/heartbeat
-is stale >30 s (the daemon's 5 s touch loop is dead) OR the unit is not
-active, restart greywatch.service. Never raises; every decision prints.
-"""
 from __future__ import annotations
 
 import pathlib

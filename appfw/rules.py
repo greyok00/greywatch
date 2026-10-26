@@ -1,19 +1,3 @@
-"""rules.py — config rule BUILDERS + the consolidated appfw RuleStore.
-
-WIZARD BUILDERS (Task 8 / wiz/*, CLI `greywatch rules`): pure functions,
-validated spec dict → EXACT command list / file content / preview. No I/O
-here; apply/verify/rollback run through wiz/common (pkexec helpers only,
-allowlisted). Every tool's wizard and the CLI reuse THE SAME builders.
-
-APPFW (P0-d; master prompt): FOUR schema-validated consolidated JSON files
-under rules_dir — allow-always.json / deny-always.json / session-only.json /
-learning-pending.json. Atomic writes (P0-a); corrupt files/entries are
-skipped + logged; never crash, never poison. Legacy per-rule files migrate
-once, originals kept under legacy-backup/. `always` survives restarts;
-`until restart` is session-scoped (dies at engine start/stop — deliberate);
-`once` NEVER becomes a rule; learning entries are NEVER auto-promoted —
-only explicit approval (approve_pending) moves them.
-"""
 from __future__ import annotations
 
 import fnmatch
@@ -27,10 +11,6 @@ from dataclasses import dataclass
 
 from .base import ACTIONS, DURATIONS
 
-# NOTE: the multi-tool rule BUILDERS (ufw_build, fail2ban_jail, tetragon_
-# policy, yara_source, arpwatch_env_file) + the CLI `rules` dispatch
-# (rules_main) live in the project-root rules.py — exactly once, by the
-# owner's zero-redundancy rule. THIS module is the appfw lane only.
 
 IP_RE = r"^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)" \
         r"(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$"
@@ -56,8 +36,6 @@ class Rule:
 
 
 def validate(name, action, duration, op_kind, op_value) -> Rule:
-    """Validate-and-build. THE OPERATOR IS MANDATORY — an operator-less
-    rule matched nothing under the previous engine and caused re-asking."""
     if action not in ACTIONS:
         raise ValidationError(f"action invalid: {action!r}")
     if duration not in DURATIONS:
@@ -89,7 +67,6 @@ def validate(name, action, duration, op_kind, op_value) -> Rule:
 
 
 def matches(rule: Rule, conn) -> bool:
-    """Simple matching: exact, or glob when the value carries wildcards."""
     v = rule.op_value
     if rule.op_kind == "process.path":
         val = str(conn.process_path or "")
@@ -148,7 +125,6 @@ class RuleStore:
         self.legacy_migrate()
         self.reload()
 
-    # ── persistence ──────────────────────────────────────────────────────
     def _write(self, fname: str, rules: list[Rule]) -> None:
         from schemas.validate import validate_rules
         from appfw.atomicio import write_json_atomic
@@ -183,8 +159,6 @@ class RuleStore:
             bucket[rule.name] = rule
 
     def legacy_migrate(self) -> None:
-        """Old layout = one JSON per rule → merge into consolidated files;
-        originals preserved under legacy-backup/. Idempotent."""
         legacy = [p for p in sorted(self.dir.glob("*.json"))
                   if p.name not in (self.ALLOW_FILE, self.DENY_FILE,
                                     self.SESSION_FILE, self.PENDING_FILE)
@@ -222,7 +196,6 @@ class RuleStore:
         self._load_kind(self.PENDING_FILE, self._pending)
         self._load_kind(self.SESSION_FILE, {})   # recorded, not trusted
 
-    # ── mutation ─────────────────────────────────────────────────────────
     def _known(self) -> set:
         rules = [*self._allow.values(), *self._deny.values(),
                  *self._pending.values(), *self.memory]
@@ -244,7 +217,6 @@ class RuleStore:
                 "duration 'once' never becomes a stored rule")
 
     def add_pending(self, rule: Rule) -> None:
-        """A learned pair waits here; approval is the ONLY exit."""
         if (rule.op_kind, rule.op_value.lower()) in self._known():
             return
         self._pending[rule.name] = rule
@@ -262,7 +234,6 @@ class RuleStore:
         return True
 
     def revoke_pending(self, name: str) -> bool:
-        """Drop a pending entry WITHOUT promoting it (the owner declines)."""
         rule = self._pending.pop(name, None)
         if rule is None:
             return False
@@ -281,7 +252,6 @@ class RuleStore:
             self._write(fname, list(bucket.values()))
         return n
 
-    # ── queries ──────────────────────────────────────────────────────────
     def all_rules(self, include_session: bool = True) -> list[Rule]:
         rules = [*self._allow.values(), *self._deny.values()]
         if include_session:
@@ -300,7 +270,6 @@ class RuleStore:
         return None
 
     def session_reset(self) -> int:
-        """'until restart' rules die at engine start — deliberate."""
         n = len(self.memory)
         self.memory.clear()
         try:
@@ -310,5 +279,4 @@ class RuleStore:
         return n
 
     def session_purge(self) -> int:
-        """Engine stop: 'until restart' rules die with it — deliberate."""
         return self.session_reset()

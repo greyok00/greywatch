@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-"""W4 — YARA wizard (plan 149): guided editor → LIVE /usr/bin/yara compile+
-test-scan gate → scope note → apply under ~/yara-rules + index.yar
-backup → rollback restore."""
 import pathlib
 import subprocess
 from rules import yara_source
@@ -14,9 +10,6 @@ _PAYLOAD = _REPO / "tmp-payload.yar"
 
 
 def compile_gate(source_lines: str) -> tuple:
-    """REAL /usr/bin/yara compile gate: rc 0/1 = compiled (1 = no match on
-    /dev/null), rc != 0/1 = rule syntax error. Never raises; payload lives
-    only under the project dir and is removed after."""
     tmp = _REPO / "tmp-yara.yar"
     try:
         tmp.write_text(str(source_lines) + chr(10))

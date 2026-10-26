@@ -1,4 +1,3 @@
-"""tests/test_appfw_wizard.py — the rule wizard + the ONE notification square."""
 import json
 import pathlib
 import sys
@@ -19,7 +18,6 @@ def wiz_env(tmp_path, monkeypatch):
     return tmp_path
 
 
-# ── rule wizard ──────────────────────────────────────────────────────────
 def test_build_and_preview_program_and_site(wiz_env):
     built = aw.appfw_build({"kind": "program", "action": "deny",
                             "value": "/usr/bin/curl"})
@@ -41,7 +39,6 @@ def test_apply_spec_persists_and_dedupes(wiz_env):
                    "value": "/usr/bin/ollama"})
     aw.apply_spec({"kind": "program", "action": "allow",
                    "value": "/usr/bin/ollama"})
-    # v2: ONE consolidated file holds both attempts as a single rule
     files = list((wiz_env / "appfw" / "rules").glob("*.json"))
     assert [p.name for p in files] == ["allow-always.json"]
     rules = json.loads(files[0].read_text())["rules"]
@@ -60,7 +57,6 @@ def test_learning_ledger_and_approve_flow(wiz_env):
     assert [p["app"] for p in pairs][:2] == ["/usr/bin/node",
                                              "/usr/bin/python3.13"]
     aw.appfw_main(["approve"])
-    # v2: both approvals land inside the ONE allow-always.json container
     allow = json.loads(
         (wiz_env / "appfw" / "rules" / "allow-always.json").read_text())
     assert len(allow["rules"]) == 2
@@ -71,7 +67,6 @@ def test_cli_list_and_remove(wiz_env):
     out = aw.appfw_main(["list"])
     assert out == 0                          # prints; no crash
     assert aw.appfw_main(["remove", "appfw-app-curl"]) == 0
-    # v2: containers persist (possibly empty); rule CONTENT must be gone
     for fname in ("allow-always.json", "deny-always.json"):
         p = wiz_env / "appfw" / "rules" / fname
         if p.exists():
@@ -79,7 +74,6 @@ def test_cli_list_and_remove(wiz_env):
     assert aw.appfw_main(["deny", ""]) != 0  # empty value refused
 
 
-# ── the ONE square ───────────────────────────────────────────────────────
 def test_parse_deny_engine_lines():
     assert na.parse_deny(
         "appfw curl → bad.example:80 deny [note]") == \
@@ -89,8 +83,6 @@ def test_parse_deny_engine_lines():
 
 
 def test_one_square_replaces_itself_and_never_stacks(tmp_path, monkeypatch):
-    # the square obeys the popups-off default (owner order 2026-10-25);
-    # this test flips alerts ON in an ISOLATED settings file.
     settings = tmp_path / "greywatch-ui-settings.json"
     settings.write_text('{"alerts": true}')
     monkeypatch.setattr(na, "ALERTS_SETTING_PATH", settings)

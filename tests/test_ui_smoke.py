@@ -1,12 +1,3 @@
-"""The launch-and-click smoke tests that did not exist (audit 2026-10-23).
-
-These tests exist because 347 green tests coexisted with an app that showed
-a grey window: nothing exercised MainWindow, the rail, scans, or the wizard.
-
-GTK4 migration (Pass 2, 2026-10-25): the same clicks on GTK4 — init via
-Gtk.init_check(), pump through the GLib main context (Gtk.main_iteration_do
-is gone), child walks via observe_children (GtkContainer is gone).
-"""
 import sys
 import pathlib
 import time
@@ -22,9 +13,6 @@ from gi.repository import Gtk, GLib, Gdk  # noqa: E402
 
 
 def _gtk_ready() -> bool:
-    """GTK4 defers real display init — init_check() alone returns True
-    headless and widget code then segfaults. A default display existing
-    is the honest probe; nothing else makes the module skip cleanly."""
     try:
         if not Gtk.init_check():
             return False
@@ -39,14 +27,12 @@ if not _gtk_ready():
 
 
 def pump(n=20):
-    """GTK4 has no Gtk.main_iteration_do: iterate the default GLib context."""
     ctx = GLib.main_context_default()
     for _ in range(n):
         ctx.iteration(False)
 
 
 def observe(widget):
-    """All direct children (GtkContainer.get_children is gone in GTK4)."""
     return list(widget.observe_children())
 
 
@@ -121,10 +107,6 @@ def test_wizard_chooser_has_working_cancel(win):
     labels = button_labels(chooser)
     assert any("Cancel" in lab for lab in labels), labels
 
-    # The dialog must fit on screen, or its Cancel button is unclickable
-    # (the real defect that made Cancel "not work"). GTK4: the display's
-    # monitor geometry replaces Gdk.Screen; the chooser's default size is
-    # what it asks the window manager for.
     mons = Gdk.Display.get_default().get_monitors()
     screen_h = mons.get_item(0).get_geometry().height if mons.get_n_items() \
         else 1000
@@ -143,8 +125,6 @@ def test_row_selection_carries_the_registry_key(win):
 
 
 def test_selection_survives_a_live_refresh(win):
-    """The 5-second refresh used to clear the list and silently drop the
-    user's selection — Pause then acted on nothing."""
     win.list_view.get_selection().select_path(3)
     pump(5)
     chosen = win._selected_tool
@@ -208,8 +188,6 @@ def test_paused_tool_is_amber_not_a_fault(win):
 
 
 def test_action_state_wins_until_status_catches_up(win):
-    """A pause/resume must show its result at once; the daemon's older
-    status.json must not contradict the user for a minute."""
     import datetime as dt
     now = dt.datetime.now(dt.timezone.utc)
     win._state_override = {"yara-tmp-scan": ("GREEN", now)}
@@ -222,8 +200,6 @@ def test_action_state_wins_until_status_catches_up(win):
 
 
 def test_wizard_chooser_does_not_preselect_a_card():
-    """GTK's FlowBox preselects child 0, so the first card looked chosen
-    before the person did anything (Pass 2 defect)."""
     from ui.wizard import ToolChooser
     c = ToolChooser(on_pick=lambda k: None)
     c.present()
@@ -245,9 +221,6 @@ def test_wizard_chooser_does_not_preselect_a_card():
 
 
 def test_site_wizard_lists_real_sites_and_needs_no_typing():
-    """The site page was a typing box. Now it lists real sites (already
-    decided, in use, recently visited) and stays incomplete until one is
-    picked (owner 2026-10-23: "just by clicks")."""
     from ui.wizard import RuleWizard
     from ui import discover
     w = RuleWizard("site")
@@ -264,8 +237,6 @@ def test_site_wizard_lists_real_sites_and_needs_no_typing():
 
 
 def test_no_wizard_flow_contains_a_typing_field():
-    """Owner order: nothing in the wizard may require typing. Every flow
-    is buttons, dropdowns and the file picker."""
     from ui.wizard import RuleWizard
     for tool in ("site", "ufw", "fail2ban", "tetragon", "yara", "arpwatch"):
         w = RuleWizard(tool)
@@ -284,7 +255,6 @@ def test_no_wizard_flow_contains_a_typing_field():
 
 
 def test_wizard_close_button_really_closes():
-    """The SUMMARY page's Close emitted "close", which nobody handled."""
     from ui.wizard import RuleWizard
     w = RuleWizard("site")
     pump(20)
@@ -296,7 +266,6 @@ def test_wizard_close_button_really_closes():
 
 
 def test_confirm_text_wraps_instead_of_stretching_the_window():
-    """A long confirm sentence widened the assistant mid-flow."""
     from ui.wizard import RuleWizard
     w = RuleWizard("site")
     pump(20)
@@ -306,7 +275,6 @@ def test_confirm_text_wraps_instead_of_stretching_the_window():
 
 
 def test_wizard_done_page_keeps_the_window_width():
-    """An unconstrained label stretched the window on the last page."""
     from ui.wizard import RuleWizard
     w = RuleWizard("site")
     pump(20)
@@ -326,7 +294,6 @@ def test_wizard_done_page_keeps_the_window_width():
 
 
 def test_empty_or_invalid_trust_input_explains_itself(win):
-    """A click that changes nothing used to do nothing at all."""
     before = set(win.trust.allow), set(win.trust.block)
     win.trust_entry.set_text("")
     win._on_trust_add(None, "allow")
@@ -344,8 +311,6 @@ def test_empty_or_invalid_trust_input_explains_itself(win):
 
 
 def test_removing_a_site_says_which_site(win):
-    """The refresh cleared the view and wiped the selection, so a successful
-    removal reported "Removed None." (Pass 2 defect)."""
     class FakeTrust:
         def __init__(self):
             self.allow = {"regression-test.example"}
@@ -383,7 +348,6 @@ def test_removing_a_site_says_which_site(win):
 
 
 def test_feed_times_are_the_users_own_clock():
-    """A raw UTC stamp read as local looks hours in the future (Pass 2)."""
     import datetime as dt
     from ui.models import local_clock
     stamp = "2026-10-23T12:00:51+00:00"
@@ -404,8 +368,6 @@ def test_status_words_are_honest():
 
 
 def test_wizard_trust_change_reaches_settings(win):
-    """After a wizard adds a site, the Settings lists must re-read the file
-    (the wizard writes through its own TrustList)."""
     class Loader:
         allow, block, apps_allow = {"late.example"}, set(), set()
         loaded = False
@@ -428,8 +390,6 @@ def test_wizard_trust_change_reaches_settings(win):
 
 
 def test_empty_trust_lists_explain_themselves(win):
-    """An empty list box read as a broken screen, and its placeholder row
-    must never be selectable as a site/program (Pass 2/3)."""
     class EmptyTrust:
         allow, block, apps_allow = set(), set(), set()
 
@@ -461,8 +421,6 @@ def test_empty_trust_lists_explain_themselves(win):
 
 
 def test_validation_errors_are_plain_english():
-    """The form showed rules.ValidationError's raw field IDs:
-    "Check the values: from-ip invalid: 'NOT-AN-IP'" (Pass 3 defect)."""
     from ui.wiz_forms import _friendly
     msg = _friendly(ValueError("from-ip invalid: 'NOT-AN-IP'"))
     assert "from-ip" not in msg
@@ -470,8 +428,6 @@ def test_validation_errors_are_plain_english():
 
 
 def test_yara_error_text_cannot_break_the_done_page(monkeypatch):
-    """yara quotes the rule back in its error; a raw "<" made the markup
-    invalid and the Done page went blank (Pass 3 defect)."""
     from ui.wizard import RuleWizard
     import wiz.yara_wizard as Y
     import ui.discover as D
@@ -490,8 +446,6 @@ def test_yara_error_text_cannot_break_the_done_page(monkeypatch):
 
 
 def test_missing_status_snapshot_is_not_reported_as_a_fault(win, monkeypatch):
-    """"17 protections need attention" while every row said "could not
-    check": the app blamed the tools for its own missing data (Pass 3)."""
     import ui.window as W
     monkeypatch.setattr(W.daemon_mod, "load_status",
                         lambda *a, **k: {"updated": None, "tools": {}})
@@ -508,7 +462,6 @@ def test_saved_theme_is_applied_at_startup(win):
 
 
 def test_detail_empty_state_is_explained(win, monkeypatch):
-    """A blank events box reads as a broken dialog (Pass 2 defect)."""
     import ui.window as W
     monkeypatch.setattr(W.daemon_mod, "read_events", lambda *a, **k: [])
     win._open_detail("clamav")
@@ -527,10 +480,6 @@ def test_details_open_as_a_visible_dialog(win):
 
 
 def test_every_detail_page_packs_its_widgets_once(win):
-    """The config forms packed their result label into themselves and the
-    detail page packed it AGAIN → Gtk-CRITICAL and a label the user could
-    never see in some dialogs (found 2026-10-23; the GTK4 assertion text
-    names gtk_widget_get_parent)."""
     problems = []
 
     def handler(_domain, _level, message, _data):
@@ -570,9 +519,7 @@ def test_detail_close_button_actually_closes(win):
     assert not dlg.get_visible()
 
 
-# ── the zero-typing wizard (owner 2026-10-23) ───────────────────────────
 def _combo_ids(combo):
-    # Gtk.ComboBoxText stores [label, id]: the id is the real value.
     return [row[1] for row in combo.get_model()]
 
 
@@ -718,8 +665,6 @@ def test_settings_has_a_browse_button(win):
 
 
 def test_progress_ring_only_exists_while_a_scan_runs(win):
-    """Owner 2026-10-23: the circle is a PROGRESS indicator — it must not
-    sit on screen saying idle, and it must not freeze at 100%."""
     from ui.window import ProgressCircle
     assert not win.circle.get_visible()      # Tools screen starts clean
     c = ProgressCircle()
@@ -747,7 +692,6 @@ def test_root_scans_watch_their_real_process():
         assert by_key[key].get("proc") == proc, key
 
 
-# ── updates + app firewall settings (owner 2026-10-23) ──────────────────
 def test_updates_panel_shows_real_timestamps(win):
     win._refresh_updates()
     text = win.updates_note.get_text()
@@ -760,8 +704,6 @@ def test_updates_panel_shows_real_timestamps(win):
 
 
 def test_cve_list_is_displayed_as_up_to_date_not_not_running(win):
-    """A weekly timer between runs is not a dead service; a fresh cache is
-    the truth the person needs."""
     from ui import updates
     if not updates.cve_is_fresh():
         pytest.skip("the cache is genuinely old")
@@ -802,7 +744,6 @@ def test_learning_toggle_writes_the_real_flag(win):
 
 
 def test_site_trust_box_offers_real_sites(win):
-    """Same rule as the wizard: pick, don't spell (owner 2026-10-23)."""
     from ui import discover
     ids = [row[1] for row in win.trust_combo.get_model()]
     assert ids, "no sites detected for the trust list"
@@ -812,8 +753,6 @@ def test_site_trust_box_offers_real_sites(win):
 
 
 def test_detail_config_pages_are_click_only(win):
-    """The old Config tab made people type jail names, log paths, YARA
-    conditions and IPs. It now opens the guided wizard (owner order)."""
     for tool in ("ufw", "fail2ban", "tetragon", "yara-watch",
                  "yara-tmp-scan", "arpwatch"):
         win._open_detail(tool)
@@ -836,9 +775,6 @@ def test_detail_config_pages_are_click_only(win):
 
 
 def test_firewall_toggle_result_is_reported_where_the_button_is(win):
-    """Owner 2026-10-23: "WHY ISN'T APP FIREWALL RUNNING". A cancelled
-    password prompt used to be reported on the Tools screen only, so the
-    Settings button looked dead. The result must appear beside the button."""
     win._show("settings")
     pump(10)
     win._after_toggle("appfw", False, 126)     # prompt cancelled
@@ -848,11 +784,7 @@ def test_firewall_toggle_result_is_reported_where_the_button_is(win):
     assert win.fw_btn.get_sensitive()
 
 
-# ── GTK4 invariants (Pass 2 migration) ──────────────────────────────────
 def test_no_gtk3_only_api_survives_in_the_ui_sources():
-    """The migration is total: no removed GTK3 call shape may come back
-    (show_all/set_position/Dialog.run/MessageDialog/pack_start/…). Only
-    real code counts — comments and docstrings are stripped first."""
     import re
     ui_dir = pathlib.Path(ROOT) / "ui"
     banned = [
@@ -888,8 +820,6 @@ def test_no_gtk3_only_api_survives_in_the_ui_sources():
 
 
 def test_window_close_without_tray_ends_the_app(win):
-    """GTK4 replaced delete-event with close-request; without a tray the
-    window must not merely hide — it ends the app (quit callback)."""
     quits = []
     old = win._tray_available, win.quit_cb
     win._tray_available, win.quit_cb = False, (lambda: quits.append(1))
@@ -898,8 +828,6 @@ def test_window_close_without_tray_ends_the_app(win):
         assert quits == [1]
     finally:
         win._tray_available, win.quit_cb = old
-    # ... and WITH a tray the same request hides the window, which must be
-    # able to come back (the tray's Show Dashboard).
     old2 = win._tray_available, win.quit_cb
     win._tray_available, win.quit_cb = True, None
     try:

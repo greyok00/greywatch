@@ -1,4 +1,3 @@
-"""tests/test_notifications.py — the critical-events square + engine cycles."""
 import json
 import socket
 import pathlib
@@ -31,7 +30,6 @@ class _SubStub:
                                 "fake_worker.py"), "1"], env=env)
 
 
-# ── critical filter: newest wins, only the named classes ────────────────
 def test_critical_filter_picks_only_named_classes():
     events = [
         {"from_tool": "fail2ban", "severity": "HIGH", "text": "Ban 1.2.3.4"},
@@ -58,8 +56,6 @@ def test_critical_events_coalesce_without_stacking():
 
 
 def test_critical_square_replaces_itself(tmp_path, monkeypatch):
-    # popups-off default (owner order 2026-10-25): flip alerts ON in an
-    # ISOLATED settings file.
     settings = tmp_path / "greywatch-ui-settings.json"
     settings.write_text('{"alerts": true}')
     monkeypatch.setattr(notify_alert, "ALERTS_SETTING_PATH", settings)
@@ -103,7 +99,6 @@ def test_deny_parse_still_shapes_the_blocked_square():
         {"app": "curl", "host": "bad.example:80", "action": "deny"}
 
 
-# ── engine lifecycle: repeated stop/start cycles stay clean (P0 invariant)
 def test_engine_repeated_rearm_cycles(tmp_path, monkeypatch):
     write_enabled(tmp_path, True)
     (tmp_path / "appfw").mkdir(parents=True, exist_ok=True)
@@ -121,14 +116,10 @@ def test_engine_repeated_rearm_cycles(tmp_path, monkeypatch):
             events, eng.store.load_errors)
         eng.stop()
         assert not eng.running
-    # the switch is untouched by engine cycles (owner-gated truth)
     assert read_enabled(tmp_path)
 
 
 def test_engine_denies_by_ip_rule(tmp_path, monkeypatch):
-    """A saved deny rule denies the matching connection in the queue. Engine
-    v1 sees IP-only connections (no reverse DNS — the incident rule), so an
-    IP rule is what matches."""
     write_enabled(tmp_path, True)
     (tmp_path / "appfw").mkdir(parents=True, exist_ok=True)
     (tmp_path / "appfw" / "enable.json").write_text(
@@ -150,7 +141,6 @@ def test_engine_denies_by_ip_rule(tmp_path, monkeypatch):
     eng.start()
     eng.store.add(R.validate("site", "deny", "always", "dst.ip",
                              "203.0.113.99"))
-    # worker lane: a PKT line for the denied IP → DROP verdict on ctl
     ctl = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     ctl.bind(str(tmp_path / "probe.sock"))
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
@@ -158,7 +148,6 @@ def test_engine_denies_by_ip_rule(tmp_path, monkeypatch):
     listener.bind(str(tmp_path / "nfq_worker.sock"))   # steady dst
     listener.settimeout(3)
     eng._decide_line("PKT 777 tcp 127.0.0.1 50000 203.0.113.99 443", ctl)
-    # the engine answers on the WORKER control path — read there, not on ctl
     verb, _ = listener.recvfrom(64)
     assert verb.decode() == "DROP 777"
     assert any("deny" in e and "203.0.113.99" in e for e in events)

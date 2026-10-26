@@ -1,10 +1,4 @@
 #!/bin/bash
-# greywatch — the ONE sudo moment (run by the owner once; everything else
-# needed no root). Review before running; nothing here is destructive.
-# The repo copies of the units and the pkexec policy are TEMPLATES:
-# __GW_HOME__ is resolved HERE, into the installed copies only, from the
-# location this script was run from (the project must sit inside the
-# user's home for the default layout to hold).
 set -euo pipefail
 DOC="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 GW="$(dirname "$DOC")"

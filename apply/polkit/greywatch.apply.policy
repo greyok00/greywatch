@@ -2,7 +2,7 @@
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
-  <!-- G3.7: ONLY these exact helper scripts are pkexec-able -->
+  
   <action id="com.greywatch.apply.unban-ip">
     <description>greywatch unban-ip helper</description>
     <vendor>greywatch</vendor>

@@ -1,6 +1,4 @@
 #!/bin/bash
-# helper (pkexec only): write /etc/arpwatch/$IFACE.iface env file with backup
-# argv: IFACE RUNAS ARGS PCAPFILTER ; then systemctl -q enable --now arpwatch@$IFACE
 set -euo pipefail
 GW_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 [ $# -eq 4 ] || { echo "usage: arpwrite.sh IFACE RUNAS ARGS PCAPFILTER" >&2; exit 64; }
@@ -14,10 +12,6 @@ for tk in "${TOK[@]}"; do
 done
 [ "$OK" = 1 ] || { echo "bad args" >&2; exit 65; }
 if [ -n "$PCF" ]; then
-  # The pattern lives in a VARIABLE: quoting it inline made bash compare
-  # the string literally (every real filter was "bad filter"), and leaving
-  # it bare broke the parser on "(" — in a variable it is a real regex
-  # (Pass 3 defect, 2026-10-23).
   FILTER_RE='^[A-Za-z0-9][A-Za-z0-9 ._:()-]{0,198}$'
   [[ $PCF =~ $FILTER_RE ]] || { echo "bad filter" >&2; exit 65; }
 fi

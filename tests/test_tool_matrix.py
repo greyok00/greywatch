@@ -1,11 +1,3 @@
-"""tests/test_tool_matrix.py — the 10-scenario tool combination matrix.
-
-Owner order (2026-10-25 sleep-pass): "another 10 full tests using DIFFERENT
-data — all tools and combinations must work appropriately, per the tool
-docs." Every scenario uses FRESH data values (nothing reused from earlier
-fixtures), each exercises a real combination, and the last block fuzzes
-EVERY parser against EVERY fixture line (the tool docs as living corpus).
-"""
 import json
 import pathlib
 import sys
@@ -38,7 +30,6 @@ def _conn(**kw):
     return c
 
 
-# ── S1: ufw scan burst → net-watch HIGH (fresh source, fresh ports) ────
 def test_s1_portscan_detected():
     seen = []
     nw = NetWatch(lambda s, t: seen.append((s, t)))
@@ -49,7 +40,6 @@ def test_s1_portscan_detected():
     assert len(hits) == 1 and hits[0][0] == "HIGH" and "203.0.113.77" in hits[0][1]
 
 
-# ── S2: saved IP deny rule drops that engine decision ───────────────────
 def test_s2_ip_rule_denies():
     tmp = pathlib.Path(mktmp())
     st = R.RuleStore(tmp)
@@ -58,7 +48,6 @@ def test_s2_ip_rule_denies():
     assert st.decide(_conn(dst_ip="198.51.100.10")) is None
 
 
-# ── S3: fail2ban ban parses HIGH (fresh attacker) ───────────────────────
 def test_s3_fail2ban_ban():
     from events import normalize_event
     e = normalize_event("fail2ban",
@@ -70,7 +59,6 @@ def test_s3_fail2ban_ban():
                          ("HIGH", "MEDIUM"))
 
 
-# ── S4–S8, S-extras: EVERY parser × EVERY fixture line (combos) ─────────
 def test_s4_every_parser_accepts_every_fixture_line():
     from parsers import PARSERS
     from events import normalize_event
@@ -104,7 +92,6 @@ def test_s5_normalize_never_crashes_on_fuzz_lines():
                 raise AssertionError(f"{tool} raised on fuzz: {exc!r}")
 
 
-# ── S6: learning → pending → promote → enforced (fresh pair) ────────────
 def test_s6_learning_pipeline_enforces_after_approval(tmp_path):
     st = R.RuleStore(tmp_path)
     rule = R.validate("p-mx6", "allow", "always", "dst.host", "mx6.example")
@@ -115,7 +102,6 @@ def test_s6_learning_pipeline_enforces_after_approval(tmp_path):
                            process_path="/usr/bin/curl")).action == "allow"
 
 
-# ── S7: strict mode denies untrusted, trusted program passes ────────────
 def test_s7_strict_mode_and_trust_order(tmp_path):
     class TL:
         def load(self): pass
@@ -134,7 +120,6 @@ def test_s7_strict_mode_and_trust_order(tmp_path):
     assert act == "allow"
 
 
-# ── S8: config drives the ruleset shape (ipv6 on/off, exemptions) ───────
 def test_s8_config_ruleset_shapes():
     from appfw import config as acfg
     off = acfg.build_ruleset({**acfg.DEFAULTS, "ipv6_enabled": False})
@@ -146,7 +131,6 @@ def test_s8_config_ruleset_shapes():
     assert acfg.load(pathlib.Path(mktmp()))["ipv6_enabled"] is True
 
 
-# ── S9: wizard-specified rule lands in the right store ──────────────────
 def test_s9_wizard_trust_site_and_deny_program(tmp_path, monkeypatch):
     from wiz import appfw_wizard as aw
     monkeypatch.setattr(aw, "DATA", tmp_path)
@@ -159,7 +143,6 @@ def test_s9_wizard_trust_site_and_deny_program(tmp_path, monkeypatch):
     assert d and d.action == "deny"
 
 
-# ── S10: net-watch denial-cluster + burst lanes together (combo) ────────
 def test_s10_combo_denial_cluster_and_burst():
     seen = []
     nw = NetWatch(lambda s, t: seen.append((s, t)))

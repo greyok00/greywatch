@@ -1,5 +1,3 @@
-"""T5: daemon loop tests — fake collectors, status semantics, decision spec,
-trim cap (plan line 109). Every test uses a temp data-dir; never root."""
 import json
 import time
 
@@ -27,7 +25,6 @@ def mk_daemon(tmp_path, **kw):
     return Daemon(data_dir=tmp_path / "data", registry=_reg(), **kw)
 
 
-# ── events: parse → enrich → file ────────────────────────────────────────
 
 def test_consume_emits_enriched_event(tmp_path):
     d = mk_daemon(tmp_path)
@@ -54,25 +51,17 @@ def test_consume_attaches_decision_spec_to_quarantine(tmp_path):
     assert ev.interaction["options"][0]["helper"] in ("keep-quarantine", "restore-quarantine")
 
 
-# ── status semantics (G2.5: 12+ transitions) ────────────────────────────
 
 def test_status_classify_matrix():
-    # unit active + log readable → GREEN
     assert classify("active", "ok", True, True) == "GREEN"
-    # unit active + log missing → YELLOW (recovering)
     assert classify("active", "missing", True, True) == "YELLOW"
-    # unit failed → RED regardless
     assert classify("failed", "ok", True, True) == "RED"
     assert classify("failed", "missing", True, True) == "RED"
-    # unit inactive + log missing → RED
     assert classify("inactive", "missing", True, True) == "RED"
-    # unit inactive + log readable → GREEN? no: not running → RED
     assert classify("inactive", "ok", True, True) == "RED"
-    # log-only tool: missing → YELLOW, unreadable → YELLOW
     assert classify("no-unit", "missing", False, True) == "YELLOW"
     assert classify("no-unit", "unreadable", False, True) == "YELLOW"
     assert classify("no-unit", "ok", False, True) == "GREEN"
-    # no log, no unit → GREEN (informational tool)
     assert classify("no-unit", "ok", False, False) == "GREEN"
 
 
@@ -86,18 +75,14 @@ def test_log_state_of_real_and_missing(tmp_path):
 
 def test_snapshot_full_registry_state_transitions(tmp_path):
     reg = _reg()
-    # all active + all logs ok
     states = {t["name"]: ("active" if t.get("unit") else "no-unit") for t in reg}
     snap = snapshot(reg, fake_unit(states))
     assert snap["tools"]["responderd"]["state"] == "GREEN"
-    # responderd fails → RED
     states["responderd"] = "failed"
     snap = snapshot(reg, fake_unit(states))
     assert snap["tools"]["responderd"]["state"] == "RED"
-    # yara-scan.log missing → YELLOW for yara-watch (unit active)
     states["yara-watch"] = "active"
     snap2 = snapshot(reg, fake_unit(states))
-    # flap: restore
     snap = snapshot(reg, fake_unit(states))
     assert snap["tools"]["yara-watch"]["state"] in ("GREEN", "YELLOW")
 
@@ -109,11 +94,9 @@ def test_status_roundtrip_json_and_atomic(tmp_path):
     loaded = load_status(str(d.status_path))
     assert set(loaded["tools"]) == {t["name"] for t in _reg()}
     assert "pending_decisions" in loaded and "updated" in loaded
-    # atomic: no .tmp residue
     assert not (tmp_path / "data" / "status.json.tmp").exists()
 
 
-# ── decision factory + answer-once ──────────────────────────────────────
 
 def test_interaction_specs_generated_and_sanitized():
     cases = [
@@ -151,7 +134,6 @@ def test_fail2ban_ban_heuristic_three_rebans(tmp_path):
     assert ev is not None and "near-ignoreip" in ev.text
     assert ev.interaction is not None
     assert any(o["helper"] == "unban-ip" for o in ev.interaction["options"])
-    # exactly one spec (window cleared) → 4th ban restarts heuristic
     ev4 = d.consume("fail2ban",
                     "2026-10-22 18:01:32,110 fail2ban.actions [1]: NOTICE [sshd] Ban 203.0.113.9")
     assert ev4.interaction is None
@@ -167,12 +149,10 @@ def test_answer_once_enforced(tmp_path):
     assert record_answer(dp, i, "keep") is True
     assert record_answer(dp, i, "restore") is False      # answered already
     assert i in pending_ids(dp)
-    # pending badge drops after answering
     snap = d.write_status()
     assert snap["pending_decisions"] == 0
 
 
-# ── trim cap ─────────────────────────────────────────────────────────────
 
 def test_trim_cap(tmp_path):
     d = mk_daemon(tmp_path, max_events=20)
@@ -183,7 +163,6 @@ def test_trim_cap(tmp_path):
     removed = d.trim_events()
     assert removed == 10
     assert len(read_events(d.events_path)) == 20
-    # idempotent
     assert d.trim_events() == 0
 
 
@@ -198,7 +177,6 @@ def test_queue_overflow_flag_in_status(tmp_path):
     assert snap["dropped"] == 3          # 5 puts into 2 slots → 3 dropped
 
 
-# ── run_once with fake collectors end-to-end ────────────────────────────
 
 class FakeTailer:
     def __init__(self, items):
@@ -227,7 +205,6 @@ def test_run_once_with_fake_collectors(tmp_path):
     evs = read_events(d.events_path)
     assert len(evs) == 3
     assert {e["from_tool"] for e in evs} == {"yara-watch", "fail2ban", "responderd"}
-    # one quarantine spec pending
     assert snap["pending_decisions"] == 1
 
 
@@ -242,8 +219,6 @@ def test_unit_checker_factory_shapes():
     assert out2 in ("active", "inactive", "failed", "no-unit", "unknown")
 
 def test_routine_noise_not_recorded(tmp_path):
-    """Owner order 2026-10-23: routine log noise must not flood events.jsonl;
-    bad events + scan-finished INFO + interaction specs always land."""
     d = mk_daemon(tmp_path)
     d.consume("auditd", 'type=SYSCALL msg=audit(1758532800.001:221): arch=c000003e syscall=59 success=yes')
     d.consume("responderd", '{"ts": "2026-10-22 18:46:52", "action": "tetragon_watch", "detail": "routine"}')
@@ -258,9 +233,6 @@ def test_routine_noise_not_recorded(tmp_path):
     assert kept[1]["interaction"] is not None          # the ask survived
 
 def test_heartbeat_reports_the_real_state(tmp_path):
-    """The 15-min check-in used to say "alive, running normally" for EVERY
-    tool, including a stopped service — the Logs screen showed green while
-    Security showed red (Pass 1 defect, 2026-10-23)."""
     d = mk_daemon(tmp_path)
     d._last_snap = {"tools": {
         "appfw": {"state": "RED", "installed": True},
@@ -279,13 +251,10 @@ def test_heartbeat_reports_the_real_state(tmp_path):
     assert "not installed" in evs["lynis"]["text"]
     assert evs["lynis"]["severity"] == "MEDIUM"
     assert "paused by you" in evs["yara-watch"]["text"]
-    # a tool the daemon has no snapshot for is NEVER called healthy
     assert "not available" in evs["responderd"]["text"]
 
 
 def test_heartbeat_cannot_flood_the_activity_feeds():
-    """Check-in severity now follows the state; the feeds must still treat
-    check-ins as liveness, never activity (same owner rule)."""
     from ui.models import feed_worthy, recent_rows
     high_ping = {"from_tool": "appfw", "severity": "HIGH", "ts":
                  "2026-10-23T14:00:00+00:00", "text":

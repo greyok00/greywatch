@@ -1,4 +1,3 @@
-"""TrustList + app-fw decision-chain tests (owner order 2026-10-23)."""
 import sys
 from ui.settings import TrustList, TRUST_PATH
 from appfw.base import Conn
@@ -26,8 +25,6 @@ def test_trust_roundtrip(tmp_path):
 
 
 def test_a_stale_instance_cannot_erase_the_wizards_site(tmp_path):
-    """The wizard writes through its own TrustList; a long-lived Settings
-    instance used to save its stale set and wipe that addition (Pass 2/3)."""
     tp = tmp_path / "trust.json"
     settings_view = TrustList(tp)          # loaded at app start
     wizard = TrustList(tp)                 # the wizard's instance
@@ -77,8 +74,6 @@ def test_policy_auto_allow_no_dialog(tmp_path):
 
 
 def test_answer_keys_a_site_or_program_operator(tmp_path):
-    """THE 10x clicks bug: a saved rule must MATCH (operator w/ data), never
-    an empty operator."""
     policy = Policy(tmp_path)
     act, dur, note, op = decide(_conn(dst_host="www.google.com"), policy,
                                 ask=lambda s: ("allow", "always", "google.com"))
@@ -103,8 +98,6 @@ def test_learning_mode_is_time_boxed_and_off_by_default(tmp_path):
 
 
 def test_learning_allows_once_and_records_the_pair(tmp_path):
-    """Owner 2026-10-23: a learning mode that learns as you go. It must NOT
-    grant permanent access by itself, and an explicit block still wins."""
     import time, json as _json
     (tmp_path / "learning.json").write_text(
         _json.dumps({"until": time.time() + 60}))
@@ -123,7 +116,6 @@ def test_learning_allows_once_and_records_the_pair(tmp_path):
 
 
 def test_the_chain_sees_a_trust_edit_without_a_restart(tmp_path):
-    """The list is edited in the GUI; the chain reloads it per connection."""
     tl = TrustList(tmp_path / "trust.json")
     policy = Policy(tmp_path, trust_list=tl)
     c = _conn(dst_host="late-trust.example")
@@ -170,8 +162,6 @@ def test_downloaded_blocklist_denies_but_trust_can_override(tmp_path):
 
 
 def test_owner_local_services_are_not_intercepted(tmp_path):
-    """Owner 2026-10-23: SearXNG on 8888 and the headless control port on
-    8899 are permitted. Loopback only, never a remote destination."""
     got = []
     policy = Policy(tmp_path)
     for port in (8888, 8899):
@@ -189,10 +179,6 @@ def test_owner_local_services_are_not_intercepted(tmp_path):
 
 
 def test_trusted_folder_covers_interpreter_run_tools(tmp_path):
-    """Owner 2026-10-23: allow trusted local helper tools without
-    trusting every python3 process. Those tools run as
-    `python3 ~/project/script.py`, so the folder in the script argument is
-    what must match."""
     tl = TrustList(tmp_path / "trust.json")
     assert tl.add_app("/opt/search-helper/")
     assert tl.decide_app(

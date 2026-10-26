@@ -1,17 +1,9 @@
-#!/usr/bin/env python3
-"""GreyWatch logo + tray icon generator (W10, owner order 2026-10-25:
-images made, not promised). Shield + watch motif, GreyOk framework default
-palette (console theme: GitHub-dark blue accent), GREYWATCH / GW text.
-Outputs: assets/logo/greywatch-logo.svg + banner + icon PNGs 128/256/512,
-and installs the app icon into ~/.local/share/icons/hicolor (the tray's
-'greywatch' IconName becomes REAL). Re-run anytime. No hardware IDs."""
 import os
 import pathlib
 import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]   # .../logo/generator.py → greywatch root
 OUT = ROOT / "assets" / "logo"
-# console-theme tokens (framework default, themes.css — never add-on themes)
 BG, PANEL, ACCENT = "#0e1117", "#161b22", "#58a6ff"
 INK = "#c9d1d9"
 
@@ -72,10 +64,6 @@ def write_svg(path: pathlib.Path):
 
 
 def png_from(svg: pathlib.Path, size: int, dst: pathlib.Path):
-    # cairosvg renders the real spec (strokes, gradients, fonts). The old
-    # ImageMagick `-density … -resize` path used IM's internal MSVG
-    # renderer, which dropped the watch hands and produced the unusable
-    # banner (a mid-shield slice) — owner bug report, 2026-10-25.
     import cairosvg
     cairosvg.svg2png(url=str(svg), write_to=str(dst),
                      output_width=size, output_height=size)
@@ -90,7 +78,6 @@ def banner(svg_src, dst: pathlib.Path):
 
 
 def install_icon(png: pathlib.Path):
-    """Make the tray's IconName 'greywatch' REAL (hicolor user icons)."""
     base = pathlib.Path.home() / ".local/share/icons/hicolor"
     subprocess.run(["convert", "-background", "none", str(png),
                     "-resize", "128x128",
@@ -104,7 +91,6 @@ def main():
     for size in (128, 256, 512):
         png_from(svg, size, OUT / f"greywatch-icon-{size}.png")
     banner(svg, OUT / "greywatch-banner.png")
-    # README-ready copies (doc/images/): the hero banner + one icon.
     img = ROOT / "doc" / "images"
     img.mkdir(parents=True, exist_ok=True)
     for name in ("greywatch-banner.png", "greywatch-icon-128.png",
@@ -117,8 +103,6 @@ def main():
     install_icon(OUT / "greywatch-icon-256.png")
     for p in sorted(OUT.glob("*")):
         print(p, p.stat().st_size)
-    # the running tray re-reads its IconName from the icon theme; panel
-    # refreshes happen when the icon cache updates:
     subprocess.run(["gtk-update-icon-cache", "-q",
                     str(pathlib.Path.home() / ".local/share/icons/hicolor")],
                    capture_output=True)

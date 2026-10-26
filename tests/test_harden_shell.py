@@ -1,11 +1,3 @@
-"""tests/test_harden_shell.py — offline end-to-end battery for apply/harden.sh.
-
-Real bash runs the helper (subprocess), but EVERY privileged tool is a
-PATH shim in a temp dir (systemctl, sysctl, apt-get, nft) and the helper's
-runtime state is redirected per test: GREYWATCH_DATA_DIR points at the
-temp data dir and GREYWATCH_TEST_SYSCTL_CONF at a temp conf. No test ever
-touches pkexec, sudo, a live systemd, /etc, or the repo's own data/.
-"""
 import json
 import os
 import pathlib
@@ -17,8 +9,6 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 HELPER = REPO / "apply" / "harden.sh"
 
 SYSTEMCTL_SHIM = """\
-#!/bin/bash
-# systemctl shim: every call logged; enable/active state is two flag files.
 D="$GW_SHIM_STATE"
 printf '%s\\n' "$*" >> "$D/systemctl.log"
 first="$1"; case "$1" in --) first="$2" ;; esac
@@ -38,19 +28,16 @@ exit 0
 """
 
 SYSCTL_SHIM = """\
-#!/bin/bash
 printf '%s\\n' "$*" >> "$GW_SHIM_STATE/sysctl.log"
 exit 0
 """
 
 APTGET_SHIM = """\
-#!/bin/bash
 printf '%s\\n' "$*" >> "$GW_SHIM_STATE/apt-get.log"
 exit 0
 """
 
 NFT_SHIM = """\
-#!/bin/bash
 printf '%s\\n' "$*" >> "$GW_SHIM_STATE/nft.log"
 exit 0
 """
@@ -60,7 +47,6 @@ SHIMS = {"systemctl": SYSTEMCTL_SHIM, "sysctl": SYSCTL_SHIM,
 
 
 class Harness:
-    """One temp fake environment + a run() for the helper."""
 
     def __init__(self, tmp_path):
         self.tmp = pathlib.Path(tmp_path)
@@ -127,13 +113,9 @@ def test_apply_runs_all_verbs_and_writes_the_journal(h):
         assert f"APPLY {cid} 0" in p.stdout, p.stdout + p.stderr
         assert f"VERBIFY {cid} 0" in p.stdout, p.stdout + p.stderr
     assert p.returncode == 0, p.stdout + p.stderr
-    # the journal exists, is JSONL, one record per mutated id, each with
-    # before-values and the plan entry for re-probe
     lines = h.journal.read_text(encoding="utf-8").splitlines()
     recs = [json.loads(x) for x in lines]
     ids = [r["id"] for r in recs]
-    # step-shell has nothing journalable (no files were backed up); the
-    # mutating two are journaled BEFORE their mutation
     assert ids == ["set-knob", "stop-service"], ids
     for r in recs:
         assert r["ts"] and r["before"] and r["plan"][0]["id"] == r["id"]
@@ -141,7 +123,6 @@ def test_apply_runs_all_verbs_and_writes_the_journal(h):
     assert by_id["set-knob"]["before"][str(h.conf)] == {"absent": True}
     st = by_id["stop-service"]["before"]["fake.service"]
     assert st["was-enabled"] == "enabled" and st["was-active"] == "active"
-    # effects landed
     assert "gw.test.knob = 1" in h.conf.read_text(encoding="utf-8")
     assert (h.state / "disabled.flag").exists()
     assert (h.data / "backups" / "harden" / "_sysctl-snapshot"
@@ -160,7 +141,6 @@ def test_undo_restores_from_the_helper_journal(h):
     assert "gw.test.knob = 1" in h.conf.read_text(encoding="utf-8")
     assert not (h.state / "unit-enabled").exists()
 
-    # undo the service-off id: enable+active state restored, via shims
     p = h.run(["undo", "stop-service", str(h.journal)])
     assert p.returncode == 0, p.stdout + p.stderr
     assert f"RESTORE-UNIT stop-service fake.service" in p.stdout
@@ -168,14 +148,11 @@ def test_undo_restores_from_the_helper_journal(h):
     assert (h.state / "unit-active").exists()    # was active, restarted
     assert "enable" in (h.state / "systemctl.log").read_text()
 
-    # undo the sysctl id: the conf did not exist before -> it is removed
     p = h.run(["undo", "set-knob", str(h.journal)])
     assert f"RESTORE-ABSENT set-knob {h.conf}" in p.stdout
     assert not h.conf.exists()
-    # honest verify: the entry's own probe can no longer pass -> rc==3
     assert p.returncode == 3, p.stdout + p.stderr
 
-    # undo an id with no journalable before-values is a failure, not silence
     plan2 = h.planfile([
         {"id": "step-shell", "verb": "sh",
          "cmd": f"echo hi > {T(h, 'sh-out2')}", "probe": ""},
@@ -188,24 +165,20 @@ def test_undo_restores_from_the_helper_journal(h):
 
 def test_injection_guard_rejects_smuggled_value_and_verb(h):
     plan = h.planfile([
-        # newline in the value would smuggle a second line into the root conf
         {"id": "bad-value", "verb": "sysctl-set", "key": "gw.test.knob",
          "value": "1\nkernel.smuggle = 1", "probe": "true"},
-        # newline in the verb would fabricate a VERBIFY line for another id
         {"id": "verbny", "verb": "echo\nVERBIFY fake 0", "probe": "true"},
     ])
     p = h.run(["apply", plan])
     assert p.returncode == 2
     assert "BAD-SYSCTL bad-value" in p.stderr
     assert "verb not allowed (unprintable)" in p.stderr
-    # nothing mutated, and the fake VERBIFY never reached the strip
     assert not h.conf.exists()
     assert "VERBIFY fake 0" not in p.stdout
     assert "VERBIFY fake 0" not in p.stderr
 
 
 def test_backup_or_journal_failure_means_no_mutation(h):
-    # journal path is a directory: the journal write can never succeed
     h.journal.mkdir()
     plan = h.planfile([
         {"id": "set-knob", "verb": "sysctl-set", "key": "gw.test.knob",
@@ -245,7 +218,6 @@ def test_plan_mode_echoes_and_validates(h):
     p = h.run(["plan", str(h.tmp / "nope.json")])
     assert p.returncode == 2
 
-# ---- W5: verb aliases, verify verb, changeset handoff, per-pass dirs ----
 
 FRAGMENT_SYSCTL = {
     "entries": [{
@@ -274,7 +246,6 @@ def test_aliases_behave_like_the_bare_verbs(h):
     assert "VERBIFY set-knob 0" in p.stdout
     assert "gw.test.knob = 1" in h.conf.read_text(encoding="utf-8")
     assert not (h.data / "harden" / "journal").exists()  # plan-json keeps
-    #                                                     the plain layout
 
     q = h.run(["--undo", "set-knob", str(h.journal)])
     assert q.returncode == 3
@@ -342,9 +313,6 @@ def test_changeset_verify_and_rollback_directives(h):
             "unit": "fake.service",
             "probe": f"test -f {T(h, 'shim/state/disabled.flag')}",
         }]}) + "\n", encoding="utf-8")
-    # one pass: apply the control, then a LATER pass's rollback directive
-    # served here as its own document (duplicates are refused, so apply
-    # and rollback for one id are always separate passes)
     cs = _changeset(h, jid, h.journal, [
         {"control_id": "stop-service", "action": "apply",
          "backup_path": str(frag)}])
@@ -356,8 +324,6 @@ def test_changeset_verify_and_rollback_directives(h):
     assert ver.returncode == 0
     assert "VERBIFY stop-service 0" in ver.stdout
 
-    # the rollback directive's fragment sits in the PASS DIR it undoes
-    # (dirname(backup_path)/journal.jsonl names the target journal)
     pass_dir = h.data / "harden" / "journal" / jid
     rbfrag = pass_dir / "stop-service.json"
     rbfrag.write_text(frag.read_text(encoding="utf-8"), encoding="utf-8")
@@ -368,8 +334,6 @@ def test_changeset_verify_and_rollback_directives(h):
     assert p.returncode == 0, p.stdout + p.stderr
     assert "CHANGES-ROLLBACK stop-service" in p.stdout
     assert (h.state / "unit-enabled").exists()   # re-enabled by the undo
-    # the per-pass dir for the rollback pass exists too (it carries no
-    # journal line: nothing was mutated by that pass)
     assert (h.data / "harden" / "journal" / "20261025-091001"
             / "backups").exists()
 
@@ -387,8 +351,6 @@ def test_changeset_verify_directive_probes_without_mutating(h):
         {"control_id": "stop-service", "action": "verify",
          "backup_path": str(frag)}])
     p = h.run(["--apply", cs])
-    # the no-op sh fix verified RED: sh has nothing backed up, so the pass
-    # cannot claim a rollback — ROLLBACK-SKIP, rc 4 per the ladder. Honest.
     assert p.returncode == 4
     assert "VERBIFY stop-service 1" in p.stdout
     assert "ROLLBACK-SKIP stop-service" in p.stderr
@@ -424,39 +386,32 @@ def test_changeset_refusals_are_named_and_inert(h):
     frag = h.data / "harden" / "journal" / jid / "set-knob.json"
     frag.write_text(json.dumps({"entries": []}) + "\n", encoding="utf-8")
     cases = [
-        # version
         ({"version": 2, "journal_id": jid, "changes": [
              {"control_id": "set-knob", "action": "apply",
               "backup_path": str(frag)}]},
          "CHANGES-BAD-VERSION"),
-        # journal id shape
         ({"version": 1, "journal_id": "oops", "changes": [
              {"control_id": "set-knob", "action": "apply",
               "backup_path": str(frag)}]},
          "CHANGES-BAD-JOURNAL-ID"),
-        # unknown action -> never executed as anything
         ({"version": 1, "journal_id": jid, "changes": [
              {"control_id": "set-knob", "action": "purge",
               "backup_path": str(frag)}]},
          "CHANGES-BAD-ACTION set-knob"),
-        # metacharacter backup path
         ({"version": 1, "journal_id": jid, "changes": [
              {"control_id": "set-knob", "action": "apply",
               "backup_path": "/tmp/x;y.json"}]},
          "CHANGES-BACKUP-PATH set-knob"),
-        # '..' traversal anywhere in the fragment path
         ({"version": 1, "journal_id": jid, "changes": [
              {"control_id": "set-knob", "action": "apply",
               "backup_path": str(h.data / "harden" / "journal" / ".."
                                  / jid / "set-knob.json")}]},
          "CHANGES-BACKUP-PATH-TRAVERSAL set-knob"),
-        # well-formed fragment layout, but OUT of this pass's dir
         ({"version": 1, "journal_id": jid, "changes": [
              {"control_id": "set-knob", "action": "apply",
               "backup_path": str(h.data / "harden" / "journal"
                                  / "19991231-235959" / "set-knob.json")}]},
          "CHANGES-BACKUP-PATH-SCOPE set-knob"),
-        # rollback row outside the per-pass layout
         ({"version": 1, "journal_id": jid, "changes": [
              {"control_id": "set-knob", "action": "rollback",
               "backup_path": "/tmp/outside/harden/journal/"
@@ -476,7 +431,6 @@ def test_changeset_refusals_are_named_and_inert(h):
 
 
 def test_apply_reports_empty_and_foreign_documents(h):
-    # a dict that is neither a plan nor a changeset: named refusal
     junk = h.tmp / "junk.json"
     junk.write_text('{"foo": 1}\n', encoding="utf-8")
     p = h.run(["apply", str(junk)])
@@ -484,7 +438,6 @@ def test_apply_reports_empty_and_foreign_documents(h):
     assert "CHANGES-SHAPE" in p.stderr, p.stdout + p.stderr
     assert not h.conf.exists()
 
-    # a pass with zero changes (empty entries list): refuses, never 0
     empty = h.planfile([])
     p = h.run(["apply", empty])
     assert p.returncode == 2
@@ -508,16 +461,12 @@ def test_alias_arity_still_usage(h):
 
 
 def test_changeset_python_handoff_round_trip(h):
-    """W5 round 1, I-1: build() -> write_document() -> helper apply must
-    succeed with build()'s default backup_path (the per-pass convention),
-    and the pass journal must land in data/harden/journal/<journal_id>/."""
     from wizard import changeset as cs
     jid = "20261025-101010"
     cards = [{"control_id": "set-knob", "action": "apply"}]
     cs_path = h.tmp / "handoff.json"
     assert cs.write_document(cs.build(jid, cards),
                              [{"id": "set-knob"}], cs_path) == []
-    # the fragment in the convention slot carries the real entries
     frag = h.data / "harden" / "journal" / jid / "set-knob.json"
     frag.parent.mkdir(parents=True)
     frag.write_text(json.dumps(
@@ -536,8 +485,6 @@ def test_changeset_python_handoff_round_trip(h):
 
 
 def test_symlinked_fragment_outside_pass_dir_refused(h):
-    """W5 round 2: a symlink INSIDE the pass dir pointing at a fragment
-    outside must be refused by realpath-scope — no execution, no journal."""
     from wizard import changeset as cs
     outside = h.tmp / "OUTSIDE.json"
     outside.write_text(json.dumps(
@@ -558,10 +505,6 @@ def test_symlinked_fragment_outside_pass_dir_refused(h):
     assert not h.conf.exists()                        # nothing executed
     assert not (pdir / "journal.jsonl").exists()      # no journal written
     assert outside.stat().st_size > 0                 # outside file untouched
-    # build()'s default backup_path is the RELATIVE canonical form, which
-    # validate() cannot realpath without the data dir (the helper's scope
-    # gate is authoritative there; the helper refused above) — the
-    # python-side symlink mirror covers the ABSOLUTE form:
     abs_doc = cs.build(jid, [{"control_id": "set-knob",
                               "backup_path": str(pdir / "set-knob.json")}])
     errs = cs.validate(abs_doc, [{"id": "set-knob"}])
@@ -569,8 +512,6 @@ def test_symlinked_fragment_outside_pass_dir_refused(h):
 
 
 def test_symlinked_rollback_journal_refused(h):
-    """The undo journal itself is symlink-checked: a pass-dir journal
-    pointing at an outside file is refused before undo reads it as root."""
     from wizard import changeset as cs
     jid = "20261025-112000"
     pdir = h.data / "harden" / "journal" / jid
@@ -586,7 +527,6 @@ def test_symlinked_rollback_journal_refused(h):
          "backup_path": str(pdir / "set-knob.json")}]}
     cs_path = h.tmp / "handoff-rb-symlink.json"
     p = h.run(["--apply", cs_path])
-    # (unwritable-by-shim changeset still parsed: write it properly)
     cs_path.write_text(json.dumps(doc) + "\n", encoding="utf-8")
     p = h.run(["--apply", str(cs_path)])
     assert p.returncode == 2

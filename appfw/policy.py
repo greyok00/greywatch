@@ -1,16 +1,3 @@
-"""appfw.policy — one decision chain for the whole suite.
-
-Order (same semantics as the chain that came before):
-trust site → trusted program → permitted local services → downloaded block
-list → learning mode (allow once + record) → block-unknown (deny once +
-record) → explicit ask (blocking, only when the dialog is wired) → default
-allow once. Lists the person edits in the GUI take effect on the NEXT
-decision because the backing files are re-read on mtime change.
-
-decide() returns a 4-tuple `(action, duration, note, host_op)` — host_op
-is the site to key a saved rule on when the answer is trust-based.
-Fail-open: any unexpected error answers allow-once, never a lockout.
-"""
 from __future__ import annotations
 
 import datetime as _dt
@@ -26,7 +13,6 @@ KEEP_LEDGER_LINES = 1200
 
 
 class Policy:
-    """Learning / block-unknown / trust / blocklist inputs, re-read on mtime."""
 
     def __init__(self, data_dir, trust_list=None, blocklist=None):
         self.data_dir = pathlib.Path(data_dir)
@@ -37,11 +23,8 @@ class Policy:
         self._mode_block = False
         self._blocklist = blocklist
         self._trust = trust_list
-        # Per-pair dedupe: a retry storm must not write one ledger line per
-        # SYN (2026-10-25 outage filled the daemon's memory/CPU budget).
         self._recent_learned = {}
 
-    # ── learning mode: allow once, record the pair, grant nothing ──────
     def learning_active(self) -> bool:
         path = self.data_dir / "learning.json"
         try:
@@ -59,8 +42,6 @@ class Policy:
         return self._learn_until > time.time()
 
     def record_learned(self, conn) -> None:
-        """Append one seen program/site pair for the person to approve.
-        Bounded, best-effort: never blocks or breaks a connection."""
         try:
             key = (str(conn.process_path or ""), str(conn.host or ""),
                    int(conn.dst_port or 0), str(conn.protocol or ""))
@@ -86,7 +67,6 @@ class Policy:
 
     @staticmethod
     def _trim(path, keep=KEEP_LEDGER_LINES):
-        """Keep the review list bounded (it is a list, not a log)."""
         try:
             if path.stat().st_size < MAX_LEDGER_BYTES:
                 return
@@ -95,7 +75,6 @@ class Policy:
         except OSError:
             pass
 
-    # ── block-unknown: the person's strict mode ─────────────────────────
     def block_unknown(self) -> bool:
         path = self.data_dir / "firewall-mode.json"
         try:
@@ -112,11 +91,7 @@ class Policy:
             self._mode_mtime = mtime
         return self._mode_block
 
-    # ── trust list + block list: re-loaded per decision ─────────────────
     def trust_site(self, host: str):
-        """None = no verdict; otherwise 'allow'/'deny' (list re-read first).
-        An explicit TRUST entry always wins over everything below. The
-        list's raw verdict is 'block' — mapped to the action word here."""
         tl = self._trust
         if tl is None:
             return None
@@ -132,7 +107,6 @@ class Policy:
             return None
 
     def trust_app(self, path: str, args: list):
-        """Verdict for a trusted PROGRAM: a named program never asks."""
         tl = self._trust
         if tl is None:
             return None
@@ -142,7 +116,6 @@ class Policy:
             return None
 
     def blocklisted(self, host: str) -> bool:
-        """Downloaded tracker/malware list; an explicit TRUST still wins."""
         bl = self._blocklist
         if bl is None:
             return False
@@ -153,12 +126,6 @@ class Policy:
 
 
 def decide(conn, policy: Policy, store=None, ask=None) -> tuple:
-    """Run the chain for one connection → (action, duration, note, host_op).
-
-    store is consulted first (saved rules outrank the mode switches);
-    ask, when given, is called with a spec dict and may block — it is
-    only wired when the dialog bridge is switched on.
-    """
     try:
         if store is not None:
             try:

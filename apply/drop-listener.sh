@@ -1,5 +1,4 @@
 #!/bin/bash
-# helper (pkexec only): ufw rule from a decision (args from the factory)
 set -euo pipefail
 [ $# -ge 3 ] || { echo "usage: drop-listener.sh ACTION DIRECTION FROM [PORTPROTO...]" >&2; exit 64; }
 for a in "$1" "$2"; do

@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Inject a realistic YARA line into the REAL yara-watch log (registry path).
-Needs sudo: data/logs dir is root-owned (helper lane)."""
 import json, os, pathlib, time
 log = pathlib.Path.home() / "security-hardening" / "yara-scan.log"
 line = (f"{time.strftime('%Y-%m-%d %H:%M:%S')} "

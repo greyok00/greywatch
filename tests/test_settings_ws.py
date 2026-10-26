@@ -1,4 +1,3 @@
-"""tests/test_settings_ws.py — the dashboard workspace preference (Pass 4)."""
 import json
 import pathlib
 import sys

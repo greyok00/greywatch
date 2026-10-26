@@ -1,4 +1,3 @@
-"""T3: collectors — tailing, rotation, truncation, rediscovery, stubs, queue."""
 import os
 import time
 import threading
@@ -85,7 +84,6 @@ def test_file_tailer_truncate_resume_no_loss(tmp_path):
         with open(path, "a") as f:
             f.write("c\n")
         assert wait_for(lambda: [l for _t, l in sink.lines].count("c") >= 1)
-        # checksum: every non-empty read line count matches 2 + re-read + c
         body = [l for _t, l in sink.lines]
         assert body.count("a") == 1 and body.count("b") == 1 and body.count("c") == 1
     finally:
@@ -93,8 +91,6 @@ def test_file_tailer_truncate_resume_no_loss(tmp_path):
 
 
 def test_file_tailer_truncate_same_length_rewrite(tmp_path):
-    """Regression: truncate + immediate SAME-LENGTH rewrite must not stall
-    the tailer (G2.3 race — pos==size with stale bytes)."""
     sink = Sink()
     t, path = make_tailer(tmp_path, "same.log", sink)
     try:
@@ -145,7 +141,6 @@ def test_file_tailer_delete_and_recreate(tmp_path):
 
 
 def test_journal_tailer_stub(tmp_path):
-    """Parameterized journal follower with an injected fake reader."""
     sink = Sink()
     lines = ["journal-line-1", "journal-line-2"]
 
@@ -163,7 +158,6 @@ def test_journal_tailer_stub(tmp_path):
 
 
 def test_tailer_survives_callback_exception(tmp_path):
-    """A throw inside the callback must not kill the tailer (never-raise L1)."""
     sink = Sink()
 
     def bad_callback(tool, line):

@@ -1,14 +1,3 @@
-"""What the two update systems actually did, in the person's own clock.
-
-- ClamAV writes new virus definitions by itself (freshclam service); the
-  newest /var/lib/clamav/*.cvd|cld file is the real "last updated" time.
-- The security list is the NVD CVE cache written by cve-refresh.py
-  (data/cve-cache.json carries fetched_utc).
-
-The UI shows these timestamps instead of a meaningless "not running" for a
-weekly timer (owner 2026-10-23: "don't leave the update here as paused...
-have it display the timestamps").
-"""
 from __future__ import annotations
 
 import datetime as _dt
@@ -73,7 +62,6 @@ def cve_is_fresh() -> bool:
 
 
 def human_stamp(iso) -> str:
-    """'today 14:44' / 'Oct 22 00:14' — the person's own clock."""
     try:
         when = _dt.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
     except (ValueError, TypeError):
@@ -88,8 +76,6 @@ def human_stamp(iso) -> str:
 
 
 def refresh_cve(timeout=240) -> tuple:
-    """Run the real NVD refresher now (no root needed; it writes the cache
-    in the project's data dir). Returns (rc, message)."""
     try:
         out = subprocess.run(
             [sys.executable, str(ROOT / "cve-refresh.py")],

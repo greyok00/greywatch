@@ -1,11 +1,3 @@
-"""A real, downloadable tracker/malware domain list (owner 2026-10-23:
-"it should detect this, download lists and updates, etc. just by clicks").
-
-Source: the widely used StevenBlack hosts list (MIT-style community data).
-The raw file is stored in data/blocklist.txt and the domains are matched by
-suffix, so subdomains are covered. An explicit TRUST decision in the app
-still wins; an explicit BLOCK decision always wins.
-"""
 from __future__ import annotations
 
 import datetime as _dt
@@ -27,7 +19,6 @@ _DOMAIN = re.compile(r"^(?=.{3,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+"
 
 
 def parse_hosts(text: str) -> set:
-    """hosts-file text → the set of real blocked domains."""
     out = set()
     for line in str(text or "").splitlines():
         line = line.strip()
@@ -92,7 +83,6 @@ class BlockList:
 
 
 def download(timeout=90) -> tuple:
-    """Fetch the list now. Returns (ok, count, message). Never raises."""
     try:
         req = urllib.request.Request(URL, headers={"User-Agent": "greywatch"})
         with urllib.request.urlopen(req, timeout=timeout) as r:

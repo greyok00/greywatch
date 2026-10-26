@@ -1,6 +1,3 @@
-# Tests for hardening.detector.cve_note — display-only CVE context.
-# Synthetic CVE ids only (CVE-2999-xxxx): no live cache, no fields the
-# real fixture layout is depended on, and no machine-specific values.
 from hardening.detector import cve_note
 
 CACHE = {

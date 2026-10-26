@@ -1,7 +1,4 @@
 #!/bin/bash
-# helper (pkexec only): apply one ufw rule from the wizard.
-# argv: ACTION DIRECTION [from FROM] [to any] [port PORT proto PROTO] [comment C]
-# Every token is validated; anything unexpected → reject (65).
 set -euo pipefail
 GW_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 [ $# -ge 2 ] || { echo "usage: ufw-apply.sh ACTION DIRECTION [...]" >&2; exit 64; }

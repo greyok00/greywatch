@@ -1,18 +1,3 @@
-"""netwatch.py — the in-daemon light IDS (master prompt Pass 3, D6).
-
-The suite's OWN analyzer over events it ALREADY has — no new packet mirror,
-no redundancy with ufw (owner rule). Lanes:
-
-1. PORT-SCAN: ufw BLOCK lines — one source IP touching ≥8 DISTINCT ports
-   inside 60 s ⇒ HIGH event, then a 5-minute cooldown per source.
-2. CONNECTION BURST: appfw metadata — a program hitting ≥30 distinct
-   remote destinations inside 60 s ⇒ MEDIUM event (beacon/scan-like).
-3. BLOCKED-CLUSTER: ≥5 appfw denials against one host inside 300 s ⇒
-   MEDIUM event (concentrated target behavior).
-
-State is bounded per key; emission goes through the daemon's mirror
-callback (never blocks the loop, never raises).
-"""
 from __future__ import annotations
 
 import collections
@@ -49,7 +34,6 @@ class NetWatch:
         self._last_burst: dict[str, float] = {}
         self._last_cluster: dict[str, float] = {}
 
-    # ── entry point ──────────────────────────────────────────────────────
     def ingest(self, ev) -> None:
         try:
             tool = getattr(ev, "from_tool", None)
@@ -62,14 +46,12 @@ class NetWatch:
             pass                    # an analyzer must never break a tool
 
     def _bound(self, table, now) -> None:
-        """Bounded keys: oldest evicted beyond MAX_KEYS."""
         if len(table) > MAX_KEYS:
             oldest = sorted(table, key=lambda k: table[k][1] if
                             isinstance(table[k], tuple) else 0)[:100]
             for k in oldest:
                 table.pop(k, None)
 
-    # ── lane 1: port scan ────────────────────────────────────────────────
     def _ufw_block(self, text: str) -> None:
         s = _UFW_SRC.search(text)
         d = _UFW_DPT.search(text)
@@ -90,7 +72,6 @@ class NetWatch:
                            f"({len(entry[0])} distinct ports in "
                            f"{SCAN_WINDOW:.0f} s)")
 
-    # ── lane 2: connection burst ─────────────────────────────────────────
     def _appfw(self, text: str) -> None:
         m = _APPFW_LINE.search(text)
         now = time.monotonic()
@@ -108,7 +89,6 @@ class NetWatch:
                     self._emit("MEDIUM", f"netwatch: connection burst by "
                                f"{app} ({len(entry[0])} distinct "
                                f"destinations in {BURST_WINDOW:.0f} s)")
-        # ── lane 3: denial cluster vs one host ───────────────────────────
         m2 = re.search(r"deny \[.*?blocked by the downloaded list: (\S+)\]",
                        text)
         if not m2:

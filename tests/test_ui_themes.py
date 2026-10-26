@@ -1,4 +1,3 @@
-"""greyok theme bridge tests (owner order: dark default + picker)."""
 import pathlib
 import sys
 import pytest
@@ -26,7 +25,6 @@ def test_dark_default_is_dark():
     pick = dark_default(sorted(ts))
     assert pick in ts
     bg = ts[pick]["--el-bg"].strip()
-    # dark: bg luminance < 0.6 in hex — crude check no paper cream
     assert not bg.startswith("#f"), "default must be DARK"
 
 
@@ -44,8 +42,6 @@ def test_persist_and_load_roundtrip(clean_settings):
     assert load_setting(path=clean_settings / "missing.json") == ""
 
 def test_gtk_css_never_emits_unsupported_properties():
-    """Verify-agent ask: the generated CSS must be GTK3-valid — the classics
-    that crash the provider: filter/transform/grid-gap/shadow- as props."""
     ts = load_themes()
     import re
     bad = {"filter", "transform", "transition", "grid-gap", "will-change"}
@@ -72,14 +68,6 @@ def test_css_loads_in_gtk_provider():
 
 
 def test_circle_draw_uses_only_four_arg_rgba():
-    """Verify-agent ask, GTK4 edition: the progress-circle's draw must never
-    call set_source_rgba with five args — assert against a recording fake.
-
-    GTK4 moved DrawingArea painting to a draw_func driven by set_draw_func
-    (the same hand-cairo path, called with (_area, cr, width, height)); the
-    widget itself is not instantiable without a display, so the draw func is
-    exercised directly on a bare instance — identical guarantee, no
-    display-dependent construction."""
     import gi
     gi.require_version("Gtk", "4.0")
     rec = []

@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""tests/fake_worker.py — a policy-protocol stand-in for the real nfq worker.
-
-Expects env NFQ_EVENTS_PATH (daemon's socket) + NFQ_CONTROL_PATH (its own).
-Sends N PKT lines, waits for each verdict on its control socket, prints
-"VERDICT <id> <verb>" to stdout, exits 0. Lets the ENGINE side be tested
-end-to-end without root (the real worker needs CAP_NET_ADMIN).
-"""
 import os
 import socket
 import sys

@@ -1,9 +1,3 @@
-"""wiz/common.py — the ONLY place wizard apply/verify/rollback happens.
-
-Every privileged effect goes through apply/*.sh via pkexec; backups are made
-BEFORE any write; rollback restores the backup and re-verifies. Tests call
-these with GREYWATCH_HELPER_CMD set (a stub) — never root, never fuzzed.
-"""
 from __future__ import annotations
 
 import os
@@ -18,7 +12,6 @@ HELPER_CMD = os.environ.get("GREYWATCH_HELPER_CMD")  # test-only override
 
 
 def run_helper(helper: str, args: list, timeout=30) -> int:
-    """pkexec ONLY: the exact allowlisted helper script, argv (no shell)."""
     script = ROOT / "apply" / f"{helper}.sh"
     if HELPER_CMD:
         return subprocess.run([HELPER_CMD, helper] + [str(a) for a in args],
@@ -30,8 +23,6 @@ def run_helper(helper: str, args: list, timeout=30) -> int:
 
 
 def backup_file(path: str) -> str:
-    """Copy <path> into data/backups with a versioned suffix; returns the
-    backup path (also the rollback handle)."""
     src = pathlib.Path(path)
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     dst = BACKUP_DIR / f"{src.name}.bak"
@@ -48,8 +39,6 @@ def restore_backup(backup: str, path: str) -> bool:
 
 
 def confirm_flow(wiz, steps, apply_fn, verify_fn, rollback_fn, *, dry=True):
-    """Shared wizard loop: preview → (owner confirms) → apply → verify →
-    rollback on failure. Returns dict with everything recorded per gate."""
     report = {"tool": wiz, "steps": steps, "apply_rc": None,
               "verify": False, "rolled_back": False}
     if not dry:

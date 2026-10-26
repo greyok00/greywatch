@@ -1,4 +1,3 @@
-"""tests/test_netwatch.py — the in-daemon light IDS battery (Pass 3)."""
 import json
 import sys
 import pathlib
@@ -10,8 +9,6 @@ from netwatch import NetWatch
 
 
 class E:
-    """Minimal Event stand-in (the daemon feeds real Events; this matches
-    the attributes NetWatch reads)."""
     def __init__(self, from_tool, text):
         self.from_tool, self.text = from_tool, text
 
@@ -28,7 +25,6 @@ def test_port_scan_detected_and_cooldown():
     scans = [s for s in seen if "port scan" in s[1]]
     assert len(scans) == 1 and scans[0][0] == "HIGH"
     assert src in scans[0][1]
-    # cooldown: the same IP hammering again inside 300 s stays silent
     for p in range(5000, 5015):
         nw.ingest(E("ufw", f"[UFW BLOCK] SRC={src} DST=192.168.77.50 "
                             f"PROTO=TCP DPT={p}"))

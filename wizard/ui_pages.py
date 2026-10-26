@@ -1,49 +1,3 @@
-"""wizard/ui_pages.py — the Setup Wizard's six GTK4 stack pages (W6).
-
-GUI-only glue over wizard/detector (W2), wizard/schema+changeset (W3),
-wizard/baseline (W4) and the pkexec helper apply/harden.sh (W5 verbs) —
-the SAME thread + GLib.idle_add pattern ui/harden.py established, using
-THE SAME strip parse rules (ui.harden.parse_apply_output), never re-parsed.
-
-The six pages, one Gtk.Stack keyed in the master prompt's order:
-  welcome  — role select {workstation, hardened, custom}: the profile
-             argument tunes PRESENTATION ONLY (the W4 docstring
-             contract: the adaptive safety rules are identical for
-             every profile); what is probed, estimated 2-5 minutes,
-             NIST/CIS framing, guided-tool access preserved.
-  scan     — detector runs OFF the UI thread; non-interactive progress
-             words; honest "could not be checked" lines in WHITE.
-  preview  — the adaptive table: Control / NIST / CIS / Current /
-             Recommended / Apply?  — every Current/Recommended cell is
-             the card's OWN current/recommended value produced from the
-             finished scan (never invented, never defaulted here).
-  apply    — ONE confirmation dialog, then ONE
-             run_helper("harden", ["--apply", <changeset doc>]) pass:
-             the changeset is schema-validated BEFORE the doc is written
-             (changeset.write_document), and the per-control fragments
-             the helper translates land in the pass dir
-             data/harden/journal/<journal_id>/ first.
-  verify   — the honest strip: GREEN verified / AMBER applied-but-
-             unverified / RED failed-or-rolled-back / WHITE could-not-
-             check — parsed from the helper's stdout AND stderr with
-             ui/harden.py's rules.
-  finish   — Done / Undo last change / Open Dashboard; undo is ONE
-             run_helper("harden", ["--undo", <journal_id>, <pass
-             journal path>]) through the helper's own journal record.
-
-Banked rules baked in:
-  * fresh install = the data dir lacks appfw/config.json (inventory
-    fresh_install); an EXISTING config.json is never rewritten by the
-    wizard — the pass writes fragments only under harden/journal/ and
-    never touches appfw/ (tested).
-  * no auto-apply ever: the wizard opens on welcome; nothing runs until
-    the owner clicks — and nothing applies around an unknown: a fact
-    the scan could not answer is a WHITE line, and the strip's WHITE
-    (could-not-check) is never rendered green.
-  * one pkexec prompt per pass: apply_pass calls the helper exactly once.
-  * fail closed: an unvalidatable changeset is refused with the named
-    validator errors and the helper is never called.
-"""
 from __future__ import annotations
 
 import datetime
@@ -69,7 +23,6 @@ from wizard.inventory import (inventory_lines, run_scan,   # noqa: E402
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 
-# ── wizard vocabulary ───────────────────────────────────────────────────
 STEPS = ("welcome", "scan", "preview", "apply", "verify", "finish")
 STEP_LABELS = {
     "welcome": "Welcome & role",
@@ -100,35 +53,21 @@ WHITE_MARK = "⚪"
 
 
 def now_journal_id(dt=None) -> str:
-    """The pass journal id: YYYYMMDD-HHMMSS (the helper's journal-id
-    grammar ^[0-9]{8}-[0-9]{6}$; injectable `dt` keeps tests off the
-    wall clock)."""
     stamp = dt or datetime.datetime.now()
     return stamp.strftime("%Y%m%d-%H%M%S")
 
 
 def pass_journal_path(data_dir, journal_id) -> pathlib.Path:
-    """The per-pass journal file the helper created (and --undo reads)."""
     return pathlib.Path(data_dir) / "harden" / "journal" / str(journal_id) \
  / "journal.jsonl"
 
 
 def fragment_path(data_dir, journal_id, control_id) -> pathlib.Path:
-    """One control's fragment file (the helper's per-pass layout)."""
     return pathlib.Path(data_dir) / "harden" / "journal" / str(journal_id) \
  / f"{control_id}.json"
 
 
 def plan_entries(controls, cards) -> tuple[dict, list[str]]:
-    """The checked cards -> ({control_id: fragment dict}, skipped ids).
-
-    A change the graphical helper can actually make needs ONE allowlisted
-    verb from its Control's fix list (ui.harden.verby_args) plus the
-    control's probe (the helper re-verifies exactly what the scan
-    measured, with the control's own invert rule). Everything else is
-    skipped with its id kept — install-prompts and flags are the OWNER's
-    hand, never a --apply directive.
-    """
     by_id = {getattr(c, "id", ""): c for c in (controls or [])}
     fragments: dict[str, dict] = {}
     skipped: list[str] = []
@@ -153,9 +92,6 @@ def plan_entries(controls, cards) -> tuple[dict, list[str]]:
 
 
 def preview_rows(cards) -> list[dict]:
-    """The table's rows straight from the finished cards — the UI never
-    invents a Current or Recommended; a missing card value renders as
-    the honest empty string."""
     rows = []
     for card in cards:
         if not isinstance(card, dict):
@@ -174,14 +110,6 @@ def preview_rows(cards) -> list[dict]:
 
 
 def parse_strip(stdout: str, stderr: str) -> dict:
-    """The verify strip: {"colors": {id: GREEN/AMBER/RED}, "white": [...]}.
-
-    The colors use ui/harden.py's rules VERBATIM (APPLY/VERBIFY/ROLLBACK
-    lines over BOTH streams). WHITE carries what those rules cannot
-    colour as a fact: a pass the helper refused (a named CHANGES-*
-    refusal) or reported nothing about — an unverifiable result never
-    reads green here.
-    """
     both = "\n".join(part for part in (stdout or "", stderr or "") if part)
     colors = parse_apply_output(both)
     white: list[str] = []
@@ -198,19 +126,6 @@ def parse_strip(stdout: str, stderr: str) -> dict:
 
 def apply_pass(controls, cards, journal_id, doc_path, data_dir,
                helper) -> dict:
-    """The whole Apply step as ONE pure coordinator (the GTK worker only
-    runs it and idle_adds the result — no thread logic of its own).
-
-    Order of records:
-      1. plan the checked cards (fragments built, skipped ids kept);
-      2. VALIDATE the changeset and write the doc (changeset
-         .write_document — an invalid doc is refused, the helper is
-         never called, nothing else is written);
-      3. write the per-control fragments into the pass dir;
-      4. call the helper exactly ONCE: --apply the doc.
-    Returns a report dict; a non-empty "errors" means step 2 refused and
-    steps 3-4 never ran.
-    """
     fragments, skipped = plan_entries(controls, cards)
     report = {"journal_id": str(journal_id), "doc_path": str(doc_path),
               "skipped": skipped, "fragments": sorted(fragments),
@@ -254,13 +169,6 @@ def apply_pass(controls, cards, journal_id, doc_path, data_dir,
 
 
 def undo_pass(journal_id, data_dir, helper) -> dict:
-    """Undo in ONE helper call: --undo <journal_id> <pass journal path>.
-
-    The helper restores every before-value from ITS OWN journal record
-    and re-probes; the wizard never rewinds files itself. rc 0 = restored
-    and re-verified; rc 3 = restored, but the re-probes no longer pass
-    (honest words); anything else is a failed restore.
-    """
     rc, out, err = -1, "helper failed", ""
     try:
         got = helper(["--undo", str(journal_id),
@@ -282,9 +190,7 @@ def undo_pass(journal_id, data_dir, helper) -> dict:
             "words": words, "journal_id": str(journal_id)}
 
 
-# ── GTK pages ───────────────────────────────────────────────────────────
 class SetupWizard(Gtk.Box):
-    """The six stack pages. Step contract in the module docstring."""
 
     def __init__(self, win=None, data_dir=None, controls=None, runner=None,
                  helper=None, open_dashboard=None, open_chooser=None,
@@ -340,7 +246,6 @@ class SetupWizard(Gtk.Box):
             self.stack.add_named(page, step)
         self._step("welcome")
 
-    # ── small helpers (the HardenView pattern) ──────────────────────────
     @staticmethod
     def _heading(text):
         l = Gtk.Label(xalign=0)
@@ -352,8 +257,6 @@ class SetupWizard(Gtk.Box):
         return l
 
     def _words(self, size=13000, color=None):
-        """An owned label: resize/repaint it with .fill(text). color=None
-        resolves to the applied theme's main ink WHEN the text renders."""
         l = Gtk.Label(xalign=0)
         l.set_xalign(0)
         l.set_wrap(True)
@@ -404,7 +307,6 @@ class SetupWizard(Gtk.Box):
             return step
         return self._step("welcome")
 
-    # ── step 1: welcome & role ──────────────────────────────────────────
     def _build_welcome(self, _step_no):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         role_intro = self._words(size=13000)
@@ -487,7 +389,6 @@ class SetupWizard(Gtk.Box):
         self._step("scan")
         self._on_start_scan(None)
 
-    # ── step 2: scan ────────────────────────────────────────────────────
     def _build_scan(self, _step_no):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self._scan_progress = self._words(size=12000)
@@ -567,7 +468,6 @@ class SetupWizard(Gtk.Box):
             self.fill(words, f"{mark} {line}")
             self._inventory_box.append(words)
 
-    # ── step 3: adaptive preview table ──────────────────────────────────
     def _build_preview(self, _step_no):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self._white_strip = self._words(size=12000, color=soft())
@@ -666,10 +566,7 @@ class SetupWizard(Gtk.Box):
                 self._risk_box.append(warn_lab)
         self._update_apply_button()
 
-    # ── step 4: apply (ONE confirmation dialog, ONE helper pass) ────────
     def _on_apply_clicked(self, _btn):
-        """The preview's Apply button: move to the apply page — the
-        SINGLE confirmation dialog there is still the only gate."""
         return self._step("apply")
 
     def _build_apply(self, _step_no):
@@ -694,7 +591,6 @@ class SetupWizard(Gtk.Box):
         return box
 
     def _ask_confirm(self, _btn):          # noqa: C901 - one confirm dialog
-        """The SINGLE confirmation dialog (master prompt: one confirm)."""
         checked = [card["control_id"] for card in self._cards
                    if card.get("checked")]
         dlg = Gtk.Dialog(title="Apply the checked changes?")
@@ -767,9 +663,6 @@ class SetupWizard(Gtk.Box):
         threading.Thread(target=worker, daemon=True).start()
 
     def _run_helper(self, args):
-        """ONE helper interaction, BOTH streams kept for the strip — the
-        HardenView._helper_out pattern (tests inject a callable; owner
-        runtime is pkexec; a shell test can use GREYWATCH_HELPER_CMD)."""
         import os                     # noqa: PLC0415
         import subprocess             # noqa: PLC0415
         if self._helper is not None:  # tests: injected directly
@@ -801,7 +694,6 @@ class SetupWizard(Gtk.Box):
                     + ". These need the owner's own click.")
         self._step("verify")
 
-    # ── step 5: verify ──────────────────────────────────────────────────
     def _build_verify(self, _step_no):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         head = self._words(size=12000)
@@ -865,7 +757,6 @@ class SetupWizard(Gtk.Box):
     def _preview_ready(self):
         self._fill_table()
 
-    # ── step 6: finish & undo ───────────────────────────────────────────
     def _build_finish(self, _step_no):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         done_intro = self._words(size=12000)
@@ -901,8 +792,6 @@ class SetupWizard(Gtk.Box):
         return box
 
     def _enable_all_helper(self):
-        """the enable-all helper call, out of the GTK thread; tests inject
-        through wizard.enable_all_run."""
         from wiz.common import run_helper            # noqa: PLC0415
         return run_helper("tool-control", ["start-all"], timeout=240)
 
@@ -995,14 +884,7 @@ class SetupWizard(Gtk.Box):
         self._undo_btn.set_sensitive(True)
         return False
 
-# ── the host window (the rail button opens exactly ONE of these) ────────
 class SetupWizardWindow(Gtk.Window):
-    """The Setup Wizard's one window: the six pages in a box, sized to the
-    monitor. The rail button keeps a single instance (MainWindow
-    ._open_setup_wizard presents instead of stacking). A close really
-    destroys — the GTK4 close-request hide-to-tray leak-guard bug never
-    had a hook here, and the finish Done/Undo steps destroy the root they
-    stand in."""
 
     def __init__(self, parent=None, open_dashboard=None, open_chooser=None):
         super().__init__(title="greywatch: Setup Wizard")

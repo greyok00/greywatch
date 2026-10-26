@@ -1,6 +1,3 @@
-"""The wizard's real-information layer (owner 2026-10-23: "it should not
-require me typing anything"). Parsers are pure so they can be tested with
-real command output captured once, headless."""
 import pathlib
 
 import ui.discover as d
@@ -78,8 +75,6 @@ def test_pattern_catalogue_regexes_use_the_host_token():
 
 
 def test_enabled_jails_reads_the_real_config_shape(tmp_path):
-    # the parser runs on the real directory; this asserts the real machine
-    # has the shipped sshd jail and the result is plain names.
     jails = d.enabled_jails()
     assert all(isinstance(j, str) and j and not j.startswith("[") for j in jails)
 

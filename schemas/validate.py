@@ -1,12 +1,3 @@
-"""schemas/validate.py — stdlib-only schema validation (P0-c).
-
-Hand-rolled validator (no third-party jsonschema): supports the operators
-the greywatch schemas actually use — type (incl. list of types), enum,
-required, properties, items, minItems/maxItems, minLength/maxLength,
-pattern (python re on str), min/max on numbers. Unknown keywords are IGNORED
-(on purpose: schemas describe us, not the other way round — a schema file
-with a future draft keyword must never break rule loading).
-"""
 from __future__ import annotations
 
 import pathlib
@@ -42,9 +33,6 @@ def _type_ok(value, want) -> bool:
 
 
 def validate(doc, schema: dict, path: str = "") -> list:
-    """Returns a list of human-readable errors; EMPTY = valid. Never raises:
-    a broken schema file itself short-circuits to one error (fail-closed for
-    load decisions, fail-open for the daemon: callers log + skip)."""
     if not isinstance(schema, dict):
         return [f"{path or 'doc'}: schema not a dict"]
     errors = []
@@ -91,7 +79,6 @@ def validate(doc, schema: dict, path: str = "") -> list:
 
 
 def validate_rules(doc) -> list:
-    """Rules-file document (object w/ 'rules' array, or a bare array)."""
     schema = load("rules.schema.json")
     if isinstance(doc, dict) and "rules" in doc:
         return validate(doc["rules"], schema)

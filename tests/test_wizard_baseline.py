@@ -1,5 +1,3 @@
-# tests/test_wizard_baseline.py — table-driven tests for the adaptive
-# baseline generator. Offline: fake scan results only, no probes run.
 import pathlib
 import sys
 
@@ -31,7 +29,6 @@ def _by_id(cards):
     return {c["control_id"]: c for c in cards}
 
 
-# ── profile validation ──────────────────────────────────────────────────
 def test_profile_must_be_a_known_role():
     for bad in ("server", "", "WORKSTATION"):
         try:
@@ -44,7 +41,6 @@ def test_profile_must_be_a_known_role():
         assert generate({}, [], good) == []
 
 
-# ── adaptive rule table: one row per master-prompt rule ─────────────────
 def _rule_scan(**over):
     scan = {
         "packages": {"openssh-server": True, "clamav": False},
@@ -99,7 +95,6 @@ def test_ssh_not_installed_skips_ssh_cards_entirely():
     scan = _rule_scan(packages={"openssh-server": False, "clamav": False})
     ids = {c["control_id"] for c in _cards(scan, _rule_controls())}
     assert "sshd-running" not in ids
-    # non-ssh cards stay even though the scan answered
     assert "avahi-running" in ids
 
 
@@ -174,7 +169,6 @@ def test_fresh_install_unknown_is_a_white_hedged_note():
     assert card["state"] == "CANT-CHECK"
     assert card["checked"] is False
     assert card["note"] == FRESH_UNKNOWN_NOTE
-    # the CANT card must not claim the machine IS an existing install
     assert "Existing install" not in card["note"]
 
 
@@ -200,7 +194,6 @@ def test_flag_only_and_advisory_cards_never_auto_apply():
                for c in cards.values())
 
 
-# ── ProbeResult-shaped scan values (honesty honoured) ───────────────────
 class _PR:
     def __init__(self, state, value=None):
         self.state = state
@@ -225,13 +218,11 @@ def test_probresult_scan_values_and_cant_honesty():
     assert cards["clamav-installed"]["action"] == FLAG_ACTION
     assert cards["clamav-installed"]["note"] == NOT_INSTALLED_UNKNOWN_NOTE
     assert cards["ipv6-block-all"]["state"] == "CANT-CHECK"
-    # a FAIL probe answer never counts as "not installed"
     with_pass = {"packages": {"clamav": _PR("PASS", False)}}
     card = _by_id(_cards(with_pass, controls))["clamav-installed"]
     assert card["action"] == INSTALL_PROMPT_ACTION
 
 
-# ── real controls file: the banked ClamAV requirement, end to end ───────
 def test_real_clamav_control_banks_the_install_prompt():
     controls = load_controls(DATA_DIR)
     clam = next(c for c in controls if c.condition == "not-installed:clamav")
@@ -242,8 +233,6 @@ def test_real_clamav_control_banks_the_install_prompt():
     assert cards["clamav-installed"]["current"] == "clamav: not installed"
     assert cards["clamav-installed"]["recommended"] == \
         "Install with your one click"
-    # and a machine without clamav gets the card, while an installed one
-    # gets nothing
     no_scan = {"packages": {"clamav": True}}
     assert "clamav-installed" not in _by_id(_cards(no_scan, controls))
 
@@ -257,7 +246,6 @@ def test_cards_carry_nist_cis_tags_and_plain_english_risk():
         assert isinstance(card.get("risk"), str) and card["risk"]
 
 
-# ── safety / hygiene ────────────────────────────────────────────────────
 def test_no_hardware_identifiers_in_cards():
     import re
     controls = load_controls(DATA_DIR)
@@ -289,14 +277,11 @@ def test_ssh_skip_works_through_the_ssd_alias_too():
     scan = _rule_scan(packages={"sshd": False, "clamav": False})
     ids = {c["control_id"] for c in _cards(scan, _rule_controls())}
     assert "sshd-running" not in ids
-    # one alias only, other unknown: still a skip (no alias is installed)
     scan = _rule_scan(packages={"sshd": False})
     ids = {c["control_id"] for c in _cards(scan, _rule_controls())}
     assert "sshd-running" not in ids
-    # BOTH unknown: the card stays (absence never asserted)
     scan = _rule_scan(packages={"clamav": False})
     assert "sshd-running" in _by_id(_cards(scan, _rule_controls()))
-    # either alias installed: the card stays
     scan = _rule_scan(packages={"sshd": True, "clamav": False})
     assert "sshd-running" in _by_id(_cards(scan, _rule_controls()))
 
@@ -322,7 +307,6 @@ def test_wireless_row_synthetic_when_hardware_present():
     assert card["checked"] is True
     assert card["action"] == "apply"
     assert card["nist"] == ["SC-40"]
-    # hardware removed -> the row disappears entirely
     scan = _rule_scan(wireless=False)
     assert "wifi-wpa-harden" not in _by_id(_cards(scan, [wlan]))
 

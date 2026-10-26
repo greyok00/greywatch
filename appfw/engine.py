@@ -1,23 +1,3 @@
-"""appfw.engine — the interception engine (native transport, task #13).
-
-The queue-111 transport is the COMPILED C worker (`appfw/bin/nfq_worker`,
-source appfw/nfq_worker.c): the python3-netfilterqueue binding could not
-land verdicts for TCP new-connection traffic on this stack (queue_total
-built while "allow" decisions streamed — HELP/nftables/nfqueue.md). The
-engine keeps rules, policy, resolve and UI; ONLY the netlink transport
-moved to C:
-
-  worker → engine : dgram /run/greywatch/nfq_events.sock   ("PKT id proto src sport dst dport")
-  engine → worker : dgram /run/greywatch/nfq_worker.sock   ("ALLOW id" / "DROP id")
-
-Worker contract (in C, unforgeable from Python): hold each packet ≤250 ms,
-fail-open ACCEPT on timeout or overflow; signals accept everything.
-
-Invariants (owner, unchanged): every queue rule carries `bypass`; arming is
-the owner switch (data/appfw/enable.json, atomic, corrupt ⇒ OFF); DNS and
-loopback are kernel-exempted before the queue (the two outage lessons);
-fail-open on every error path.
-"""
 from __future__ import annotations
 
 import json
@@ -45,7 +25,6 @@ def enable_path(data_dir) -> pathlib.Path:
 
 
 def read_enabled(data_dir) -> bool:
-    """Owner switch: OFF by default. Anything unreadable counts as OFF."""
     try:
         doc = json.loads(enable_path(data_dir).read_text())
         return bool(doc.get("enabled"))
@@ -54,7 +33,6 @@ def read_enabled(data_dir) -> bool:
 
 
 def write_enabled(data_dir, enabled: bool) -> None:
-    """Atomic + fsync (P0-a): a mid-write kill leaves the prior state."""
     from .atomicio import write_json_atomic
     path = enable_path(data_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -62,8 +40,6 @@ def write_enabled(data_dir, enabled: bool) -> None:
 
 
 class Engine:
-    """Owns the transport + enforcement. One instance per suite — the root
-    daemon runs it; nothing else may install the table."""
 
     def __init__(self, data_dir, on_event=None, trust_list=None,
                  blocklist=None, ask=None, worker_bin=None,
@@ -88,18 +64,12 @@ class Engine:
         self._cfg_mtime = 0.0
         self.running = False
         self._stop = threading.Event()
-        # fail-open watchdog (2026-10-25 lockup): if the worker stops reading
-        # our verdicts, the send queue grows; we tear the queue down rather
-        # than black-hole traffic. Never trust a single health signal.
         self._ctl_sock = None
         self._stall_since = 0.0
         self._watchdog_thread = None
-        # event-log throttle: a connection storm must not fill the daemon's
-        # 200 MB cap with one event per SYN (797k dropped in this outage).
         self._log_last = 0.0
         self._log_suppressed = 0
 
-    # ── lifecycle ────────────────────────────────────────────────────────
     def start(self) -> bool:
         if self.running:
             return True
@@ -163,7 +133,6 @@ class Engine:
         self._remove_nft()
         self.on_event("appfw engine: stopped")
 
-    # ── transport: nft + worker ──────────────────────────────────────────
     def _install_nft(self) -> bool:
         script = config.build_ruleset(config.load(self.data_dir))
         run = subprocess.run(["nft", "-f", "-"], input=script,
@@ -199,9 +168,6 @@ class Engine:
         if not self._ensure_worker_binary():
             raise RuntimeError("nfq worker binary missing and gcc build "
                                "failed (engine refuses to arm half-broken)")
-        # audit #3: a prior SIGKILLed daemon leaves an ORPHAN worker bound to
-        # queue 111; a second worker can then never create_queue. Reap any
-        # worker bound to OUR binary before spawning the replacement.
         try:
             subprocess.run(["pkill", "-f", str(self._worker_bin)],
                            capture_output=True, timeout=5)
@@ -232,8 +198,6 @@ class Engine:
                                         name="appfw-worker-reader")
         self._reader.start()
 
-        # audit #7: worker death must flip running=False (it never did — the
-        # engine reported "running" while enforcement was already gone).
         def _monitor(worker_spawn=self._proc):
             try:
                 worker_spawn.wait(timeout=86400)
@@ -245,15 +209,8 @@ class Engine:
         threading.Thread(target=_monitor, daemon=True,
                          name="appfw-worker-monitor").start()
 
-    # ── the decision half (Python stays the policy brain) ────────────────
     def _recv_loop(self) -> None:
-        """PKT line → resolve → decide → persist `always` rules → verdict
-        back to the worker. Never raises; the worker's own 250 ms sweep is
-        the fail-open if this thread dies."""
         ctl = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        # Non-blocking verdict lane (2026-10-25 deadlock): if the worker is
-        # briefly behind, the send must fail fast, not freeze this thread.
-        # The worker's 250 ms sweep ACCEPTs the packet — fail-open.
         ctl.setblocking(False)
         self._ctl_sock = ctl
         while not self._stop.is_set():
@@ -275,12 +232,6 @@ class Engine:
                 self.on_event(f"appfw packet error — {e}")
 
     def _watchdog(self) -> None:
-        """Hard fail-open: a stalled worker must never black-hole traffic.
-
-        SIOCOUTQ on the verdict socket is bytes the peer has not read. A
-        healthy worker drains it every loop; >64 KB for 2 s means it is
-        wedged or gone. Tear the nft table down (no queue ⇒ traffic flows)
-        rather than waiting for recovery or trusting one health signal."""
         q_ioctl = getattr(socket, "SIOCOUTQ", 0x5411)
         while not self._stop.wait(2.0):
             if not self.running:
@@ -338,8 +289,6 @@ class Engine:
             pass        # worker behind → its 250 ms sweep ACCEPTs, fail-open
         except OSError:
             pass
-        # Bounded logging: ≤10 allow events/s, denies always kept. One event
-        # per SYN during a storm is what filled the daemon's memory cap.
         now = time.monotonic()
         if action != "allow" or now - self._log_last >= 0.1:
             if self._log_suppressed:
@@ -352,6 +301,5 @@ class Engine:
         else:
             self._log_suppressed += 1
 
-    # config-aware reconcile (a Settings toggle lands without a rebuild)
     def config_changed(self) -> bool:
         return config.mtime(self.data_dir) != self._cfg_mtime

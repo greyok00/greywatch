@@ -1,5 +1,4 @@
 #!/bin/bash
-# helper (pkexec only): start ONE whitelisted manual scan
 set -uo pipefail
 GW_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 GH="${GW_USER_HOME:-$(dirname "$GW_DIR")}"

@@ -1,20 +1,3 @@
-"""Collectors — Task 3: inotify file tailers + journal followers + bounded queue.
-
-Design (plan lines 94-99):
-- FileTailer: ctypes inotify (IN_MODIFY|IN_MOVED_TO|IN_CREATE|IN_DELETE|
-  IN_ATTRIB) on the file AND its parent dir; rotation (IN_MOVED_TO on the
-  basename) → reopen from 0; truncate (size < pos) → re-seek (no lost or
-  double lines); delete+recreate → parent watch rediscovers. Absent file at
-  start → wait on parent watch.
-- JournalTailer: ONE parameterized implementation over `journalctl -f`.
-  (root daemon runs real journalctl; tests inject a stub reader).
-- BoundedQueue: 5 000 newest-wins, drop counter (G2.3 overflow proof).
-- appfw engine events do NOT come from here — the engine is part of the
-  daemon itself and mirrors its decisions into events.jsonl.
-
-Callbacks receive `(tool, line)` and run OUTSIDE the tailer lock; parsing /
-queueing stays in the daemon loop.
-"""
 from __future__ import annotations
 
 import ctypes
@@ -50,7 +33,6 @@ _event_size = ctypes.sizeof(ctypes.c_int32) * 3 + ctypes.sizeof(ctypes.c_uint32)
 
 
 class Inotify:
-    """Minimal ctypes inotify wrapper; never raises in close()."""
 
     def __init__(self):
         self.fd = _libc.inotify_init1(IN_NONBLOCK)
@@ -68,7 +50,6 @@ class Inotify:
             _libc.inotify_rm_watch(self.fd, wd)
 
     def events(self):
-        """Yield (wd, mask, name) until drain; non-blocking."""
         try:
             ready, _, _ = select.select([self.fd], [], [], 0)
         except (OSError, ValueError):
@@ -102,7 +83,6 @@ def struct_unpack_from(data, offset):
 
 
 class BoundedQueue:
-    """Newest-wins queue of at most `max` items; counts dropped-oldest."""
 
     def __init__(self, max_items: int = 5000):
         self.max_items = max_items
@@ -111,9 +91,6 @@ class BoundedQueue:
         self._lock = threading.Lock()
 
     def put_nowait(self, item, line=None):
-        """Two calling shapes by design: put_nowait(item) or put_nowait(tool,
-        line) — the direct tailer-callback bind needs the second form (and a
-        TypeError here would be swallowed by the tailer's guard)."""
         if line is not None:
             item = (item, line)
         with self._lock:
@@ -146,11 +123,6 @@ class BoundedQueue:
 
 
 class FileTailer:
-    """Follow one file through append/rotate/truncate/delete+recreate.
-
-    Never raises: I/O errors are logged to on_error and the tailer keeps
-    working or idles on the parent-watch. callback(tool, line) per line.
-    """
 
     def __init__(self, path, tool, callback, on_error=None, chunk=65536,
                  start_at_end=False):
@@ -178,7 +150,6 @@ class FileTailer:
             if len(self._trace) > 60:
                 del self._trace[:len(self._trace) - 60]
 
-    # -- lifecycle ---------------------------------------------------------
     def start(self):
         self._ino = Inotify()
         parent = os.path.dirname(self.path) or "/"
@@ -204,7 +175,6 @@ class FileTailer:
             pass
 
     def _open(self):
-        """Open-or-wait; seek semantics per rotation/truncate contract."""
         try:
             self._fh = open(self.path, "rb")
             self._wd_file = self._ino.add_watch(self.path)
@@ -212,8 +182,6 @@ class FileTailer:
             self._digest = hashlib.sha256()    # content anchor: bytes read so far
             self._tail_bytes = b""             # last bytes read (for tail anchor)
             if self.start_at_end and self._pos == 0:
-                # skip history: anchor the counter AT the end too — leaving
-                # _pos=0 with the fd at END desynced every anchor check
                 self._pos = self._fh.seek(0, 2)
                 self._seed_anchors()
             elif self._pos:                    # reopened after rotation → new file
@@ -226,10 +194,6 @@ class FileTailer:
             self._wd_file = None
 
     def _seed_anchors(self):
-        """After a history skip the rolling anchors must describe the bytes
-        we DIDN'T read — seed them from the file (one bounded hash + 4 KB
-        read), or every caught-up tick would spuriously 'detect' truncation
-        and re-read the entire history."""
         try:
             self._digest = hashlib.sha256()
             pos = self._pos
@@ -244,9 +208,7 @@ class FileTailer:
         except OSError:
             pass
 
-    # -- main loop ----------------------------------------------------------
     def _run(self):
-        # initial read of everything already waiting in the file
         self._read_available()
         last_sync = 0.0
         while not self._stop.is_set():
@@ -255,9 +217,6 @@ class FileTailer:
                     self._handle(wd, mask, name)
                 except OSError as e:
                     self.on_error(f"{self.tool}: {e}")
-            # stat-sync (cheap, ≥0.5 s apart): truncate(2) emits NO inotify
-            # event, so truncation is ONLY detectable by polling. Blind
-            # window = SYNC_S; inotify still delivers appends instantly.
             now = _monotonic()
             if now - last_sync >= SYNC_S:
                 self._read_available()
@@ -272,9 +231,6 @@ class FileTailer:
             self._check_truncate()
         elif (wd == self._wd_parent and (mask & (IN_MOVED_TO | IN_CREATE))
               and name == base):
-            # rotation (recreate) or moved-into-place. Inode check: a create
-            # event for the file we ALREADY hold (common race with the very
-            # first reads) must never reset our offset (double reads).
             try:
                 st_new = os.stat(self.path)
                 same = (self._fh is not None and
@@ -314,12 +270,6 @@ class FileTailer:
         self._emit_buffer()
 
     def _check_truncate(self):
-        """Truncate detection. truncate(2) emits NO inotify event (kernel
-        quirk), so truncation is polled every tick here — but ONLY for the
-        file the fd actually holds: a same-inode shrink (or a ctime change
-        with unchanged size) means truncate; a CHANGED inode at the path is
-        a rotation/recreate handled by the reopen path (never re-anchor the
-        old fd — that double-reads the moved file's content)."""
         if self._fh is None:
             return
         try:
@@ -351,7 +301,6 @@ class FileTailer:
                     with open(self.path, "rb") as probe:
                         probe.seek(pos - _ANCHOR_KB)
                         actual = probe.read(_ANCHOR_KB)
-                    # compare against the tail bytes we actually read
                     if len(actual) == _ANCHOR_KB and \
                             self._tail_bytes is not None and \
                             actual != self._digest_tail():
@@ -426,14 +375,6 @@ class FileTailer:
 
 
 class JournalTailer:
-    """ONE parameterized journal follower. Real runs: journalctl -f.
-
-    line_filter: optional pre-gate (C-speed substring check) so high-volume
-    streams (kernel journal = 1000+ lines/s on a busy box) are parsed only
-    when they actually matter: the suite keeps [UFW + apparmor lines, drops
-    the kernel audit noise at the tailer, not in Python.
-    Tests pass a fake_cmd returning an object with readline()/close().
-    """
 
     def __init__(self, tool, argline, callback, fake_cmd=None, line_filter=None):
         self.tool = tool
@@ -500,6 +441,4 @@ class JournalTailer:
             else:
                 failures = 0
             if not self._stop.is_set():
-                # journalctl died (or produced nothing): exponential backoff,
-                # capped at 30 s — never a hot respawn loop
                 self._stop.wait(min(30.0, 1.0 * 2 ** min(failures, 5)))

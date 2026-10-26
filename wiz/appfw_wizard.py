@@ -1,17 +1,3 @@
-#!/usr/bin/env python3
-"""W5 — the App Firewall rule wizard: intuitive rule creation + learning
-from use.
-
-Three flows, everything previewed before it lands in the store:
-
-  allow|deny  a program      (exact binary path → allow-always / deny-always)
-  trust|block a site         (host name → site rule; wildcards *.example ok)
-  approve     learned use    (the learning ledger → one-click persistent rules)
-
-Pure + testable: no GTK; the CLI (`greywatch rules appfw …`) and the GUI
-chooser drive the same functions. The store is grey-owned (data/appfw/rules/)
-— no pkexec, no helpers, nothing privileged.
-"""
 from __future__ import annotations
 
 import json
@@ -34,7 +20,6 @@ def store() -> RuleStore:
 
 
 def appfw_build(spec: dict) -> dict:
-    """Validated wizard spec → {'rule', 'preview'} — never saved here."""
     kind = spec.get("kind", "")
     action = spec.get("action", "")
     value = str(spec.get("value", "")).strip()
@@ -61,7 +46,6 @@ def appfw_build(spec: dict) -> dict:
 
 
 def apply_spec(spec: dict) -> dict:
-    """Preview + store the rule (dedupe is in the store)."""
     built = appfw_build(spec)
     rule = R.validate(built["rule"]["name"], built["rule"]["action"],
                       built["rule"]["duration"], built["rule"]["op_kind"],
@@ -71,7 +55,6 @@ def apply_spec(spec: dict) -> dict:
 
 
 def learned_pairs(limit: int = 20) -> list:
-    """The newest program→host pairs the learning mode recorded."""
     out = []
     try:
         lines = LEDGER.read_text().splitlines()[-limit * 2:]
@@ -102,7 +85,6 @@ def _human_list(store_obj: RuleStore) -> str:
 
 
 def appfw_main(argv: list) -> int:
-    """`greywatch rules appfw <allow|deny|trust|block|approve|list|remove>`."""
     usage = ("usage: greywatch rules appfw "
              "allow|deny PROGRAM | trust|block SITE | approve [APP] | "
              "list | remove NAME")

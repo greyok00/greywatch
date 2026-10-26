@@ -1,12 +1,3 @@
-"""Tests for wizard/changeset.py — the changeset grammar, fail closed.
-
-stdlib only, offline. The battery covers the plan's Task 3 contract:
-version 1 only, journal_id ^[0-9]{8}-[0-9]{6}$, control ids must exist in
-the loaded controls, action in {apply, verify, rollback} — and the
-smuggle battery is REQUIRED, not decorative: newline control ids,
-absolute paths, and metachar payloads must each be rejected with THEIR
-OWN message, so a refusal names the trick that was refused.
-"""
 from __future__ import annotations
 
 import json
@@ -23,7 +14,6 @@ CONTROLS = [{"id": ID}, {"id": "gw-kernel-controls"}]
 
 
 def base(**over):
-    """A valid changeset, with overrides for one field at a time."""
     doc = {"version": 1, "journal_id": JID,
            "changes": [{"control_id": ID, "action": "apply",
                         "backup_path": "data/harden/journal/%s/%s.json"
@@ -36,7 +26,6 @@ def errs(doc) -> list[str]:
     return cs.validate(doc, CONTROLS)
 
 
-# ── schema of record loads and matches the validator ────────────────────
 
 def test_schema_json_loads_with_grammar():
     schema = json.loads(
@@ -46,11 +35,9 @@ def test_schema_json_loads_with_grammar():
         cs.JOURNAL_ID_RE.pattern
     assert set(schema["fields"]["changes"]["items"]["fields"]["action"]
                ["enum"]) == set(cs.ACTIONS)
-    # the allowed actions are exactly the plan's three verbs
     assert cs.ACTIONS == frozenset({"apply", "verify", "rollback"})
 
 
-# ── the happy path ──────────────────────────────────────────────────────
 
 def test_valid_changeset_passes():
     assert errs(base()) == []
@@ -70,7 +57,6 @@ def test_build_defaults_action_to_apply_and_all_actions_accepted():
         assert errs(doc) == [], action
     built = cs.build(JID, [{"control_id": ID}])
     assert built["changes"][0]["action"] == "apply"          # default
-    # build() emits the REQUIRED backup_path, per-pass convention
     assert built["changes"][0]["backup_path"] == \
         "data/harden/journal/%s/%s.json" % (JID, ID)
     assert errs(built) == []
@@ -78,9 +64,6 @@ def test_build_defaults_action_to_apply_and_all_actions_accepted():
 
 def test_build_accepts_id_key_and_card_objects():
     class Card:
-        # a SECOND real control id: one pass carries at most one change
-        # per control (W5 duplicate gate), so the dict + object forms
-        # cannot both carry the same id anymore
         control_id = "gw-kernel-controls"
 
     doc = cs.build(JID, [{"id": ID}, Card()])
@@ -99,7 +82,6 @@ def test_build_rejects_anonymous_card():
         cs.build(JID, [{"action": "apply"}])
 
 
-# ── structural failures ─────────────────────────────────────────────────
 
 def test_non_object_changeset():
     assert errs([1, 2]) == ["changeset: expected a JSON object"]
@@ -122,12 +104,10 @@ def test_version_must_be_one():
                for e in errs(base(version="1")))
 
 
-# ── journal_id grammar ──────────────────────────────────────────────────
 
 def test_journal_id_exact_shape():
     doc = base(journal_id="2026-10-25 14:05:32")
     out = errs(doc)
-    # a space is both a whitespace smuggle AND a wrong shape — both said
     assert any("whitespace or control characters" in e for e in out)
     assert not any(e.startswith("journal_id: expected the form")
                    for e in out)  # shape note stays off when a smuggle fires
@@ -146,7 +126,6 @@ def test_journal_id_absolute_path_smuggle():
                for e in out), out
 
 
-# ── control_id grammar: the smuggle battery (REQUIRED) ──────────────────
 
 def test_control_id_newline_smuggle():
     payload = "gw-unit-hardening\nundo_all"
@@ -181,7 +160,6 @@ def test_control_id_non_string_and_leading_dot():
     assert any("path-like values are rejected" in e for e in out)
 
 
-# ── known-controls gate and action vocabulary ───────────────────────────
 
 def test_unknown_control_id_rejected():
     out = errs(base(changes=[{"control_id": FAKE, "action": "apply"}]))
@@ -205,8 +183,6 @@ def test_object_controls_list_also_accepted():
 
 
 def test_control_id_from_schema_needs_to_match_real_controls():
-    """The grammar must not invent controls: the schema regex accepts the
-    real ids in data/hardening-controls.json."""
     real = json.loads(
         (pathlib.Path(__file__).resolve().parent.parent /
          "data" / "hardening-controls.json").read_text())["controls"]
@@ -218,10 +194,6 @@ def test_control_id_from_schema_needs_to_match_real_controls():
 
 
 def test_duplicate_control_id_changeset_refused():
-    """W3's deferred minor, decided at the W5 wiring layer: one changeset
-    cannot carry two changes for the same control (apply + rollback pair
-    included) — refused with the named message, both here and in the
-    helper gate."""
     doc = base(changes=[{"control_id": ID, "action": "apply"},
                         {"control_id": ID, "action": "rollback"}])
     es = errs(doc)
@@ -229,10 +201,6 @@ def test_duplicate_control_id_changeset_refused():
 
 
 def test_backup_path_required_per_pass_layout():
-    """W5 round 1: backup_path is REQUIRED for every change (the helper
-    gate needs it) and must sit in the per-pass fragment layout —
-    traversal ('..'), unrelated absolute paths, whitespace and
-    metacharacters are each refused with their own message."""
     doc = base()
     assert errs(doc) == []
     missing = base(changes=[{"control_id": ID, "action": "apply"}])
@@ -250,9 +218,6 @@ def test_backup_path_required_per_pass_layout():
 
 
 def test_write_document_validates_then_writes():
-    """The handoff write: unvalidated shape never reaches the helper; a
-    valid one lands as JSON with a trailing newline; a refused write
-    leaves the old file untouched."""
     class _C:                                     # control-object form
         id = ID
     ok = {"version": 1, "journal_id": JID,
