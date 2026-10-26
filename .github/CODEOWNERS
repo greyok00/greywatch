@@ -1,0 +1,10 @@
+# Default owner. Replace [YOUR-GITHUB-HANDLE] with the maintainer handle
+# before the repo goes public — CODEOWNERS silently ignores unknown
+# handles, so an unfilled placeholder is safer kept commented out.
+#
+# * @[YOUR-GITHUB-HANDLE]
+#
+# Privilege boundary and firewall engine should always route to the owner,
+# now matter who else joins:
+#   apply/     @[YOUR-GITHUB-HANDLE]
+#   appfw/     @[YOUR-GITHUB-HANDLE]
