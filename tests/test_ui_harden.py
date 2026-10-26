@@ -315,3 +315,56 @@ def test_card_shows_the_display_only_cve_note():
     bare._on_scan(None)
     pump()
     assert "Relevant CVEs" not in "\n".join(_find_card_texts(bare))
+
+
+def test_apply_stays_enabled_when_only_advisory_checks_cant():
+    from hardening.controls import Control
+    broken_advisory = Control(
+        "advisory-broken", "docs", "Probing not runnable on this box",
+        probe="EXPLODE", severity="INFO", advisory=True)
+    view = HardenView(controls=[CONTROLS[0], broken_advisory],
+                      runner=fake_runner)
+    view._on_scan(None)
+    pump()
+    assert view.apply_btn.get_sensitive()
+    assert "advisory-only" in view.status.get_text()
+    # a regular (non-advisory) unknown still gates:
+    gated = HardenView(controls=[CONTROLS[0], CONTROLS[2]],
+                       runner=fake_runner)
+    gated._on_scan(None)
+    pump()
+    assert not gated.apply_btn.get_sensitive()
+
+
+def test_card_marks_follow_the_result_not_severity():
+    # A check that already passed is good news and must read green; the
+    # severity badge stays in the tag line, red is reserved for failures.
+    view = make_view(cant=False)   # PASS control, fixable gap, advisory
+    view._on_scan(None)
+    pump()
+    joined = "\n".join(_find_card_texts(view))
+    assert "🟢 already at baseline" in joined, joined
+    assert "🟡 NOT at baseline" in joined, joined
+    assert "📄 ADVISORY (never applied)" in joined, joined
+    assert not any(t.startswith("🔴") for t in _find_card_texts(view)), joined
+
+
+def test_apply_success_rescans_the_cards():
+    # After a successful apply the checks re-run, so a fixed gap turns
+    # green on the cards without the user re-running anything.
+    seen = []
+
+    def counting(line):
+        seen.append(line)
+        return fake_runner(line)
+
+    view = HardenView(controls=[CONTROLS[0], CONTROLS[1]],
+                      runner=counting,
+                      helper=lambda a: (0, "VERBIFY gap-control 0\n", ""))
+    view._on_scan(None)
+    pump()
+    after_first = len(seen)
+    view._on_apply(None)
+    pump(40)
+    assert len(seen) > after_first, "apply must re-run the checks"
+    assert "gap-control GREEN" in view.verify_label.get_text()

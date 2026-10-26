@@ -13,7 +13,7 @@ from hardening import detector
 from hardening.apply import build_plan, GREEN, RED, AMBER, ALLOWED_VERBS
 from hardening.detector import cve_note
 from hardening.journal import read_latest
-from ui.models import MARK_BY_SEVERITY
+from ui.models import MARK_BY_SEVERITY  # noqa: F401  (severity tags)
 from ui.plain import (escape, ink as pc_ink, soft as pc_soft,
                       muted as pc_muted, warn as pc_warn)
 
@@ -117,6 +117,8 @@ class HardenView(Gtk.Box):
         self.status = Gtk.Label(xalign=0)
         self.status.set_xalign(0)
         self.status.set_hexpand(True)
+        self.status.set_wrap(True)
+        self.status.set_max_width_chars(64)
         row.append(self.status)
         self.scan_btn = Gtk.Button(label="Run baseline checks")
         self.scan_btn.add_css_class("gw-cta")
@@ -236,6 +238,12 @@ class HardenView(Gtk.Box):
                 break
             self.cards.remove(child)
         cant = [f for f in findings if f.state == detector.CANT]
+        # An unknown state is never applied — but advisory cards are
+        # never applied at anything, so when ONLY advisory checks came
+        # back uncheckable they must not hold the whole panel hostage.
+        advisory_ids = {getattr(c, "id", "") for c in controls
+                        if bool(getattr(c, "advisory", False))}
+        gating = [f for f in cant if f.control_id not in advisory_ids]
         manual_ids = set()
         for f in findings:
             if f.state == detector.GAP:
@@ -249,11 +257,16 @@ class HardenView(Gtk.Box):
         n = len(findings)
         gaps = sum(1 for f in findings if f.state == detector.GAP)
         auto = gaps - len(manual_ids)
-        if cant:
+        if gating:
             self.status.set_text(
                 f"{n} checks: {gaps} gap(s) to tighten, {len(cant)} could "
                 f"NOT be checked. Applying stays off until every check "
                 f"can run.")
+        elif cant:
+            self.status.set_text(
+                f"{n} checks: {gaps} gap(s) to tighten, {len(cant)} could "
+                f"NOT be checked (advisory-only; nothing is applied from "
+                f"them). Review the cards, then Apply if you agree.")
         else:
             lead = (f"{n} checks done: {auto} gap(s) would be tightened."
                     if auto else f"{n} checks done: every gap needs a "
@@ -263,13 +276,13 @@ class HardenView(Gtk.Box):
             self.status.set_text(
                 lead + extra + " Review the cards, then Apply if you "
                 "agree.")
-        if cant:
+        if gating:
             self.apply_btn.set_tooltip_text(
                 "Off because some checks could not run. An unknown state "
                 "is never applied.")
         else:
             self.apply_btn.set_tooltip_text("")
-        self.apply_btn.set_sensitive(not cant)
+        self.apply_btn.set_sensitive(not gating)
         return False
 
     def _load_cve_cache(self) -> dict:
@@ -288,18 +301,21 @@ class HardenView(Gtk.Box):
         return "; ".join(dict.fromkeys(n for n in notes if n))
 
     def _card(self, fnd, control, manual=False):
-        mark = MARK_BY_SEVERITY.get(
-            control.severity if control is not None else "", "⚪")
+        # The head badge follows the CHECK RESULT, not the severity: a
+        # check that already passes is good news and reads green; red is
+        # reserved for a check that actually failed. Severity lives in the
+        # tag line at the bottom of the card.
+        mark = ("📄" if bool(getattr(control, "advisory", False)) else
+                {detector.PASS: "🟢", detector.GAP: "🟡",
+                 detector.FAIL: "🔴", detector.CANT: "⚪"}.get(fnd.state, "⚪"))
         words = {detector.PASS: "already at baseline",
                  detector.GAP: "NOT at baseline (would be tightened)",
                  detector.FAIL: "failed the check",
                  detector.CANT: "COULD NOT BE CHECKED"}
         advisory = bool(getattr(control, "advisory", False))
         if advisory:
-            mark = "📄"
             words = {fnd.state: "ADVISORY (never applied)"}
         elif manual:
-            mark = "🤲"
             words = {fnd.state: "NEEDS A MANUAL CHANGE (Apply cannot "
                                  "fix this one)"}
         frame = Gtk.Frame()
@@ -333,7 +349,8 @@ class HardenView(Gtk.Box):
                 f"<span size='11000' font_family='Inter' color='{pc_warn()}'>"
                 + escape(cve_txt) + "</span>")
             box.append(note)
-        tag_bits = [f"NIST {x}" for x in (control.nist or [])] \
+        tag_bits = [control.severity if control is not None else ""] \
+            + [f"NIST {x}" for x in (control.nist or [])] \
             if control is not None else []
         tag_bits += [f"CIS {x}" for x in (control.cis or [])] \
             if control is not None else []
@@ -415,17 +432,23 @@ class HardenView(Gtk.Box):
         if self._dead:
             return False
         colors = parse_apply_output((out or "") + "\n" + (err or ""))
-        lines = [f"{cid} {color}" for cid, color in colors.items()] or \
+        lines = ["GREEN = fixed and verified. RED = the fix did not "
+                 "hold. AMBER = not re-verified."]
+        lines += [f"{cid} {color}" for cid, color in colors.items()] or \
             ["The helper reported no results. Nothing was verified."]
         if skipped:
             lines.append("skipped by the GUI (manual change needed): "
                          + ", ".join(e["id"] for e in skipped))
         if rc != 0:
             lines.append(f"Helper exited with code {rc}. See the logs.")
+            self.status.set_text(
+                "The apply did not fully succeed — the cards below show "
+                "the current state.")
+        else:
+            # The checks run again at once: gaps the apply just closed turn
+            # green on the cards without the owner re-running anything.
+            self._on_scan(None)
         self.verify_label.set_text("\n".join(lines))
-        self.status.set_text(
-            "Applied and re-verified. RED means the fix did not hold. "
-            "AMBER was not re-verified.")
         self._refresh_undo()
         return False
 

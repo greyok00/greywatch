@@ -64,6 +64,44 @@ def _norm_condition(value):
     return "always"
 
 
+_UNIT_INSTALL_TARGET = "/etc/systemd/system/greywatch.service"
+_UNIT_TEXT_PATH = (pathlib.Path(__file__).resolve().parents[1] / "doc"
+                   / "greywatch.service")
+
+
+def _unit_text() -> str:
+    """The shipped hardened unit file, rendered for this installation —
+    __GW_HOME__ goes to the checkout/install root, exactly as
+    install.sh does. Unreadable file: return the unresolved marker, so
+    the plan skips the step honestly instead of guessing."""
+    try:
+        return _UNIT_TEXT_PATH.read_text(encoding="utf-8").replace(
+            "__GW_HOME__", str(_UNIT_TEXT_PATH.parents[1]))
+    except OSError:
+        return "TRANCHE"
+
+
+def _resolve_templates(entry: dict) -> dict:
+    """Substitute the two shipped placeholders so probes and the apply
+    plan never see them: {{unit}} is this app's own systemd unit, and
+    the unit-install text slot marked TRANCHE carries the shipped unit
+    file's content. Anything that still shows a template afterwards is
+    treated as unresolvable by the apply pipeline (honest skip)."""
+    entry["probe"] = str(entry.get("probe", "") or "").replace(
+        "{{unit}}", "greywatch")
+    steps = []
+    for step in entry.get("fix", []) or []:
+        if isinstance(step, list) and step and step[0] == "unit-install":
+            step = list(step)
+            if len(step) >= 2 and step[1] == "{{unit}}":
+                step[1] = _UNIT_INSTALL_TARGET
+            if len(step) >= 3 and step[2] == "TRANCHE":
+                step[2] = _unit_text()
+        steps.append(step)
+    entry["fix"] = steps
+    return entry
+
+
 def load_controls(base_dir: pathlib.Path) -> list[Control]:
     path = pathlib.Path(base_dir) / "hardening-controls.json"
     try:
@@ -75,6 +113,9 @@ def load_controls(base_dir: pathlib.Path) -> list[Control]:
         return []
     out: list[Control] = []
     for e in entries:
+        if not isinstance(e, dict) or not all(k in e for k in _REQUIRED):
+            continue
+        e = _resolve_templates(e)
         if not isinstance(e, dict) or not all(k in e for k in _REQUIRED):
             continue
         out.append(Control(

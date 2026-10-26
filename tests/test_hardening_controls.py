@@ -136,3 +136,16 @@ def test_action_norm_falls_back_to_none(tmp_path):
         json.dumps(base) + "\n", encoding="utf-8")
     got = {c.id: c.action for c in load_controls(tmp_path)}
     assert got == {"a": "install-prompt", "b": None, "c": None, "d": None}
+
+
+def test_unit_templates_resolve_at_load():
+    root = pathlib.Path(__file__).resolve().parents[1]
+    unit = {c.id: c for c in load_controls(root / "data")}["gw-unit-hardening"]
+    assert "{{unit}}" not in unit.probe
+    assert "greywatch.service" in unit.probe
+    step = unit.fix[0]
+    assert step[0] == "unit-install"
+    assert step[1] == "/etc/systemd/system/greywatch.service"
+    shipped = (root / "doc" / "greywatch.service").read_text(encoding="utf-8")
+    assert step[2] == shipped.replace("__GW_HOME__", str(root))
+    assert "TRANCHE" not in " ".join(str(x) for x in step)

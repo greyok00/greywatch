@@ -9,6 +9,25 @@ current version is `pyproject.toml` (CLI: `python3 cli.py --version`).
 
 First public-ready release.
 
+### Fixed
+- Harden panel ran every probe with the calling session's bare
+  environment: on a desktop session `sysctl`/`nft` were unreachable (no
+  `/usr/sbin` in PATH), compound probe lines (pipes, redirects) could not
+  run, and the systemd-unit check probed a literal `{{unit}}` path. Probes
+  now run with a scrubbed environment whose PATH always covers the sbin
+  trees, every probe line runs through `/bin/sh` (still unprivileged —
+  `sudo`/`su`/`doas`/`pkexec` remain refused), and the shipped unit-file
+  templates resolve at load. When only advisory checks are uncheckable,
+  Apply is no longer blocked — advisories are never applied at anything.
+- Harden cards wore the severity badge as their headline mark, so a check
+  that already passed read red next to "already at baseline". The badge
+  now follows the result (green = at baseline, amber = would be
+  tightened, red = the check failed, page = advisory-only), the severity
+  lives in the card's tag line, a successful Apply re-runs the checks at
+  once so closed gaps turn green without another click, and the status
+  line wraps so the Apply/Undo buttons can no longer be pushed off the
+  panel.
+
 ### Added
 - Application icon set from the final side-profile wolf art: sizes 16–256
   plus a light-background variant, and `install-icons.sh` (hicolor app

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass
 
@@ -25,14 +27,37 @@ def _get(ctrl, key, default=None):
     return getattr(ctrl, key, default)
 
 
+_SBIN_DIRS = ("/usr/local/sbin", "/usr/sbin", "/sbin")
+
+
+def _probe_env() -> dict:
+    """Scrubbed probe environment: nothing from the calling session is
+    inherited except a PATH that also covers the sbin trees, where
+    sysctl, nft and friends live outside a desktop user's PATH."""
+    path = os.environ.get("PATH") or "/usr/bin:/bin"
+    missing = [d for d in _SBIN_DIRS if d not in path.split(os.pathsep)]
+    if missing:
+        path = os.pathsep.join([*missing, path])
+    return {"PATH": path}
+
+
 def prod_runner(line: str) -> tuple[int, str]:
     parts = shlex.split(line)
     if not parts:
         return 1, "empty probe command"
     if parts[0] in ("sudo", "su", "doas", "pkexec") or "sudo" in parts:
         raise RuntimeError(f"refusing privilege escalation: {parts[0]}")
-    proc = subprocess.run(  # noqa: S603 - argv list, no shell
-        parts, capture_output=True, text=True, shell=False, timeout=10,
+    env = _probe_env()
+    if shutil.which(parts[0], path=env["PATH"]) is None:
+        raise RuntimeError(
+            f"probe binary not found: {parts[0]} (is it installed?)")
+    # /bin/sh -c: several shipped probe lines are compound (pipes and
+    # redirects). That text is this repo's own controls file, user input
+    # never reaches prod_runner, and the sudo/su/doas/pkexec refusal
+    # above keeps every probe unprivileged.
+    proc = subprocess.run(  # noqa: S603 - repo-owned probe text only
+        ["/bin/sh", "-c", line], capture_output=True, text=True,
+        shell=False, timeout=10, env=env,
     )
     out = (proc.stdout or "") + (proc.stderr or "")
     return proc.returncode, out

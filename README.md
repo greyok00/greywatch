@@ -353,15 +353,17 @@ The test battery is the ground truth, and the invocation is the real
 one this tree is shipped with:
 
 ```bash
-env -u DISPLAY python3 -m pytest -q tests/   # 600 tests, ~50 s
+env -u DISPLAY python3 -m pytest -q tests/   # 604 tests, ~50 s
 ```
 
-As of 2026-10-26 that battery passes 600 tests and skips 4
+As of 2026-10-26 that battery passes 604 tests and skips 4
 display-dependent GUI tests (with a real display they run). The copy
 rules are executable (`runbooks/longtext.py` flags user-facing strings
 over 12 words), wizard flows are tested end-to-end with fakes, the
 theme system round-trips, and the GUI has a smoke suite. The Harden
-path is unit-tested never to escalate privileges by itself.
+path is unit-tested never to escalate privileges by itself, its probe
+environment is scrubbed (only a repaired PATH is inherited), and an
+advisory check that cannot run never blocks applying the rest.
 
 CI runs lint and the same battery on every push; a CI badge will be
 added once the repository is live and has real runs to point at.

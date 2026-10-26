@@ -1,3 +1,4 @@
+import os
 from hardening.detector import scan, prod_runner
 
 
@@ -47,3 +48,52 @@ def test_prod_runner_refuses_sudo():
 def test_prod_runner_bad_command_is_failure_not_crash():
     rc, out = prod_runner("")
     assert rc != 0
+
+
+def test_prod_runner_repairs_the_desktop_path(tmp_path):
+    # sysctl and nft live in /usr/sbin, which a desktop user session's
+    # PATH does not include — a probe must still find them
+    sbin = tmp_path / "sbin"
+    sbin.mkdir()
+    stub = sbin / "kernctl"
+    stub.write_text("#!/bin/sh\nprintf 'P=%s S=%s' \"$PATH\" \"$GWSECRET\"\n")
+    stub.chmod(0o755)
+    saved_path = os.environ.get("PATH")
+    saved_secret = os.environ.get("GWSECRET")
+    os.environ["PATH"] = f"{sbin}:/usr/bin:/bin"    # desktop-like: no sbin trees
+    os.environ["GWSECRET"] = "never-leak-this"
+    try:
+        rc, out = prod_runner("kernctl -n kernel.unprivileged_bpf_disabled")
+    finally:
+        if saved_path is None:
+            os.environ.pop("PATH", None)
+        else:
+            os.environ["PATH"] = saved_path
+        if saved_secret is None:
+            os.environ.pop("GWSECRET", None)
+        else:
+            os.environ["GWSECRET"] = saved_secret
+    assert rc == 0, out
+    assert "/usr/sbin" in out and "/bin" in out    # sbin reached
+    assert "never-leak-this" not in out            # env scrubbed
+    assert "S=" in out and out.split("S=", 1)[1].strip() == ""
+
+
+def test_prod_runner_runs_compound_probe_lines(tmp_path):
+    # shipped probe lines may be compound (pipes/redirects) — they still run
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "tableprober"
+    stub.write_text("#!/bin/sh\necho table inet greywatch\n")
+    stub.chmod(0o755)
+    probe = f"{stub} 2>/dev/null | grep -q greywatch && echo wired || echo dead"
+    rc, out = prod_runner(probe)
+    assert rc == 0 and "wired" in out
+
+
+def test_probe_binaries_missing_name_the_tool():
+    findings = scan([{"id": "needstool", "probe": "gw-absent-prober -n x",
+                      "invert": False, "severity": "LOW", "group": "g"}],
+                    runner=prod_runner)
+    assert findings[0].state == "CANT-CHECK"
+    assert "gw-absent-prober" in findings[0].note
