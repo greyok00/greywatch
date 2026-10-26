@@ -369,7 +369,7 @@ The test battery is the ground truth, and the invocation is the real
 one this tree is shipped with:
 
 ```bash
-env -u DISPLAY python3 -m pytest -q tests/   # 648+ tests, ~50 s
+env -u DISPLAY python3 -m pytest -q tests/   # 618 tests headless + 71 GUI (Xvfb), ~50 s
 ```
 
 As of 2026-10-26 that battery passes 605 tests and skips 4
