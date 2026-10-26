@@ -1,0 +1,65 @@
+# Tag build (v*): compile the extension modules, prove the battery still
+# passes against the compiled tree, bundle source + .so with a checksum,
+# attest build provenance, publish the Release with auto-generated notes.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    env:
+      ARTIFACT: greywatch-${{ github.ref_name }}-linux-x86_64.tar.gz
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+
+      - name: Toolchain (dev pins for the smoke battery, build pins for cython)
+        run: |
+          python3 -m venv .venv
+          # the venv has no PyGObject: the GUI modules skip honestly here,
+          # which is exactly what the battery's headless guard expects
+          .venv/bin/pip install --disable-pip-version-check \
+            -r requirements-dev.txt -r requirements-build.txt
+
+      - name: Compile the extension modules
+        run: |
+          source .venv/bin/activate
+          ./build-cython.sh
+
+      - name: Battery against the compiled tree
+        run: |
+          source .venv/bin/activate
+          python3 -m pytest tests/ -q
+
+      - name: Bundle source + compiled .so, add checksum
+        run: |
+          mkdir -p dist
+          tar czf "dist/${ARTIFACT}" \
+            --exclude-vcs --exclude='dist' --exclude='.venv' \
+            --exclude='build' --exclude='__pycache__' \
+            --exclude='.pytest_cache' --exclude='tmp*' \
+            .
+          sha256sum "dist/${ARTIFACT}" > "dist/${ARTIFACT}.sha256"
+
+      - name: Provenance attestation for the bundle
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2.4.0
+        with:
+          subject-path: dist/${{ env.ARTIFACT }}
+
+      - name: Publish the Release (note categories: .github/release.yml)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "dist/${ARTIFACT}" "dist/${ARTIFACT}.sha256" \
+            --generate-notes \
+            --title "greywatch ${{ github.ref_name }}"
