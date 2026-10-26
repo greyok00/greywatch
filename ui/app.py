@@ -126,6 +126,7 @@ def main() -> int:
                 tray.on_quit = application.quit
             win.present()
             win._show("tools")        # the Security home (never "status")
+            win._ensure_default_on()
             GLib.timeout_add_seconds(60, broker.pump_once)
             try:
                 from ui.minitile import MiniTileWindow, tile_wanted

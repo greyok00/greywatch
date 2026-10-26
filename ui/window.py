@@ -234,7 +234,11 @@ class MainWindow(Gtk.Window):
         self.resume_btn.connect("clicked", lambda *_b: self._resume_selected())
         details_btn = Gtk.Button(label="View details")
         details_btn.connect("clicked", lambda *_b: self._details_selected())
-        for b in (self.pause_btn, self.resume_btn, details_btn):
+        self.panic_btn = Gtk.Button(label="Panic: enable every protection")
+        self.panic_btn.set_tooltip_text(
+            "Starts what is stopped and turns the app firewall on.")
+        self.panic_btn.connect("clicked", self._on_panic)
+        for b in (self.pause_btn, self.resume_btn, details_btn, self.panic_btn):
             actions.append(b)
         st.append(actions)
 
@@ -524,6 +528,125 @@ class MainWindow(Gtk.Window):
 
     def _resume_tool(self, name):
         self._toggle_tool(name, pause=False)
+
+    def _reconcile_pause_markers(self, snap):
+        # A pause may only be claimed while the protection is really
+        # stopped. If the monitor reports it running, the marker lied —
+        # it is dropped, and no row ever says paused over a live guard.
+        tools = snap.get("tools", {})
+        appfw_running = str(snap.get("appfw_engine",
+                                     "")).startswith("running")
+        setter = getattr(self.paused, "set", None)
+        if not callable(setter):
+            return
+        for t in self.registry:
+            name = t["name"]
+            if not self.paused.is_paused(name):
+                continue
+            if name == "appfw":
+                really_running = appfw_running
+            else:
+                really_running = self._display_state(
+                    name, tools.get(name, {}),
+                    snap.get("updated")) == "GREEN"
+            if really_running:
+                setter(name, False)
+
+    def _on_panic(self, _btn):
+        dlg = Gtk.Dialog(title="Panic lockdown",
+                         transient_for=self, modal=True)
+        dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("Enable everything", Gtk.ResponseType.OK)
+        body = Gtk.Label(xalign=0)
+        body.set_xalign(0)
+        body.set_wrap(True)
+        body.set_markup(
+            "<span size='13000'>Starts and enables every protection "
+            "now?</span>")
+        sub = Gtk.Label(xalign=0)
+        sub.set_xalign(0)
+        sub.set_wrap(True)
+        sub.set_text(
+            "Stops nothing. Unpauses everything, including the app firewall.")
+        dlg.get_content_area().set_margin_top(14)
+        dlg.get_content_area().set_margin_bottom(14)
+        dlg.get_content_area().set_margin_start(20)
+        dlg.get_content_area().set_margin_end(20)
+        dlg.get_content_area().append(body)
+        dlg.get_content_area().append(sub)
+
+        def _answered(d, rid, *_a):
+            d.destroy()
+            if rid == Gtk.ResponseType.OK:
+                self._enable_everything()
+        dlg.connect("response", _answered)
+        dlg.present()
+
+    def _enable_everything(self):
+        started = []
+        try:
+            snap = daemon_mod.load_status(str(DATA_DIR / "status.json"))
+            tools = snap.get("tools", {})
+            for t in self.registry:
+                name = t["name"]
+                if not t.get("unit"):
+                    continue
+                if self._display_state(name, tools.get(name, {}),
+                                       snap.get("updated")) == "GREEN":
+                    continue
+                started.append(name)
+                self._toggle_tool(name, pause=False)
+        except Exception:
+            pass
+        self._ensure_appfw_enabled()
+        dropped = [t["name"] for t in self.registry
+                   if self.paused.is_paused(t["name"])]
+        for name in dropped:
+            self.paused.set(name, False)
+        if not started and not dropped:
+            msg = ("Nothing to do: every protection is already running.")
+        elif started and dropped:
+            msg = (f"Panic done: started {', '.join(started)}; the pause"
+                   f" record dropped {', '.join(dropped)}.")
+        elif started:
+            msg = f"Panic done: {', '.join(started)} started."
+        else:
+            msg = ("Nothing needed starting. Cleared stale pause records:"
+                   f" {', '.join(dropped)}.")
+        if hasattr(self, "scan_status"):
+            self.scan_status.set_markup(
+                f"<span size='13000' font_family='Inter'>{escape(msg)}"
+                f"</span>")
+        else:
+            print(msg, flush=True)
+        self.refresh()
+        return False
+
+    def _ensure_appfw_enabled(self):
+        try:
+            from appfw.engine import read_enabled, write_enabled
+            if not read_enabled(DATA_DIR):
+                write_enabled(DATA_DIR, True)
+                if hasattr(self, "fw_status"):
+                    self.fw_status.set_text(
+                        "App firewall re-enabled (default: on).")
+        except Exception:
+            pass
+        return None
+
+    def _ensure_default_on(self):
+        # Standing rule: nothing in this app pauses a protection by
+        # itself; on launch the auto-responder and the app firewall are
+        # simply brought back if something left them off.
+        self._ensure_appfw_enabled()
+        try:
+            snap = daemon_mod.load_status(str(DATA_DIR / "status.json"))
+            info = (snap.get("tools") or {}).get("responderd") or {}
+            if info.get("state") != "GREEN":
+                self._resume_tool("responderd")
+        except Exception:
+            pass
+        return None
 
     def _toggle_tool(self, name, pause: bool):
         tool = self.by_name.get(name) or {}
@@ -1107,7 +1230,7 @@ class MainWindow(Gtk.Window):
         legend.set_text(                # the whole page sideways (Pass 2)
             "\n".join([
                 "Green = running. Red = installed but not running.",
-                "Amber = paused by you (a choice, not a fault).",
+                "Amber = paused in the app (a choice, not a fault).",
                 "Yellow = needs attention or not installed.",
                 "White = could not check.",
             ]))
@@ -1763,6 +1886,7 @@ class MainWindow(Gtk.Window):
             self.on_status_change(events)
         tools = snap.get("tools", {})
         updated = snap.get("updated")
+        self._reconcile_pause_markers(snap)
         paused_n = sum(1 for t in self.registry
                        if self.paused.is_paused(t["name"]))
         running = sum(1 for t in self.registry
@@ -1779,12 +1903,12 @@ class MainWindow(Gtk.Window):
             lead = "⚪ Status not available yet"
             tail = ("the monitor has not reported. Nothing was checked")
             if paused_n:
-                tail += f" · {paused_n} paused by you, not a fault"
+                tail += f" · {paused_n} paused in the app, not a fault"
         else:
             if attention == 0 and paused_n == 0:
                 lead = "🛡 All protections running"
             elif attention == 0:
-                lead = f"⏸ {paused_n} protection(s) paused by you"
+                lead = f"⏸ {paused_n} protection(s) paused in the app"
             else:
                 lead = f"⚠ {attention} protection(s) need attention"
                 if paused_n:

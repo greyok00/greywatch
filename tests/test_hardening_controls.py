@@ -74,6 +74,11 @@ def test_fresh_install_condition_parsing():
     pkg = clam.condition.split(":", 1)[1]
     assert pkg == "clamav" and clam.default is False and clam.advisory is True
     assert "install prompt" in clam.what or "install-prompt" in clam.what
+    # The card text describes the check, never a fixed missing state: the
+    # pack must hold no claim that a named protection is not installed.
+    assert "is not installed" not in clam.what
+    for ctrl in cs:
+        assert "is not installed" not in ctrl.what
 
 
 def test_default_and_condition_normalization():

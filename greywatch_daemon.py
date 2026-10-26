@@ -181,7 +181,7 @@ class Daemon:
             info = tools.get(t["name"], {})
             state = info.get("state")
             if info.get("paused"):
-                text, sev = "check-in: paused by you", "INFO"
+                text, sev = "check-in: paused in the app", "INFO"
             elif state == "GREEN":
                 text, sev = "check-in: alive, running normally", "INFO"
             elif state == "RED":

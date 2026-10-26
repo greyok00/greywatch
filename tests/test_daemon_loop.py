@@ -246,7 +246,7 @@ def test_heartbeat_reports_the_real_state(tmp_path):
     assert evs["appfw"]["severity"] == "HIGH"
     assert "not installed" in evs["lynis"]["text"]
     assert evs["lynis"]["severity"] == "MEDIUM"
-    assert "paused by you" in evs["yara-watch"]["text"]
+    assert "paused in the app" in evs["yara-watch"]["text"]
     assert "not available" in evs["responderd"]["text"]
 
 

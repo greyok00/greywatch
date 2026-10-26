@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import pathlib
 
@@ -26,6 +27,11 @@ def _gtk_ready() -> bool:
         return False
 
 
+if not os.environ.get("GREYWATCH_TEST_DISPLAY"):
+    pytest.skip(
+        "GUI tests open real windows and run only on an explicit test"
+        " display (GREYWATCH_TEST_DISPLAY=1), never the owner's desktop.",
+        allow_module_level=True)
 if not _gtk_ready():
     pytest.skip("no display available", allow_module_level=True)
 

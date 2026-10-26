@@ -197,7 +197,7 @@
     {
       "id": "clamav-installed",
       "group": "malware-scanning",
-      "what": "ClamAV is not installed; the Setup Wizard offers a one-click install prompt (SI-3). It is never installed silently and never scheduled by itself — the choice stays with the owner. Advisory card until the wizard's install prompt runs.",
+      "what": "Checks that the antivirus engine (ClamAV) is on this computer (SI-3). If it is missing, the Setup Wizard offers a one-click install prompt — never installed silently, never scheduled by itself; the choice stays with the owner. Advisory card until the wizard's install prompt runs.",
       "baseline": "installed",
       "probe": "dpkg-query -W -f='${Status}' clamav 2>/dev/null | grep -q 'install ok installed'",
       "probe_invert": false,

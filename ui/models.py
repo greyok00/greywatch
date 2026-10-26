@@ -76,7 +76,7 @@ def status_mark(state: str, paused: bool = False) -> str:
 
 def status_words(state: str, installed=None, paused: bool = False) -> str:
     if paused:
-        return "paused by you"
+        return "paused"
     if state == "GREEN":
         return "running"
     if state == "RED":
