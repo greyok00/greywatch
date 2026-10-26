@@ -10,6 +10,10 @@ current version is `pyproject.toml` (CLI: `python3 cli.py --version`).
 First public-ready release.
 
 ### Added
+- Application icon set from the final side-profile wolf art: sizes 16–256
+  plus a light-background variant, and `install-icons.sh` (hicolor app
+  icons + freedesktop launcher entry, no root).
+- The GTK window sets the default app icon by theme name (`greywatch`).
 
 - Watchdog daemon (`greywatch.service`, root, capped unit) that follows the
   real logs of 17 installed protections via inotify + journalctl and keeps

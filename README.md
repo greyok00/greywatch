@@ -102,12 +102,15 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now greywatch.service
 sudo install -m 0644 apply/polkit/greywatch.apply.policy \
    /usr/share/polkit-1/actions/greywatch.apply.policy
+./install-icons.sh
 ```
 
-Requirements: Linux + systemd, GTK 4 (PyGObject), Python 3.12+, ImageMagick
-(optionally, for tray/menu icon work). The suite also drives the tools it
-finds — fail2ban, ufw, clamav, rkhunter, lynis, aide, Tetragon, arpwatch,
-auditd — and degrades honestly (CANT-CHECK / blank) where one is missing.
+Requirements: Linux + systemd, GTK 4 (PyGObject), Python 3.12+. The suite
+also drives the tools it finds — fail2ban, ufw, clamav, rkhunter, lynis,
+aide, Tetragon, arpwatch, auditd — and degrades honestly (CANT-CHECK /
+blank) where one is missing. `install-icons.sh` copies the app icon
+(sizes 16–256, no root needed) into your icon theme and writes the
+launcher entry, so the taskbar, alt-tab, and app grid all show the wolf.
 
 ### Configuration
 
@@ -183,6 +186,7 @@ gitleaks on every push to keep it that way.
   free core is untouched by it.
 
 <div align="center">
-  <img src="doc/images/greywatch-icon-128.png" alt="greywatch icon: shield + watch face, GW" width="96"><br>
-  <sub>greywatch — shield + watch: protections you can see, changes you can undo.</sub>
+  <img src="doc/images/greywatch-icon-128.png" alt="greywatch app icon: side-profile wolf in a dark disc" width="96">
+  <img src="doc/images/greywatch-icon-light-256.png" alt="greywatch light-background icon variant" width="96"><br>
+  <sub>greywatch — the wolf runs the perimeter: protections you can see, changes you can undo.</sub>
 </div>

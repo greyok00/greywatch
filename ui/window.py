@@ -40,6 +40,7 @@ class MainWindow(Gtk.Window):
                  quit_cb=None):
         super().__init__(title="greywatch: Endpoint Security Suite")
         self.set_default_size(1440, 900)
+        self.set_icon_name("greywatch")
         self._tray_available = tray_available
         self.quit_cb = quit_cb
         self.connect("close-request", self._close_to_tray)
