@@ -20,7 +20,8 @@ from enrichment import enrich
 from events import normalize_event
 from registry import load_registry
 from status import (snapshot,
-                    write_status)
+                    write_status,
+                    load_status)  # noqa: F401
 
 ROOT = pathlib.Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
