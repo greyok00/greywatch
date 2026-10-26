@@ -110,10 +110,15 @@ one helper path.
 
 ## Desktop screens
 
-No product screenshots are embedded yet — the images in this README are
-generated artwork, and the real screens land here before release. In the
-meantime, [doc/help.html](doc/help.html) walks every screen in text with
-a ten-question FAQ, and the same text lives in the app's Help tab.
+Three of the app's screens, captured from the real app against this
+machine's live data on a hidden test display: the Security dashboard
+(all protections reported running only while the units genuinely are),
+the Tools page, and the Harden review right after a baseline run.
+
+![greywatch desktop screens](doc/images/screens-grid.png)
+
+[doc/help.html](doc/help.html) walks every screen in text with a
+ten-question FAQ, and the same text lives in the app's Help tab.
 
 **Security.** The home screen presents all 17 local protections as live
 rows with state, last activity, and Pause/Resume controls where a real
