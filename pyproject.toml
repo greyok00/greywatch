@@ -14,7 +14,7 @@ license-files = ["LICENSE"]
 
 [project.optional-dependencies]
 dev = ["pytest==9.1.1", "ruff==0.17.2"]
-build = ["cython==3.2.9", "setuptools==78.1.1"]
+build = ["cython==3.2.9", "setuptools==84.2.1"]
 
 [tool.setuptools]
 packages = []  # not a setuptools build project; build-cython.sh builds bare extensions
