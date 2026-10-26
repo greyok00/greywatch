@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -30,7 +29,7 @@ ARTIFACTS = {   # tool -> list of (label, path, required)
 }
 
 ON_DEMAND = {"clamav": "on-demand (clam-scan.timer daily)",
-             "freshclam": "definition refresh only; defs fetched 2026-10-23",
+             "freshclam": "definition refresh only",
              "lynis": "manual/scan-now.sh", "rkhunter": "manual/scan-now.sh"}
 
 
@@ -150,7 +149,7 @@ def run() -> int:
         {"generated_by": "cli setup", "results": results}, indent=1))
     print(f"\nreport: {report}")
     print("NOTE: appfw/fail2ban/net-watch/cve-updater OFFLINE by design — "
-          "arming waits on the relaunch gate (doc/appfw-audit-2026-10-24.md).")
+          "arming waits on an explicit on-switch (README, App Firewall).")
     return 0
 
 

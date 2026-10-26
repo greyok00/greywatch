@@ -4,8 +4,20 @@
   a root-privileged watchdog daemon, a stdlib CLI, and a GTK 4 desktop app
   that puts all 17 real security tools on the box under one plain-English
   dashboard.</p>
-  <img src="tests/campaign/shots/tools.png" alt="The greywatch Tools screen — protection cards, quick-scan strip with live progress, recent events" width="720">
+  <code>python3 cli.py status</code> on a protected machine, live:
 </div>
+
+```text
+greywatch status — updated 2026-10-26T09:06:20+00:00  [10318921 dropped]
+🟢 aide          GREEN  — AIDE (integrity check)
+🟢 appfw         GREEN  — App Firewall
+🟢 arpwatch      GREEN   last:2026-10-25 — Arpwatch (ARP monitor)
+🟢 clamav        GREEN   last:2026-10-26T06:54 — ClamAV (antivirus)
+🟢 fail2ban      GREEN  — Fail2ban (bans)
+🟢 ufw           GREEN  — UFW (firewall)
+🟢 yara-watch    GREEN  — YARA Watch (realtime scanner)
+🟢 … every row has the same shape: dot, tool, state, last activity
+```
 
 ## What it does
 
@@ -18,10 +30,6 @@ so it can be undone. It does **not** replace your tools with new daemons —
 it points the ones already installed and reports on them honestly.
 
 What you get, layer by layer:
-
-<div align="center">
-<img src="tests/campaign/shots/security.png" alt="The Security screen — one status row per protection: dot, name, state in words, last activity" width="720">
-</div>
 
 | Layer | What it is | Where |
 |---|---|---|
@@ -96,19 +104,36 @@ sudo install -m 0644 apply/polkit/greywatch.apply.policy \
    /usr/share/polkit-1/actions/greywatch.apply.policy
 ```
 
-Requirements: Linux + systemd, GTK 4 (PyGObject), Python 3.11+, ImageMagick
+Requirements: Linux + systemd, GTK 4 (PyGObject), Python 3.12+, ImageMagick
 (optionally, for tray/menu icon work). The suite also drives the tools it
 finds — fail2ban, ufw, clamav, rkhunter, lynis, aide, Tetragon, arpwatch,
 auditd — and degrades honestly (CANT-CHECK / blank) where one is missing.
+
+### Configuration
+
+There is nothing to configure before first run, and no credentials to
+enter anywhere in the design — the suite drives your machine's own tools.
+The only names the code consults:
+
+| Name | Who reads it | What it does |
+|---|---|---|
+| `GREYWATCH_UI_USER` | daemon | user account the GUI relaunches under |
+| `GREYWATCH_USER_HOME` | registry | alternate HOME for runtime state |
+| `GREYWATCH_HELPER_CMD` | tests | test-only helper override; never set on a real machine |
+| `NOTIFY_SOCKET` | appfw engine | set by systemd for Type=notify |
+| `data/` tree | everything | runtime state, root-owned, never shipped |
 
 ## Verify
 
 ```bash
 systemctl is-active greywatch
-python3 -m pytest tests/ -q          # 683 tests, all green (2026-10-25)
+python3 cli.py --version             # version reads pyproject.toml
 python3 cli.py status
 python3 cli.py events | head         # root only: the event store is 0600
 ```
+
+CI runs lint + the same test battery on every push; the display-dependent
+GUI modules skip cleanly when no real display exists.
 
 ## Testing discipline
 
@@ -134,8 +159,28 @@ Harden path is unit-tested never to escalate privileges by itself.
 
 ## License
 
-Private build for one machine (the owner's own). No open-source license is
-attached yet — ask before reusing any part of it.
+Apache License 2.0 — [LICENSE](LICENSE). Contributions land under the same
+terms ([CONTRIBUTING.md](CONTRIBUTING.md) is the front door), and
+[ACCEPTABLE_USE.md](ACCEPTABLE_USE.md) is the boundary: defensive use on
+machines you own or are authorized to administer, nothing else.
+
+### Free vs premium
+
+Everything in this repository is free and stays free — daemon, CLI, GTK
+app, and the tagged release bundles. A future premium tier (extra
+hardening profiles, hosted summaries) will live in a separate private
+repo: the free core is never a trial of it, and payment, license-check,
+and webhook secrets have no place in this tree — pre-commit and CI run
+gitleaks on every push to keep it that way.
+
+## Roadmap
+
+- **v0.1.x** — documentation polish: real desktop screenshots replace the
+  text-only walkthrough (release art set in progress).
+- **v0.2** — packaging: a `.deb` that installs units + pkexec policy in
+  one step.
+- **premium (separate repo)** — hosted summaries and extra profiles; the
+  free core is untouched by it.
 
 <div align="center">
   <img src="doc/images/greywatch-icon-128.png" alt="greywatch icon: shield + watch face, GW" width="96"><br>
