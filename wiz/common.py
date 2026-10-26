@@ -11,9 +11,12 @@ HELPER_CMD = os.environ.get("GREYWATCH_HELPER_CMD")  # test-only override
 
 
 def run_helper(helper: str, args: list, timeout=30) -> int:
+    # env read at call time: the compiled module's reload() is a no-op, so
+    # an import-time snapshot would freeze the test-only override
+    override = os.environ.get("GREYWATCH_HELPER_CMD") or HELPER_CMD
     script = ROOT / "apply" / f"{helper}.sh"
-    if HELPER_CMD:
-        return subprocess.run([HELPER_CMD, helper] + [str(a) for a in args],
+    if override:
+        return subprocess.run([override, helper] + [str(a) for a in args],
                               capture_output=True, text=True,
                               timeout=timeout).returncode
     return subprocess.run(["pkexec", str(script)] + [str(a) for a in args],
