@@ -49,8 +49,8 @@ and privileged operations go through designated helpers rather than
 loosely constructed shell commands.
 
 The daemon's systemd unit carries `CPUQuota=50%` and `MemoryMax=768M`
-(raised from the original 10%/200M with the reason recorded in the unit).
-These bound the service's resource use; they are not a promise that every
+(raised from the original 10%/200M after a documented connection-storm
+lockup). These bound the service's resource use; they are not a promise that every
 scan engine has the same limits or that every operation completes
 instantly.
 
@@ -211,43 +211,43 @@ Requirements:
 | Scan integrations | YARA, ClamAV, rkhunter, lynis, and aide, as used by the selected protections |
 | Optional application firewall | nftables, NFQUEUE support, and Python netfilterqueue |
 
-Install (review each command before granting it root):
+Install:
 
 ```bash
-sudo cp doc/greywatch.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now greywatch.service
-sudo install -m 0644 apply/polkit/greywatch.apply.policy \
-   /usr/share/polkit-1/actions/greywatch.apply.policy
-./install-icons.sh
+sudo ./install.sh      # system files + service restart + user icons
+./install.sh --check   # verify the deployment (no root needed)
 ```
 
-That installs the systemd unit, the polkit helper allowlist, and the
-desktop icons (`install-icons.sh` runs unprivileged and writes the
-launcher entry, so the taskbar, alt-tab, and app grid all show the
-icon). After installation, inspect the resulting state:
+`install.sh` is one short script — read it before granting it root. It
+substitutes this checkout's path into the hardened unit
+(`doc/greywatch.service`) and the polkit allowlist
+(`apply/polkit/greywatch.apply.policy`), installs both, reloads systemd,
+enables and restarts the service, and installs the user icons and
+launcher. Without sudo it installs only the icons and launcher. Self-test
+without touching the system: `./install.sh --root <dir>` then
+`./install.sh --check --root <dir>` — the same flow
+`tests/test_install_script.py` exercises in the battery.
+
+After installation, inspect the resulting state:
 
 ```bash
 python3 cli.py status
-python3 cli.py answer
 ```
 
 Then open the desktop app and review the Setup Wizard's probes and plan
 before approving any hardening. The application firewall starts off;
 desktop popups also start off.
 
-Remove — no uninstaller is shipped, so reverse the install:
+Remove — the installer reverses itself, but deliberately keeps `data/`:
 
 ```bash
-sudo systemctl disable --now greywatch.service
-sudo rm /etc/systemd/system/greywatch.service
-sudo rm /usr/share/polkit-1/actions/greywatch.apply.policy
+sudo ./install.sh --uninstall
 ```
 
-Removal distinguishes service/desktop cleanup from deletion of security
-history. The `data/` tree (event history, decisions, learning files) is
-left in place unless you delete it explicitly — decide what you want
-done with that history before removing the suite.
+It removes the unit, the polkit allowlist, and the user-scope launcher
+and icons. Security history in `data/` is kept unless you delete it
+yourself — decide what you want done with that history before removing
+the suite.
 
 ### Configuration
 
@@ -265,8 +265,9 @@ names the code consults:
 
 ## CLI
 
-The CLI uses the Python standard library. Seven primary commands cover
-inspection; three utilities cover setup and maintenance:
+The CLI uses the Python standard library. Six commands inspect the
+machine, `answer` records a decision on a pending interaction, and
+three utilities take care of setup and maintenance:
 
 | Command | Purpose | Example |
 |---|---|---|
@@ -276,12 +277,12 @@ inspection; three utilities cover setup and maintenance:
 | log | Inspect log output | `python3 cli.py log` |
 | decisions | Inspect what was changed or allowed, and why | `python3 cli.py decisions` |
 | rules | Inspect rules | `python3 cli.py rules` |
-| answer | Get a plain-English digest of today's activity | `python3 cli.py answer` |
+| answer | Record your decision on one pending interaction (answer-once is enforced; the chosen helper then runs via pkexec) | `python3 cli.py answer ID OPTION` |
 | doctor | Self-check greywatch's own condition | `python3 cli.py doctor` |
 | setup | First-time service setup from the CLI | `python3 cli.py setup` |
 | action | Maintenance actions (daemon restart) | `python3 cli.py action restart` |
 
-Start with `answer` for an explanation, then use the other commands to
+Start with `status` for the health table, then use the other commands to
 inspect the underlying activity and decisions. Commands that need
 protected records remain subject to the event store's access
 restrictions (root only).
@@ -342,10 +343,10 @@ The test battery is the ground truth, and the invocation is the real
 one this tree is shipped with:
 
 ```bash
-env -u DISPLAY python3 -m pytest -q tests/   # 583 tests, ~52 s
+env -u DISPLAY python3 -m pytest -q tests/   # 585 tests, ~50 s
 ```
 
-As of 2026-10-26 that battery passes 583 tests and skips 4
+As of 2026-10-26 that battery passes 585 tests and skips 4
 display-dependent GUI tests (with a real display they run). The copy
 rules are executable (`runbooks/longtext.py` flags user-facing strings
 over 12 words), wizard flows are tested end-to-end with fakes, the
@@ -425,8 +426,8 @@ payment, license-check, and webhook secrets have no place in this tree
 
 ## Roadmap
 
-- **v0.1.x** — documentation polish: real desktop screenshots and
-  verified installer/removal scripts added before the public release.
+- **v0.1.x** — documentation polish: real desktop screenshots before the
+  public release.
 - **v0.2** — packaging: a `.deb` that installs units + pkexec policy in
   one step.
 - **premium (separate repo)** — hosted summaries and extra profiles;

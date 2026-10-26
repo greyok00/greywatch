@@ -18,6 +18,7 @@ for s in 16 24 32 48 64 128 256; do
 done
 rm -f "$ICONS/128x128/actions/greywatch.png"
 
+mkdir -p "$APPS"
 cat > "$APPS/greywatch.desktop" <<EOF
 [Desktop Entry]
 Type=Application

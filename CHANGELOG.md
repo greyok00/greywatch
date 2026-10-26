@@ -14,6 +14,13 @@ First public-ready release.
   plus a light-background variant, and `install-icons.sh` (hicolor app
   icons + freedesktop launcher entry, no root).
 - The GTK window sets the default app icon by theme name (`greywatch`).
+- `install.sh`: one-command install (substitutes the checkout's path into
+  the systemd unit and polkit allowlist, enables + restarts the service,
+  installs the user icons/launcher) plus `--check` (verifies a deployment
+  against this checkout, including the live unit's effective limits and
+  the complete helper allowlist), `--uninstall` (system files only;
+  `data/` history is kept), and `--root DIR` staging self-test — the
+  same flow `tests/test_install_script.py` runs in the battery.
 
 - Watchdog daemon (`greywatch.service`, root, capped unit) that follows the
   real logs of 17 installed protections via inotify + journalctl and keeps
@@ -32,6 +39,18 @@ First public-ready release.
   CODE_OF_CONDUCT/ACCEPTABLE_USE, CI (tests + gitleaks + CodeQL), pinned-action
   release workflow producing a compiled `.so` bundle with checksums and build
   provenance attestation.
+
+### Fixed
+- `install-icons.sh` now creates `~/.local/share/applications` when it is
+  missing (on a fresh account the launcher write previously failed and
+  aborted the icon install).
+- README CLI table: `answer` is the decision-recording command (it takes
+  an event ID and an option); an earlier wording called it a digest.
+- `doc/greywatch.service` template synced to the machine-proven unit:
+  50%/768M limits (the original 10%/200M caused a connection-storm
+  lockup — remediation documented in the drop-in it came from), the
+  NoNewPrivileges/UMask=0077/LockPersonality/RestrictRealtime guards,
+  and ExecStopPost removing the appfw nftables table on service stop.
 
 ### Changed
 
