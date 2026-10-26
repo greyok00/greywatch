@@ -27,6 +27,10 @@ First public-ready release.
   once so closed gaps turn green without another click, and the status
   line wraps so the Apply/Undo buttons can no longer be pushed off the
   panel.
+- A launch done as `python3 -m ui.app` was invisible to the duplicate
+  killer (it only matched script-path launches), so restarts could leave
+  the old window running minus its tray helper, and launches could stack
+  up. The matcher now also recognizes the module form.
 
 ### Added
 - Application icon set from the final side-profile wolf art: sizes 16–256

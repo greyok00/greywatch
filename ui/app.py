@@ -13,7 +13,8 @@ _LOCK = None
 
 def _is_dup(parts) -> bool:
     for p in parts:
-        if p.endswith("ui/app.py") or p.endswith("ui/tray_helper.py"):
+        if p.endswith("ui/app.py") or p.endswith("ui/tray_helper.py") \
+                or p == "ui.app":
             return True
     return False
 

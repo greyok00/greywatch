@@ -41,3 +41,10 @@ def test_the_lock_still_refuses_a_second_instance(tmp_path, monkeypatch):
     finally:
         fcntl.flock(hold, fcntl.LOCK_UN)
         A._LOCK = None
+
+def test_module_form_is_matched_too():
+    # `python3 -m ui.app` (launcher/relaunch module form) is the same GUI —
+    # if the matcher misses it, launches stack up and the lock refuses a
+    # restart with "already running".
+    assert _is_dup(["python3", "-m", "ui.app"])
+    assert _is_dup(["/usr/bin/python3", "-m", "ui.app"])
