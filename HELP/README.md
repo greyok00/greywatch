@@ -1,6 +1,7 @@
 # HELP/ — authoritative references (owner order 2026-10-25: consult before every change)
 
-Raw fetched pages: `*.html` files beside each digest. **The digests (`*.md`)
+Raw fetched pages (`*.html` files beside each digest) are kept
+local and are not part of the public repo. **The digests (`*.md`)
 carry the distilled truth + LIVE FINDINGS from this machine** — read the
 digest first, the raw page for depth.
 

@@ -13,6 +13,6 @@ Raw: gtk/gtk4-tray-thread.html (discourse) + vendor typelib probes.
 - Degradation: every bus call guarded — without a watcher the app opens
   windowless with a note (tested).
 - RAM: GL/Vulkan init maps ~75 MB of Mesa — GDK_DISABLE=gl:vulkan keeps the
-  dashboard at ~130 MB idle (< the owner's 150 cap). Reversible in app.py.
+  dashboard at ~130 MB idle (< the app's 150 MB cap). Reversible in app.py.
 - libadwaita 1.7 available but NOT adopted (flagged D4 — bigger rewrite;
   owner decision).

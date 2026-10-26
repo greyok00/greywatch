@@ -35,3 +35,4 @@ cache/
 output/
 coverage/
 .coverage
+HELP/*.html

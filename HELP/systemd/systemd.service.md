@@ -1,4 +1,4 @@
-# systemd.service — digest + LIVE findings (machine: Parrot echo, systemd 252+)
+# systemd.service — digest + LIVE findings (systemd 252+)
 
 Raw: systemd/systemd.service.html (freedesktop.org). Consulted before unit
 changes; findings below are VERIFIED LIVE, not recalled.
@@ -22,9 +22,9 @@ changes; findings below are VERIFIED LIVE, not recalled.
 - **Status codes**: 226/NAMESPACE = sandbox setup failure (systemd-side),
   NOT a program failure; distinguish from the program's own exit codes.
 
-## Current unit state
-Stabilized: namespace directives SUSPENDED (2026-10-25) while churn chased;
-Restart=always + CPUQuota=10% + MemoryMax=200M + RuntimeDirectory=greywatch
-+ heartbeat ReadWritePaths kept. RE-TIGHTEN PROTOCOL: one directive per
-attempt, verify (systemctl show + a 120 s uptime watch), then the next.
-Documented in HARDENING_PLAN.md.
+## Where the live unit lives
+The shipped unit template (doc/greywatch.service, installed by install.sh)
+is the source of truth for limits and sandboxing; the README documents its
+effective resource caps. Namespace/sandbox changes follow the
+re-tighten protocol: one directive per attempt, verify with
+systemctl show + an uptime watch, then the next.
