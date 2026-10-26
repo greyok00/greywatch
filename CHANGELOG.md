@@ -43,6 +43,9 @@ First public-ready release.
   asserting a missing state.
 
 ### Added
+- Brand set: new greywatch logo lockup (running wolf ring + two-tone
+  wordmark) in dark and light variants plus a dark icon-only mark,
+  under `assets/logo/`, and the README hero now uses the lockup.
 - Panic lockdown: one confirmed button on the Security screen that
   starts whatever is stopped, enables the application firewall, and
   clears the pause record — "enable everything" in a single step.

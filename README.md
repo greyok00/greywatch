@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="doc/images/greywatch-banner.png" alt="greywatch — one dashboard for every protection on this Linux machine" width="720">
+  <img src="doc/images/greywatch-logo.png" alt="greywatch logo — running wolf in a ring beside the greywatch wordmark" width="720">
   <p><b>greywatch</b> — A local watch-and-harden suite for Debian-class
   Linux desktops: watch the machine, record what happened, and preview
   reversible hardening before applying it.</p>
