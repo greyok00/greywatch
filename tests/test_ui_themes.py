@@ -1,3 +1,4 @@
+import json
 import pathlib
 import sys
 import pytest
@@ -40,6 +41,15 @@ def test_persist_and_load_roundtrip(clean_settings):
     assert persist("cockpit", path=clean_settings / "s.json")
     assert load_setting(path=clean_settings / "s.json") == "cockpit"
     assert load_setting(path=clean_settings / "missing.json") == ""
+
+def test_persist_merges_and_keeps_other_settings(clean_settings):
+    s = clean_settings / "s.json"
+    s.write_text(json.dumps({"mini_tile": True}))
+    assert persist("cockpit", path=s)
+    cfg = json.loads(s.read_text())
+    assert cfg == {"theme": "cockpit", "mini_tile": True}
+    assert persist("console", path=s)
+    assert json.loads(s.read_text())["mini_tile"] is True
 
 def test_gtk_css_never_emits_unsupported_properties():
     ts = load_themes()

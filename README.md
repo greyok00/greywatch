@@ -132,6 +132,13 @@ popups (off by default), manage application-firewall switches, maintain
 trusted sites, start time-boxed learning mode, and refresh updater lists.
 Popups are off by default; the tray remains the quiet surface.
 
+**Status tile.** A small 150px-wide strip (opt-in via its own checkbox)
+that answers "what is supposed to be running right now, and is it?":
+the daemon's watcher components with restart counts, the appfw engine,
+and every protection with its honest state — quiet when healthy, loud
+when not. It names an unreadable snapshot and turns amber when the
+snapshot goes stale; it never invents a healthy row.
+
 **Logs.** Filter by tool and inspect recorded activity. If the event
 store cannot be read, the screen explains the access problem. It does not
 substitute a fake empty table.
@@ -343,10 +350,10 @@ The test battery is the ground truth, and the invocation is the real
 one this tree is shipped with:
 
 ```bash
-env -u DISPLAY python3 -m pytest -q tests/   # 585 tests, ~50 s
+env -u DISPLAY python3 -m pytest -q tests/   # 593 tests, ~50 s
 ```
 
-As of 2026-10-26 that battery passes 585 tests and skips 4
+As of 2026-10-26 that battery passes 593 tests and skips 4
 display-dependent GUI tests (with a real display they run). The copy
 rules are executable (`runbooks/longtext.py` flags user-facing strings
 over 12 words), wizard flows are tested end-to-end with fakes, the

@@ -223,11 +223,17 @@ button:hover {{ background-color: {accent_soft}; }}
 
 
 def persist(name: str, path=SETTINGS_PATH) -> bool:
+    p = pathlib.Path(path)
     try:
-        pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
-        pathlib.Path(path).write_text(json.dumps({"theme": name}))
-        return True
+        cfg = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
+        cfg = {}
+    cfg["theme"] = name
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
+        return True
+    except OSError:
         return False
 
 

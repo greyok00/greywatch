@@ -66,6 +66,14 @@ def main() -> int:
             win.present()
             win._show("tools")        # the Security home (never "status")
             GLib.timeout_add_seconds(60, broker.pump_once)
+            try:
+                from ui.minitile import MiniTileWindow, tile_wanted
+                if tile_wanted():
+                    tile = MiniTileWindow()
+                    application.add_window(tile)
+                    tile.present()
+            except Exception as e:
+                print("status tile unavailable:", e)
 
         app.connect("activate", on_activate)
         app.connect("shutdown", lambda _a: tray.stop() if tray else None)

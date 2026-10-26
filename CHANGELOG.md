@@ -14,6 +14,12 @@ First public-ready release.
   plus a light-background variant, and `install-icons.sh` (hicolor app
   icons + freedesktop launcher entry, no root).
 - The GTK window sets the default app icon by theme name (`greywatch`).
+- Mini status tile (`ui/minitile.py`): a 150px opt-in strip listing the
+  daemon's always-on watcher components with restart counts, the appfw
+  engine, and all snapshot protections — quiet when healthy, loud when
+  not, honest about unreadable/stale snapshots. Off by default; its own
+  "start with app" checkbox persists under `mini_tile` in
+  `data/greywatch-ui-settings.json`; closing it is a real close.
 - `install.sh`: one-command install (substitutes the checkout's path into
   the systemd unit and polkit allowlist, enables + restarts the service,
   installs the user icons/launcher) plus `--check` (verifies a deployment
@@ -44,6 +50,14 @@ First public-ready release.
 - `install-icons.sh` now creates `~/.local/share/applications` when it is
   missing (on a fresh account the launcher write previously failed and
   aborted the icon install).
+- Theme persistence rewrote `data/greywatch-ui-settings.json` wholesale
+  (`{"theme": name}`) on every app start, silently erasing every other
+  setting in the file — it now merges and preserves unknown keys (this
+  is what kept the status tile's `mini_tile` choice from sticking).
+- The status tile keeps its 150px size under display-wide theme CSS: the
+  tile carries its own small-font styling above the theme cascade, long
+  rows wrap, and anything beyond 150px of height scrolls inside the tile
+  instead of widening the window.
 - README CLI table: `answer` is the decision-recording command (it takes
   an event ID and an option); an earlier wording called it a digest.
 - `doc/greywatch.service` template synced to the machine-proven unit:
