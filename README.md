@@ -141,7 +141,10 @@ snapshot goes stale; it never invents a healthy row.
 
 **Logs.** Filter by tool and inspect recorded activity. If the event
 store cannot be read, the screen explains the access problem. It does not
-substitute a fake empty table.
+substitute a fake empty table. The **Recent** strip on Security — the
+short log — reads that store when your account can; on a default
+install the event file is root-only, so it resolves from the daemon's
+public digest of recent events in `status.json` instead.
 
 **Setup Wizard.** A six-step onboarding flow (`welcome` → `scan` →
 `preview` → `apply` → `verify` → `finish`) probes the machine's role,
@@ -350,10 +353,10 @@ The test battery is the ground truth, and the invocation is the real
 one this tree is shipped with:
 
 ```bash
-env -u DISPLAY python3 -m pytest -q tests/   # 593 tests, ~50 s
+env -u DISPLAY python3 -m pytest -q tests/   # 600 tests, ~50 s
 ```
 
-As of 2026-10-26 that battery passes 593 tests and skips 4
+As of 2026-10-26 that battery passes 600 tests and skips 4
 display-dependent GUI tests (with a real display they run). The copy
 rules are executable (`runbooks/longtext.py` flags user-facing strings
 over 12 words), wizard flows are tested end-to-end with fakes, the
@@ -391,6 +394,11 @@ that every external scanner belongs to the same capped service.
 **Will it interrupt me with popups?**
 Not by default. The tray is the calm status surface. Desktop popups
 must be explicitly enabled in Settings.
+
+**What does closing the window do?**
+It hides to the tray and the app keeps running; where no tray exists,
+the close really exits. Launching greywatch again is a restart, not a
+stack-up — any running instance closes first.
 
 **Does it send security history to a cloud service?**
 No. greywatch has no cloud component; observations and decisions stay

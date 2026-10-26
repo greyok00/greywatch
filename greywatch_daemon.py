@@ -314,6 +314,7 @@ class Daemon:
         try:
             answered = _answered_ids(self.decisions_path)
             evs = read_events(self.events_path, 2000)
+            snap["recent"] = recent_digest(evs)
         except OSError:
             evs = []
         pend = 0
@@ -631,6 +632,13 @@ def read_events(events_path, limit=None):
         except ValueError:
             continue
     return out
+
+
+def recent_digest(events, cap=40):
+    """Bounded tail of recent events, published inside status.json: the
+    raw event store is root-owned (0600) and the user-run GUI cannot
+    read it, so this digest rides on the world-readable status file."""
+    return list(events[-cap:])
 
 
 def appfw_enabled(data_dir=None) -> bool:

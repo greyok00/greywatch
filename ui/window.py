@@ -50,7 +50,7 @@ class MainWindow(Gtk.Window):
         self.on_status_change = on_status_change
         self._events = []
         self._merge_pending = False
-        self._last_n = -1
+        self._recent_seen = None
         self._scan_watch = None
         self._detail_dialog = None
         self._chooser = None
@@ -106,11 +106,13 @@ class MainWindow(Gtk.Window):
         return False
 
     def _close_to_tray(self, *_a):
-        if self.quit_cb:
-            self.quit_cb()           # the Application loop ends here
+        if self.quit_cb and self._tray_available:
+            self.hide()              # live in the tray: Show summons, Quit exits
+        elif self.quit_cb:
+            self.quit_cb()           # no tray to summon from: hiding orphans it
         else:
             self.destroy()           # no app loop (tests): really close
-        return False
+        return True                  # close handled here; never the default kill
 
     def _apply_saved_theme(self):
         picked = load_setting()
@@ -1745,20 +1747,20 @@ class MainWindow(Gtk.Window):
         return [m, local_clock(e.get("ts", "")), plain_sentence(e)]
 
     def refresh(self):
+        snap = daemon_mod.load_status(str(DATA_DIR / "status.json"))
         try:
             events = daemon_mod.read_events(DATA_DIR / "events.jsonl", 400)
         except OSError:
             events = []
-        n = len(events)
-        if n != self._last_n:
-            self._last_n = n
+        if not events:                    # the event store is root-only (0600)
+            events = snap.get("recent") or []   # → the daemon's public digest
+        if events != self._recent_seen:
+            self._recent_seen = events
             self.recent_store.clear()
             for e in recent_rows(events, 6):
                 self.recent_store.append(self._plain_row(e))
         if self.on_status_change:
             self.on_status_change(events)
-
-        snap = daemon_mod.load_status(str(DATA_DIR / "status.json"))
         tools = snap.get("tools", {})
         updated = snap.get("updated")
         paused_n = sum(1 for t in self.registry

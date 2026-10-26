@@ -677,8 +677,13 @@ def test_progress_ring_only_exists_while_a_scan_runs(win):
 
 def test_the_ring_has_no_frozen_percentage_state():
     import inspect
+    import pathlib
+    from ui import window
     from ui.window import ProgressCircle
-    src = inspect.getsource(ProgressCircle)
+    try:
+        src = inspect.getsource(ProgressCircle)
+    except OSError:                        # compiled (.so) tree: read the source
+        src = (pathlib.Path(window.__file__).parent / "window.py").read_text()
     assert "self.frac" not in src          # no frozen fraction state
     assert 'f"{int(' not in src            # no invented percentage text
 
@@ -818,24 +823,27 @@ def test_no_gtk3_only_api_survives_in_the_ui_sources():
     assert not offenders, offenders
 
 
-def test_window_close_without_tray_ends_the_app(win):
+def test_window_close_hides_when_a_tray_exists(win):
+    quits = []
+    old = win._tray_available, win.quit_cb
+    win._tray_available, win.quit_cb = True, (lambda: quits.append(1))
+    try:
+        assert win.emit("close-request") is True    # handler OWNS the close
+        assert quits == []                          # the app stays alive in the tray
+        assert not win.get_visible()                # hidden but summonable
+        win.present()
+        pump(5)
+        assert win.get_visible()                    # tray Show brings it back
+    finally:
+        win._tray_available, win.quit_cb = old
+
+
+def test_window_close_without_any_tray_ends_the_app(win):
     quits = []
     old = win._tray_available, win.quit_cb
     win._tray_available, win.quit_cb = False, (lambda: quits.append(1))
     try:
-        assert win.emit("close-request") is False   # handler runs the close; no blocking return
+        assert win.emit("close-request") is True    # handler owns the close either way
         assert quits == [1]
     finally:
         win._tray_available, win.quit_cb = old
-    old2 = win._tray_available, win.quit_cb
-    win._tray_available, win.quit_cb = True, None
-    try:
-        assert win.emit("close-request") is False   # handler runs the close; no blocking return
-        assert not win.get_visible()          # hidden to the tray
-        win.present()
-        pump(5)
-        assert win.get_visible()
-    finally:
-        win._tray_available, win.quit_cb = old2
-        win.present()
-        pump(5)

@@ -47,6 +47,16 @@ First public-ready release.
   provenance attestation.
 
 ### Fixed
+- Automatic duplicate-instance control: launching the desktop app again
+  closes any running greywatch GUI (window + tray helper) first, so a
+  relaunch is always a clean restart instead of a stack of windows.
+- The "Recent" short log resolves from a public digest the daemon
+  publishes inside `status.json` when the raw event store cannot be
+  read directly (on an installed system that file is root-only, and
+  the user-run app used to show an empty list).
+- Closing the window while a tray is available now hides it to the
+  tray (Show summons, Quit really exits); without a tray the close
+  exits for real so the window can never become an orphaned ghost.
 - `install-icons.sh` now creates `~/.local/share/applications` when it is
   missing (on a fresh account the launcher write previously failed and
   aborted the icon install).

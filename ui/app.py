@@ -1,12 +1,68 @@
 import fcntl
 import os
 import pathlib
+import signal
 import sys
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 _LOCK = None
+
+
+def _is_dup(parts) -> bool:
+    for p in parts:
+        if p.endswith("ui/app.py") or p.endswith("ui/tray_helper.py"):
+            return True
+    return False
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _kill_duplicates() -> None:
+    """Kill every other greywatch GUI instance (app + tray helper) so a
+    new launch always ends with exactly one running — launching again is
+    a restart, never a stack-up."""
+    me = os.getpid()
+    dups = []
+    for entry in pathlib.Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == me:
+            continue
+        try:
+            parts = (entry / "cmdline").read_bytes().decode(
+                "utf-8", "replace").split("\0")
+        except OSError:
+            continue
+        if _is_dup(parts):
+            dups.append(pid)
+    if not dups:
+        return
+    for pid in dups:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    for _ in range(30):
+        if not any(_alive(p) for p in dups):
+            break
+        time.sleep(0.1)
+    for pid in dups:
+        if _alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+    print(f"restarted: closed {len(dups)} previous greywatch instance(s).")
 
 
 def _single_instance() -> bool:
@@ -24,11 +80,15 @@ def _single_instance() -> bool:
 
 
 def main() -> int:
+    _kill_duplicates()
     if not _single_instance():
         print("greywatch is already running (close it from the tray first).")
         return 0
     try:
-        os.environ.setdefault("GDK_DISABLE", "gl:vulkan")
+        # comma syntax is load-bearing: "gl:vulkan" is an invalid token GTK
+        # silently ignores, leaving the GL renderer (and its EGL native
+        # windows) attached — a window hide then aborts the process.
+        os.environ.setdefault("GDK_DISABLE", "gl,vulkan")
         import gi
         gi.require_version("Gtk", "4.0")
         gi.require_version("Notify", "0.7")
