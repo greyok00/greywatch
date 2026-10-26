@@ -32,5 +32,13 @@ EOF
 if command -v gtk-update-icon-cache >/dev/null; then
     gtk-update-icon-cache -qf "$ICONS" 2>/dev/null || true
 fi
+DESKTOP="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
+mkdir -p "$DESKTOP"
+cp "$APPS/greywatch.desktop" "$DESKTOP/greywatch.desktop"
+chmod +x "$APPS/greywatch.desktop" "$DESKTOP/greywatch.desktop"
+if command -v gio >/dev/null; then
+    gio set "$DESKTOP/greywatch.desktop" metadata::trusted true 2>/dev/null || true
+fi
 echo "installed: $ICONS/{16..256}/apps/greywatch.png"
 echo "installed: $APPS/greywatch.desktop (Exec -> $GW/ui/app.py)"
+echo "installed: $DESKTOP/greywatch.desktop (launches the dashboard)"
