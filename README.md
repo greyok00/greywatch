@@ -353,10 +353,10 @@ The test battery is the ground truth, and the invocation is the real
 one this tree is shipped with:
 
 ```bash
-env -u DISPLAY python3 -m pytest -q tests/   # 604 tests, ~50 s
+env -u DISPLAY python3 -m pytest -q tests/   # 605 tests, ~50 s
 ```
 
-As of 2026-10-26 that battery passes 604 tests and skips 4
+As of 2026-10-26 that battery passes 605 tests and skips 4
 display-dependent GUI tests (with a real display they run). The copy
 rules are executable (`runbooks/longtext.py` flags user-facing strings
 over 12 words), wizard flows are tested end-to-end with fakes, the
