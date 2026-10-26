@@ -22,7 +22,7 @@ from setuptools import Extension, setup
 keep_py = {"greywatch_daemon.py", "cli.py", "setup.py", "doctor.py",
            "cve-refresh.py", "app.py", "tray_helper.py",
            "greywatch_watchdog.py"}
-skip_top = {"tests", "gates", "doc"}
+skip_top = {"tests", "gates", "doc", "tools"}
 root = pathlib.Path(".").resolve()
 exts = []
 for f in sorted(root.rglob("*.py")):

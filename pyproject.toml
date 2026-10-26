@@ -16,6 +16,9 @@ license-files = ["LICENSE"]
 dev = ["pytest==9.1.1", "ruff==0.17.2"]
 build = ["cython==3.2.9", "setuptools==78.1.1"]
 
+[tool.setuptools]
+packages = []  # not a setuptools build project; build-cython.sh builds bare extensions
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
