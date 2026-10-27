@@ -1,0 +1,9 @@
+[Unit]
+Description=greywatch watchdog (heartbeat-staleness restart)
+After=greywatch.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 __GW_LIB__/doc/greywatch_watchdog.py
+ProtectSystem=strict
+PrivateTmp=true

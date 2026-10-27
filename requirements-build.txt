@@ -1,0 +1,9 @@
+# Compile path pins (build-cython.sh; tagged Release builds run these).
+cython==3.2.9
+setuptools==78.1.1
+# setuptools>=77 imports packaging.licenses — a system-site venv may only
+# see the distro's older packaging, so pin the minimum explicitly.
+packaging>=24.2
+# publish path pin (packaging/build-wheel.sh; the wheel ships as a
+# Release asset — GitHub Packages has no pip registry type)
+build==1.6.1

@@ -1,0 +1,38 @@
+# runtime state (root-0600 daemon writes; never ship)
+data/*
+!data/hardening-controls.json
+
+# internal working docs + evidence shots (stay local)
+runbooks/
+tests/campaign/
+doc/AUDIT_REPORT.md
+doc/appfw-audit-2026-10-24.md
+doc/HARDENING_PLAN.md
+doc/README-ART-PROMPT.md
+doc/shots/
+Security-crop.png
+
+# scratch + build artifacts
+tmp/
+tmp-*
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.so
+# cython build intermediates
+build/
+
+# secrets hygiene (no tracked file has ever matched this shape — keep it so)
+.env
+.env.*
+*.key
+*.pem
+*.p12
+
+# outputs with no business in a repo
+logs/
+cache/
+output/
+coverage/
+.coverage
+HELP/*.html

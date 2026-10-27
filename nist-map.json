@@ -1,0 +1,21 @@
+{
+  "nist_defaults": {
+    "responderd":  {"func": "RESPOND",  "controls": ["AC-7", "SI-4"]},
+    "tetragon":    {"func": "DETECT",   "controls": ["SI-4", "AU-2"]},
+    "yara-watch":  {"func": "DETECT",   "controls": ["SI-3", "SI-4"]},
+    "yara-tmp-scan": {"func": "DETECT", "controls": ["SI-3", "SI-4"]},
+    "clamav":      {"func": "DETECT",   "controls": ["SI-3", "SI-4"]},
+    "fail2ban":    {"func": "RESPOND",  "controls": ["AC-7", "SI-4"]},
+    "ufw":         {"func": "PROTECT",  "controls": ["AC-4", "SC-7"]},
+    "auditd":      {"func": "IDENTIFY", "controls": ["AU-2", "AU-6"]},
+    "appfw":       {"func": "PROTECT",  "controls": ["CM-7", "AC-3"]},
+    "arpwatch":    {"func": "DETECT",   "controls": ["AC-4"]},
+    "aide":        {"func": "IDENTIFY", "controls": ["CM-6", "SI-7"]},
+    "apparmor":    {"func": "PROTECT",  "controls": ["AC-3", "AC-6"]},
+    "lynis":       {"func": "IDENTIFY", "controls": ["CA-7"]},
+    "rkhunter":    {"func": "DETECT",   "controls": ["SI-3"]},
+    "net-watch":   {"func": "DETECT",   "controls": ["SI-4", "SC-7"]},
+    "cve-updater": {"func": "IDENTIFY", "controls": ["RA-5", "SI-2"]},
+    "freshclam":   {"func": "IDENTIFY", "controls": ["SI-3"]}
+  }
+}

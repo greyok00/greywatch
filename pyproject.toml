@@ -1,0 +1,30 @@
+# greywatch — metadata + tool config. Runtime has no pip dependencies
+# (stdlib + system PyGObject/GTK4); requirements-*.txt pin the dev and
+# build toolchains. THE version lives here and only here: cli.py
+# --version reads this file.
+[project]
+name = "greywatch"
+version = "0.1.0"
+description = "One dashboard for every protection on a Linux machine"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "greywatch contributors" }]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "ruff==0.17.2"]
+build = ["cython==3.2.9", "setuptools==78.1.1"]
+
+[tool.setuptools]
+packages = []  # not a setuptools build project; build-cython.sh builds bare extensions
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Honest floor for a minified tree: real syntax-level defects, not style.
+# E9 = pycodestyle runtime errors, F = pyflakes (unused/undefined names,
+# f-string issues, star-arg misuse).
+select = ["E9", "F"]

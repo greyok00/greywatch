@@ -1,0 +1,161 @@
+{
+ "tools": [
+  {
+   "name": "responderd",
+   "label": "Responderd (auto-responder)",
+   "unit": "responderd.service",
+   "scope": "root",
+   "logs": [
+    "~/security-hardening/responderd.log"
+   ]
+  },
+  {
+   "name": "tetragon",
+   "label": "Tetragon (kernel eBPF)",
+   "unit": "tetragon.service",
+   "scope": "root",
+   "logs": [
+    "~/security-hardening/tetragon-events.jsonl"
+   ],
+   "backend": true
+  },
+  {
+   "name": "yara-watch",
+   "label": "YARA Watch (realtime scanner)",
+   "unit": "yara-watch.service",
+   "scope": "user",
+   "logs": [
+    "~/security-hardening/yara-scan.log"
+   ]
+  },
+  {
+   "name": "yara-tmp-scan",
+   "label": "YARA Timed Scan (15 min)",
+   "unit": "yara-tmp-scan.timer",
+   "scope": "user",
+   "logs": [],
+   "state_only": true
+  },
+  {
+   "name": "clamav",
+   "label": "ClamAV (antivirus)",
+   "unit": "clamav-daemon.service",
+   "scope": "root",
+   "logs": [
+    "~/security-hardening/clam-scan.log"
+   ]
+  },
+  {
+   "name": "fail2ban",
+   "label": "Fail2ban (bans)",
+   "unit": "fail2ban.service",
+   "scope": "root",
+   "logs": [
+    "/var/log/fail2ban.log"
+   ]
+  },
+  {
+   "name": "ufw",
+   "label": "UFW (firewall)",
+   "unit": "ufw.service",
+   "scope": "root",
+   "logs": [
+    "journal:kern"
+   ]
+  },
+  {
+   "name": "auditd",
+   "label": "Auditd (audit log)",
+   "unit": "auditd.service",
+   "scope": "root",
+   "logs": [
+    "/var/log/audit/audit.log"
+   ]
+  },
+  {
+   "name": "appfw",
+   "label": "App Firewall",
+   "unit": "greywatch.service",
+   "scope": "root",
+   "logs": [
+    "{STATE}/appfw/events.jsonl"
+   ]
+  },
+  {
+   "name": "arpwatch",
+   "label": "Arpwatch (ARP monitor)",
+   "unit": "arpwatch@{IFACE}.service",
+   "scope": "root",
+   "logs": [],
+   "journal": {
+    "filter": "-t arpwatch"
+   }
+  },
+  {
+   "name": "aide",
+   "label": "AIDE (integrity check)",
+   "unit": "aide-check.timer",
+   "scope": "root",
+   "logs": [],
+   "journal": {
+    "filter": "-u dailyaidecheck"
+   }
+  },
+  {
+   "name": "apparmor",
+   "label": "AppArmor (MAC profile)",
+   "unit": "apparmor.service",
+   "scope": "root",
+   "logs": [
+    "journal:kern"
+   ],
+   "shared_lane": true
+  },
+  {
+   "name": "lynis",
+   "label": "Lynis (audit)",
+   "unit": null,
+   "scope": "root",
+   "logs": [
+    "/var/log/lynis.log",
+    "/var/log/lynis-report.dat"
+   ]
+  },
+  {
+   "name": "rkhunter",
+   "label": "RKHunter (rootkit scan)",
+   "unit": null,
+   "scope": "root",
+   "logs": [
+    "/var/log/rkhunter.log"
+   ]
+  },
+  {
+   "name": "net-watch",
+   "label": "Net Watch (light IDS)",
+   "unit": "greywatch.service",
+   "scope": "root",
+   "logs": [
+    "{STATE}/netwatch-events.jsonl"
+   ]
+  },
+  {
+   "name": "cve-updater",
+   "label": "CVE updater",
+   "unit": "greywatch-cve.timer",
+   "scope": "root",
+   "logs": [
+    "{STATE}/cve-cache.json"
+   ]
+  },
+  {
+   "name": "freshclam",
+   "label": "Virus-definition updater",
+   "unit": "clamav-freshclam.service",
+   "scope": "root",
+   "logs": [
+    "/var/log/clamav/freshclam.log"
+   ]
+  }
+ ]
+}

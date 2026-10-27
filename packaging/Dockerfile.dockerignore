@@ -1,0 +1,24 @@
+# build context for packaging/Dockerfile — same shape the .deb payload
+# uses (built tree only; no VCS, no history, no recorded data)
+.git
+.venv
+venv
+build
+dist
+data
+doc/shots
+runbooks
+tests
+tmp*
+*.md
+*.so
+**/*.so
+**/*.py[cod]
+__pycache__
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.claude
+.github
+.gitignore

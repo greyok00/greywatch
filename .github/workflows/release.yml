@@ -1,0 +1,118 @@
+# Tag build (v*): compile the extension modules, prove the battery still
+# passes against the compiled tree, build the wheel, bundle source + .so
+# with a checksum, attest build provenance, publish the Release (bundle,
+# .deb, wheel — each with its checksum), and push the container to
+# ghcr.io (the Packages registry; GitHub Packages has no pip type).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    env:
+      ARTIFACT: greywatch-${{ github.ref_name }}-linux-x86_64.tar.gz
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+
+      - name: GTK stack plus host tools the battery asserts (matches ci)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qqy --no-install-recommends \
+            python3-gi python3-gi-cairo gir1.2-gtk-4.0 yara
+
+      - name: Toolchain (dev pins for the smoke battery, build pins for cython)
+        run: |
+          # system-site-packages so the apt-installed PyGObject is importable
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/pip install --disable-pip-version-check \
+            -r requirements-dev.txt -r requirements-build.txt
+
+      - name: Compile the extension modules
+        run: |
+          source .venv/bin/activate
+          ./build-cython.sh
+
+      - name: Battery against the compiled tree
+        run: |
+          source .venv/bin/activate
+          python3 -m pytest tests/ -q
+
+      - name: Build the Python package (wheel)
+        run: |
+          source .venv/bin/activate
+          ./packaging/build-wheel.sh dist
+          WHEEL="$(ls dist/greywatch-*.whl | head -1)"
+          sha256sum "$WHEEL" > "${WHEEL}.sha256"
+          echo "WHEEL=$(basename "$WHEEL")" >> "$GITHUB_ENV"
+
+      - name: Bundle source + compiled .so, add checksum
+        run: |
+          mkdir -p dist
+          tar czf "dist/${ARTIFACT}" \
+            --exclude-vcs --exclude='dist' --exclude='.venv' \
+            --exclude='build' --exclude='__pycache__' \
+            --exclude='.pytest_cache' --exclude='tmp*' \
+            --exclude='data' \
+            .
+          sha256sum "dist/${ARTIFACT}" > "dist/${ARTIFACT}.sha256"
+
+      - name: Build the Debian package (.deb) from the compiled tree
+        run: |
+          ./packaging/build-deb.sh dist
+          DEB="$(ls dist/greywatch_*.deb)"
+          echo "DEB=$(basename "$DEB")" >> "$GITHUB_ENV"
+
+      - name: Provenance attestation for the bundles
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2.4.0
+        with:
+          subject-path: |
+            dist/${{ env.ARTIFACT }}
+            dist/${{ env.DEB }}
+            dist/${{ env.WHEEL }}
+
+      # note categories come from .github/release.yml
+      - name: Publish the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" \
+              "dist/${ARTIFACT}" "dist/${ARTIFACT}.sha256" \
+              "dist/${DEB}" "dist/${DEB}.sha256" \
+              "dist/${WHEEL}" "dist/${WHEEL}.sha256" --clobber
+            gh release edit "${{ github.ref_name }}" \
+              --title "greywatch ${{ github.ref_name }}"
+          else
+            gh release create "${{ github.ref_name }}" \
+              "dist/${ARTIFACT}" "dist/${ARTIFACT}.sha256" \
+              "dist/${DEB}" "dist/${DEB}.sha256" \
+              "dist/${WHEEL}" "dist/${WHEEL}.sha256" \
+              --generate-notes \
+              --title "greywatch ${{ github.ref_name }}"
+          fi
+
+      - name: Push the container image (ghcr.io — the Packages registry)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io \
+            -u "${{ github.repository_owner }}" --password-stdin
+          docker build -f packaging/Dockerfile \
+            --build-arg GW_VERSION="${{ github.ref_name }}" \
+            -t "ghcr.io/${{ github.repository_owner }}/greywatch:${{ github.ref_name }}" \
+            -t "ghcr.io/${{ github.repository_owner }}/greywatch:latest" .
+          docker push \
+            "ghcr.io/${{ github.repository_owner }}/greywatch:${{ github.ref_name }}"
+          docker push \
+            "ghcr.io/${{ github.repository_owner }}/greywatch:latest"

@@ -1,0 +1,2 @@
+# CANONICAL AVC journal line — re-validated at G2.4
+type=AVC msg=audit(1758533000.100:223): apparmor="DENIED" operation="open" profile="/usr/bin/lynis" name="/etc/shadow" comm="lynis" pid=910

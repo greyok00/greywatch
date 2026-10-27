@@ -1,0 +1,5 @@
+# REAL — sampled from ~/security-hardening/responderd.log 2026-10-22
+{"ts": "2026-10-22 18:46:52", "action": "tetragon_watch", "detail": "persistence write attempt bash pid=869948 uid=None parent=claude"}
+{"ts": "2026-10-22 18:40:11", "action": "quarantine", "detail": "eicar /tmp/yara-responder-test.txt moved to quarantine"}
+{"ts": "2026-10-22 18:40:12", "action": "firewall_drop", "detail": "ufw deny from 203.0.113.9"}
+{"ts": "2026-10-22 18:40:13", "action": "alert_local_only", "detail": "tick"}

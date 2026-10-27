@@ -1,0 +1,32 @@
+[Unit]
+Description=greywatch — one root-privileged security monitor daemon
+Documentation=file:__GW_LIB__/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+WatchdogSec=30
+ExecStart=/usr/bin/python3 __GW_LIB__/greywatch_daemon.py --data-dir __GW_DATA__
+Environment=PYTHONDONTWRITEBYTECODE=1
+# GW-02: resolved + validated at install time (install.sh);
+# the daemon refuses to guess a UI identity on its own.
+Environment=GREYWATCH_UI_USER=__GW_UI_USER__
+ExecStopPost=/bin/sh -c "/usr/sbin/nft delete table inet greywatch_appfw; exit 0"
+Restart=always
+RestartSec=5
+RuntimeDirectory=greywatch
+RuntimeDirectoryMode=0755
+PrivateTmp=true
+CPUQuota=50%
+MemoryMax=768M
+Nice=5
+IOSchedulingClass=best-effort
+NoNewPrivileges=true
+UMask=0077
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

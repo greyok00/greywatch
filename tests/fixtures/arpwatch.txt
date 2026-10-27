@@ -1,0 +1,5 @@
+# CANONICAL journal line (journalctl -t arpwatch); re-validated at G2.4
+Oct 22 18:00:01 host arpwatch[247]: new station 192.168.77.77 (0:11:22:33:44:55)
+Oct 22 18:05:09 host arpwatch[247]: flipped bits or wifi wlan0
+Oct 22 18:06:00 host arpwatch[247]: changed ethernet address 192.168.77.77
+!SKIP Oct 22 18:06:30 host arpwatch[247]: arp cache maintained

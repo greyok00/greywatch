@@ -1,0 +1,7 @@
+[Unit]
+Description=greywatch CVE refresh (capped)
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 __GW_LIB__/cve-refresh.py
+CPUQuota=20%
+MemoryMax=150M
