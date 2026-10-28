@@ -99,7 +99,8 @@ def test_deny_parse_still_shapes_the_blocked_square():
         {"app": "curl", "host": "bad.example:80", "action": "deny"}
 
 
-def test_engine_repeated_rearm_cycles(tmp_path, monkeypatch):
+def test_engine_repeated_rearm_cycles(tmp_path, monkeypatch,
+                                      assume_kernel_modules):
     write_enabled(tmp_path, True)
     (tmp_path / "appfw").mkdir(parents=True, exist_ok=True)
     (tmp_path / "appfw" / "enable.json").write_text(

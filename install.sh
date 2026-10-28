@@ -146,8 +146,11 @@ invoker_home() {
 
 icons_user() { # $1 = user home dir
     [ -n "$1" ] || return 1
+    # XDG_CONFIG_HOME is pinned as well: a caller with it already set (the CI
+    # runner does) otherwise puts the autostart entry outside $1 and the
+    # staged check below fails on a correct install.
     env -u SUDO_USER HOME="$1" XDG_DATA_HOME="$1/.local/share" \
-        bash "$GW/install-icons.sh"
+        XDG_CONFIG_HOME="$1/.config" bash "$GW/install-icons.sh"
 }
 
 check_icon_tree() { # $1 = home dir containing .local/share + Desktop

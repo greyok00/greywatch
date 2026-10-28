@@ -288,7 +288,8 @@ def test_engine_refuses_to_arm_without_the_owner_switch(tmp_path):
 
 
 def test_engine_cycles_cleanly_with_the_worker_transport(tmp_path,
-                                                        monkeypatch):
+                                                        monkeypatch,
+                                                        assume_kernel_modules):
     events = []
     eng = _worker_engine(tmp_path, monkeypatch, events)
     for _ in range(2):                      # stop→start stays honest

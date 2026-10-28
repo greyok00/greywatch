@@ -89,3 +89,18 @@ def _never_escalate(monkeypatch):
         return inner
 
     monkeypatch.setattr(subprocess, "run", guard(subprocess.run))
+
+
+@pytest.fixture
+def assume_kernel_modules(monkeypatch):
+    """Pretend nfnetlink_queue/nft_queue are loaded.
+
+    The arm/disarm and transport tests stub the worker process, so whether
+    this host can actually modprobe the queue modules is irrelevant. A CI
+    runner has neither the modules nor modprobe rights, and without this the
+    engine refuses to arm and the tests fail on the environment rather than
+    on the code (release run 2026-10-27).
+    """
+    from appfw.engine import Engine
+    monkeypatch.setattr(Engine, "_ensure_queue_module",
+                        staticmethod(lambda: None))

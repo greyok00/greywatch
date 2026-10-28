@@ -44,7 +44,8 @@ def _fake_popen(argv, env=None, **k):
                             env=env)
 
 
-def test_pkts_get_verdicts_through_real_sockets(tmp_path, monkeypatch):
+def test_pkts_get_verdicts_through_real_sockets(tmp_path, monkeypatch,
+                                                assume_kernel_modules):
     eng, events = _engine(tmp_path, monkeypatch)
     acfg.save(tmp_path, {**acfg.DEFAULTS, "ipv6_enabled": False})
     assert eng.start()
