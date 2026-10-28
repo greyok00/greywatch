@@ -30,7 +30,8 @@ mkdir -p "$PAYLOAD"
 # --- program tree: everything tracked at build time minus what does not
 # --- belong on an installed machine (tests, shot library, caches)
 tar -C "$GW" -cf - \
-    --exclude='./.git' --exclude='./tests' --exclude='./doc/shots' \
+    --exclude='./.git' --exclude='./.github' --exclude='./tests' \
+    --exclude='./doc/shots' --exclude='./packaging' \
     --exclude='./*.md' --exclude='./runbooks' --exclude='./tmp*' \
     --exclude='./data' --exclude='./build' --exclude='./*__pycache__*' \
     --exclude='./dist' --exclude='./.venv' --exclude='./venv' \
@@ -38,6 +39,11 @@ tar -C "$GW" -cf - \
     --exclude='./.claude' --exclude='./.mypy_cache' \
     --exclude='./.pre-commit*' --exclude='./.gitignore' \
     . | tar -C "$PAYLOAD" -xf -
+
+# --- ship code without commentary: the compiled modules carry no
+# --- docstrings (build-cython.sh), and the .py fallbacks plus the
+# --- entrypoint scripts lose their comments and docstrings here.
+python3 "$GW/packaging/strip-source.py" "$PAYLOAD"
 
 # --- systemd units and polkit policy, filled like install.sh fills them:
 # --- code in the root-owned program dir, runtime state in /var/lib/greywatch

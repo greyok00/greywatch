@@ -110,13 +110,13 @@ install but deliberately keeps your history:
 **2. Debian package from the Releases page:**
 
 ```bash
-sudo apt install ./greywatch_0.1.1_amd64.deb
+sudo apt install ./greywatch_0.1.2_amd64.deb
 ```
 
 **3. Python wheel from the Releases page:**
 
 ```bash
-pip install https://github.com/greyok00/greywatch/releases/download/v0.1.1/greywatch-0.1.1-py3-none-any.whl
+pip install https://github.com/greyok00/greywatch/releases/download/v0.1.2/greywatch-0.1.2-py3-none-any.whl
 gw --version
 ```
 
@@ -128,7 +128,7 @@ wire the systemd units, polkit policy, or icons — use the .deb or
 
 Every hardening change and firewall rule is dry-run first, applied
 through explicit user decisions, and recorded. The test battery
-(`python3 -m pytest tests/ -q`, 817 tests) covers the event model,
+(`python3 -m pytest tests/ -q`, 822 tests) covers the event model,
 parsers, status permissions, install-script staging (`--root` rehearses
 into a throwaway tree and `--check` rejects other-writable files), the
 single-instance GUI lock, the scan-all helper, and regression tests for

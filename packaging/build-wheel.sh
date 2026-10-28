@@ -59,6 +59,10 @@ tar -C "$GW" -cf - \
     --exclude='./.pre-commit*' --exclude='./.gitignore' \
     . | tar -C "$TREE" -xf -
 
+# the wheel is pure Python, so this is where a pip install gets its code:
+# strip comments and docstrings the same way the compiled package does
+python3 "$GW/packaging/strip-source.py" "$TREE"
+
 # build metadata: the stage's own README and LICENSE, generated pyproject
 cp "$GW/README.md" "$STAGE/README.md"
 cp "$GW/LICENSE" "$STAGE/LICENSE"

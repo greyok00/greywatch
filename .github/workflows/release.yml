@@ -56,16 +56,9 @@ jobs:
           sha256sum "$WHEEL" > "${WHEEL}.sha256"
           echo "WHEEL=$(basename "$WHEEL")" >> "$GITHUB_ENV"
 
-      - name: Bundle source + compiled .so, add checksum
+      - name: Bundle program tree + compiled .so, add checksum
         run: |
-          mkdir -p dist
-          tar czf "dist/${ARTIFACT}" \
-            --exclude-vcs --exclude='dist' --exclude='.venv' \
-            --exclude='build' --exclude='__pycache__' \
-            --exclude='.pytest_cache' --exclude='tmp*' \
-            --exclude='data' \
-            .
-          sha256sum "dist/${ARTIFACT}" > "dist/${ARTIFACT}.sha256"
+          ./packaging/build-tarball.sh dist
 
       - name: Build the Debian package (.deb) from the compiled tree
         run: |
