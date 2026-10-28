@@ -695,7 +695,12 @@ def test_the_ring_has_no_frozen_percentage_state():
     try:
         src = inspect.getsource(ProgressCircle)
     except (OSError, TypeError):            # compiled (.so) tree: read the source
-        src = (pathlib.Path(window.__file__).parent / "window.py").read_text()
+        text = (pathlib.Path(window.__file__).parent / "window.py").read_text()
+        start = text.index("class ProgressCircle")
+        rest = text[start + 1:]
+        ends = [i for i in (rest.find("\nclass "), rest.find("\ndef "))
+                if i != -1]
+        src = text[start:start + 1 + (min(ends) if ends else len(rest))]
     assert "self.frac" not in src          # no frozen fraction state
     assert 'f"{int(' not in src            # no invented percentage text
 
