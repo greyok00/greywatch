@@ -3,16 +3,41 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
 from ui import discover  # noqa: E402
-from ui.plain import muted as pc_muted  # noqa: E402
+from ui.plain import escape, muted as pc_muted  # noqa: E402
 
+# Every entry is a SEPARATE task with its own window and its own pages.
+# The baseline pass used to be the wizard shell, with these tucked behind
+# one small link on its first page (owner report 2026-10-27). They are now
+# peers: pick one, finish it, come back.
 TOOL_CHOICES = [
-    ("appfw",    "🧱", "Allow or deny a program", "Trusts or stops one program from using the internet. No popups afterward."),
-    ("site",     "🌐", "Trust or block a website", "Stops the asking: the site you pick is allowed or denied automatically."),
-    ("ufw",      "🔒", "Make a firewall rule", "Block, allow or rate-limit connections to or from a computer."),
-    ("fail2ban", "🚫", "Set up the intrusion blocker", "Lock out computers that hammer you with failed logins; unlock later."),
-    ("tetragon", "👁", "Watch programs or files", "Watch programs starting, or files being written, in the kernel."),
-    ("yara",     "🧪", "Add a malware rule", "Pick what to detect; the real scanner compiles it before anything installs."),
-    ("arpwatch", "📶", "Configure the WiFi watcher", "Which network device to watch and how."),
+    ("baseline", "security-high-symbolic",
+     "Security baseline hardening",
+     "The full guided pass: scan this computer, preview every baseline "
+     "change, apply them with one password prompt, verify, and undo."),
+    ("appfw", "gw-tool-appfw-symbolic",
+     "Allow or deny a program",
+     "Trusts or stops one program from using the internet. No popups "
+     "afterward."),
+    ("site", "gw-tool-net-watch-symbolic",
+     "Trust or block a website",
+     "Stops the asking: the site you pick is allowed or denied "
+     "automatically."),
+    ("ufw", "gw-tool-ufw-symbolic",
+     "Make a firewall rule",
+     "Block, allow or rate-limit connections to or from a computer."),
+    ("fail2ban", "gw-tool-fail2ban-symbolic",
+     "Set up the intrusion blocker",
+     "Lock out computers that hammer you with failed logins; unlock later."),
+    ("tetragon", "gw-tool-tetragon-symbolic",
+     "Watch programs or files",
+     "Watch programs starting, or files being written, in the kernel."),
+    ("yara", "gw-tool-yara-watch-symbolic",
+     "Add a malware rule",
+     "Pick what to detect; the real scanner compiles it before anything "
+     "installs."),
+    ("arpwatch", "gw-tool-arpwatch-symbolic",
+     "Configure the WiFi watcher",
+     "Which network device to watch and how."),
 ]
 
 _SMALL = 300
@@ -62,27 +87,42 @@ class ToolChooser(Gtk.Dialog):
         grid.set_min_children_per_line(2)
         grid.set_selection_mode(Gtk.SelectionMode.NONE)
         box = self.get_content_area()
+        # Same type scale as every other page: one headline, one muted line
+        # that says how the hub behaves. The old single 15 px sentence read
+        # like a field label rather than the title of a page.
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
         intro.set_margin_start(8)
-        intro.set_markup("<span size='15000' font_family='Inter'>Pick what "
-                         "you want to set up:</span>")
+        intro.set_markup("<span size='19000' font_family='Inter' "
+                         "weight='600'>Set up a protection</span>")
         box.append(intro)
+        sub = Gtk.Label(xalign=0)
+        sub.set_xalign(0)
+        sub.set_margin_start(8)
+        sub.set_margin_bottom(6)
+        sub.set_wrap(True)
+        sub.set_markup(f"<span size='12000' font_family='Inter' "
+                       f"color='{pc_muted()}'>Each task is separate: pick "
+                       f"one, finish it, come back for the next.</span>")
+        box.append(sub)
         for key, icon, title, about in TOOL_CHOICES:
             b = Gtk.Button()
             bv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
             bv.set_margin_top(10); bv.set_margin_bottom(10)
             bv.set_margin_start(10); bv.set_margin_end(10)
-            ic = Gtk.Label()
-            ic.set_markup(f"<span size='26000'>{icon}</span>")
-            ti = Gtk.Label()
-            ti.set_markup(f"<span size='14000' font_family='Inter' "
-                          f"weight='600'>{title}</span>")
+            ic = Gtk.Image.new_from_icon_name(icon)
+            ic.set_pixel_size(34)
+            ic.set_halign(Gtk.Align.START)
+            ti = Gtk.Label(xalign=0)
+            ti.set_xalign(0)
+            ti.set_wrap(True)
+            ti.set_markup(f"<span size='16000' font_family='Inter' "
+                          f"weight='600'>{escape(title)}</span>")
             ab = Gtk.Label()
             ab.set_wrap(True)
             ab.set_xalign(0)
-            ab.set_markup(f"<span size='11000' font_family='Inter' "
-                          f"color='{pc_muted()}'>{about}</span>")
+            ab.set_markup(f"<span size='12000' font_family='Inter' "
+                          f"color='{pc_muted()}'>{escape(about)}</span>")
             bv.append(ic)
             bv.append(ti)
             bv.append(ab)
@@ -128,6 +168,7 @@ class RuleWizard(Gtk.Assistant):
         self._f2b_file = ""
 
         builder = {"site": self._pages_site, "ufw": self._pages_ufw,
+                   "appfw": self._pages_appfw,
                    "fail2ban": self._pages_fail2ban,
                    "tetragon": self._pages_tetragon,
                    "yara": self._pages_yara, "arpwatch": self._pages_arpwatch}
@@ -244,6 +285,57 @@ class RuleWizard(Gtk.Assistant):
         scan.connect("clicked", lambda *_a: (fill(), check()))
         check()
         self._page("What should happen?", inner=act)
+        self.confirm = Gtk.Label(xalign=0)
+        self._confirm(self.confirm)
+        self._add_done()
+
+    def _pages_appfw(self):
+        """A program rule, without the packet vocabulary.
+
+        This page set did not exist: picking "Allow or deny a program"
+        silently opened the UFW pages instead (found 2026-10-27), so the
+        app firewall had no guided path at all.
+        """
+        kind = _combo([("deny", "BLOCK this program: it never connects"),
+                       ("allow", "ALLOW this program: it connects freely")], 0)
+        # A picker, not a text box: everything installed or running is
+        # already known, so there is nothing to type.
+        target = Gtk.ComboBoxText()
+        target.set_size_request(440, -1)
+        scan = Gtk.Button(label="Scan again")
+
+        def fill():
+            keep = target.get_active_id()
+            target.remove_all()
+            target.append("", "Choose a program…")
+            for row in discover.programs():
+                target.append(row["path"], row["label"])
+            target.set_active_id(keep) if keep else target.set_active_id("")
+
+        fill()
+        result = Gtk.Label(xalign=0)
+        result.set_xalign(0)
+        result.set_wrap(True)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.append(target)
+        box.append(_hint("Programs from the desktop menu and anything "
+                         "currently running are listed."))
+        box.append(scan)
+        scan.connect("clicked", lambda *_a: (fill(), check()))
+
+        self.w.update({"act": kind, "target": target, "result": result})
+        self._page("Allow or deny a program",
+                   "The app firewall asks before a program reaches the "
+                   "internet. A rule here answers for you in advance — no "
+                   "popup when that program connects.")
+        self._page("What should happen?", inner=kind)
+        step2 = self._page("Which program?", inner=box, complete=False)
+
+        def check(*_a):
+            self.set_page_complete(step2, bool(target.get_active_id()))
+        target.connect("changed", check)
+        check()
         self.confirm = Gtk.Label(xalign=0)
         self._confirm(self.confirm)
         self._add_done()
@@ -511,6 +603,14 @@ class RuleWizard(Gtk.Assistant):
                 f"{site or '(no site chosen yet)'} will be "
                 f"{'TRUSTED: allowed' if act == 'allow' else 'BLOCKED: denied'} "
                 f"automatically. No more asking about it.")
+        elif t == "appfw":
+            act = ("BLOCKED from connecting" if
+                   w["act"].get_active_id() == "deny"
+                   else "allowed to connect")
+            self.confirm.set_text(
+                f"{w['target'].get_active_id() or '(no program chosen)'} "
+                f"will be {act} every time, without asking. The rule is "
+                "stored instantly and enforced while the app firewall is on.")
         elif t == "ufw":
             act = {"block": "BLOCK", "allow": "ALLOW", "limit": "RATE-LIMIT"}[
                 w["act"].get_active_id()]
@@ -574,6 +674,23 @@ class RuleWizard(Gtk.Assistant):
                     f"{'Saved: done' if ok else 'Pick a site from the list first'}; "
                     f"manage the list under Settings: Sites trust list."
                     f"</span>")
+            elif t == "appfw":
+                from wiz.appfw_wizard import apply_spec
+                from appfw.rules import ValidationError
+                value = w["target"].get_active_id() or ""
+                spec = {"kind": "program",
+                        "action": "deny" if w["act"].get_active_id() == "deny"
+                        else "allow",
+                        "value": value}
+                try:
+                    built = apply_spec(spec)
+                except ValidationError as e:
+                    self._done_body.set_text(f"Check the values: {e}")
+                    return True
+                self._done_body.set_markup(
+                    f"<span size='14000' font_family='Inter'>Stored: "
+                    f"{escape(built['preview'])}. Active while the app "
+                    f"firewall is on.</span>")
             elif t == "ufw":
                 from rules import ufw_build, ValidationError
                 from wiz import common

@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "model": "qwen3:0.6b",
+  "endpoint": "http://127.0.0.1:11600/api/chat",
+  "min_confidence": 0.55,
+  "timeout_sec": 20
+}

@@ -11,14 +11,17 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GLib, Gio    # noqa: E402
 
 from registry import load_registry
-from ui.models import (MARK_BY_SEVERITY, status_mark, status_words, recent_rows, age_words,
-                       local_clock)
+from ui.models import (status_words, recent_rows, age_words, local_clock)
 from ui.plain import (sentence as plain_sentence, friendly_name, what_is,
                       escape, without_mark, soft as pc_soft,
-                      muted as pc_muted)
+                      muted as pc_muted, ok as pc_ok, fail as pc_fail,
+                      state_colour as pc_state_colour,
+                      severity_colour as pc_severity_colour,
+                      severity_word as pc_severity_word)
 from ui.themes import (ThemeStore, dark_default, load_setting,
                        THEME_CHOICES)
-from ui.cards import CARD_ICONS, SCAN_MODES, quiet_note
+from ui.cards import SCAN_MODES, quiet_note
+from ui.toolicons import icon_name as tool_icon
 from ui.settings import (TrustList, PausedStore, LearningStore,
                          FirewallModeStore)
 from ui import discover
@@ -27,6 +30,13 @@ import greywatch_daemon as daemon_mod
 
 DATA_DIR = daemon_mod.DATA_DIR
 PAINT_MERGE_MS = 250
+
+# Which guided task configures a given protection. Shared by the Details
+# dialog and the Tools page so a tool offers the SAME entry point in both
+# places (it used to differ: Details offered seven, the card none).
+WIZARD_FOR = {"appfw": "appfw", "ufw": "ufw", "fail2ban": "fail2ban",
+              "tetragon": "tetragon", "arpwatch": "arpwatch",
+              "yara-watch": "yara", "yara-tmp-scan": "yara"}
 
 
 def _fixed(col, width):
@@ -38,7 +48,7 @@ def _fixed(col, width):
 class MainWindow(Gtk.Window):
     def __init__(self, on_status_change=None, tray_available=True,
                  quit_cb=None):
-        super().__init__(title="greywatch: Endpoint Security Suite")
+        super().__init__(title="Greywatch")
         self.set_default_size(1440, 900)
         self.set_icon_name("greywatch")
         self._tray_available = tray_available
@@ -68,8 +78,11 @@ class MainWindow(Gtk.Window):
         self._fw_mode_guard = False
         self._scan_runner = self._run_scan
 
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.set_child(outer)
+        self._header(outer)
         root = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        self.set_child(root)
+        outer.append(root)
         self._rail(root)
 
         self.stack = Gtk.Stack()
@@ -83,6 +96,7 @@ class MainWindow(Gtk.Window):
         self._apply_saved_theme()
         self._build_all()
         self._show("tools")
+        self._rail_btns["tools"].grab_focus()
         self._watchers()
         self.refresh()
         self._glib_ids = []
@@ -114,6 +128,26 @@ class MainWindow(Gtk.Window):
             self.destroy()           # no app loop (tests): really close
         return True                  # close handled here; never the default kill
 
+    def _header(self, parent):
+        """One line at the top: name, what this is, and the current verdict."""
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+        bar.add_css_class("gw-titlebar")
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+        title = Gtk.Label(label="Greywatch", xalign=0)
+        title.add_css_class("gw-title")
+        sub = Gtk.Label(label="Endpoint security", xalign=0)
+        sub.add_css_class("gw-subtitle")
+        left.append(title)
+        left.append(sub)
+        bar.append(left)
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        bar.append(spacer)
+        self.header_pill = Gtk.Label(label="Checking…")
+        self.header_pill.add_css_class("gw-pill")
+        bar.append(self.header_pill)
+        parent.append(bar)
+
     def _apply_saved_theme(self):
         picked = load_setting()
         name = picked if picked in THEME_CHOICES.values() \
@@ -128,29 +162,32 @@ class MainWindow(Gtk.Window):
         parent.append(rail)
 
         self._rail_wiz = wiz = Gtk.Button()
-        wv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-        wi = Gtk.Label()
-        wi.set_markup("<span size='22000'>🧙</span>")
+        wv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        wi = Gtk.Image.new_from_icon_name("system-run-symbolic")
+        wi.set_pixel_size(24)
         wl = Gtk.Label(label="Wizard")
         wv.append(wi)
         wv.append(wl)
         wiz.set_child(wv)
-        wiz.set_tooltip_text("The Setup Wizard: scan, preview, apply, verify")
-        wiz.connect("clicked", lambda *_b: self._open_setup_wizard())
+        # The hub, not the baseline pass: the baseline is one of the tasks
+        # inside it now (owner report 2026-10-27 — it used to be the shell
+        # that swallowed the per-tool wizards).
+        wiz.set_tooltip_text("Guided setup: pick one task")
+        wiz.connect("clicked", lambda *_b: self._open_wizard())
         rail.append(wiz)
         rail.append(Gtk.Separator())
 
         self._rail_btns = {}
-        for key, icon, label in (("tools", "🛡", "Security"),
-                                 ("deep", "🧩", "Tools"),
-                                 ("harden", "⛨", "Harden"),
-                                 ("settings", "⚙", "Settings"),
-                                 ("logs", "📜", "Logs"),
-                                 ("help", "?", "Help")):
+        for key, icon, label in (
+                ("tools", "security-high-symbolic", "Security"),
+                ("deep", "applications-system-symbolic", "Tools"),
+                ("settings", "preferences-system-symbolic", "Settings"),
+                ("logs", "document-open-recent-symbolic", "Logs"),
+                ("help", "help-about-symbolic", "Help")):
             b = Gtk.Button()
-            lv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-            ic = Gtk.Label()
-            ic.set_markup(f"<span size='24000'>{icon}</span>")
+            lv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+            ic = Gtk.Image.new_from_icon_name(icon)
+            ic.set_pixel_size(24)
             lb = Gtk.Label(label=label)
             lb.add_css_class("gw-rail-label")
             lv.append(ic)
@@ -173,13 +210,19 @@ class MainWindow(Gtk.Window):
             b.remove_css_class("gw-active")
             if k == key:
                 b.add_css_class("gw-active")
+        # A page built on demand starts with placeholder text ("checking…")
+        # and the periodic refresh is up to five seconds away, so the owner
+        # saw empty cards right after switching. Paint the real snapshot the
+        # moment the page is shown.
+        self.refresh()
 
     def _build_all(self):
         self._views = {}
+        # "harden" is deliberately absent: baseline hardening is a task in
+        # the Wizard hub, not a top-level page duplicating the wizard.
         self._builders = {"tools": self._security_view,
                           "deep": self._tools_view, "logs": self._logs_view,
                           "help": self._help_view,
-                          "harden": self._harden_view,
                           "settings": self._settings_view}
         self._add_view("tools", self._builders["tools"]())
 
@@ -195,18 +238,41 @@ class MainWindow(Gtk.Window):
         st = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         st.set_margin_top(22); st.set_margin_start(34); st.set_margin_end(34)
 
+        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.status_words = Gtk.Label(xalign=0)
         self.status_words.set_xalign(0)
-        st.append(self.status_words)
+        self.status_words.set_hexpand(True)
+        top.append(self.status_words)
+        # Healthy rows are the long tail: reachable, not competing for the
+        # top of the screen (SOC pattern: rank by what needs a human).
+        # On by default: an unticked box hid all seventeen healthy rows and
+        # left a large empty panel that read as "the app is broken".
+        self.show_all_btn = Gtk.CheckButton(label="Show healthy", active=True)
+        self.show_all_btn.connect("toggled", lambda *_a: self.refresh())
+        top.append(self.show_all_btn)
+        st.append(top)
 
         frame = Gtk.Frame()
         frame.add_css_class("gw-card")
-        self.list_store = Gtk.ListStore(str, str, str, str, str, str)
+        # 6 = the state dot's ink (bound to the "foreground" cell property).
+        self.list_store = Gtk.ListStore(str, str, str, str, str, str, str)
         lv = Gtk.TreeView(model=self.list_store)
         lv.set_headers_visible(True)
-        cols = [(0, "Icon", 48), (1, "State", 56), (2, "Protection", 280),
-                (3, "Status", 170)]
-        for idx, title, width in cols:
+        # Column 0 carries an icon NAME (see ui/toolicons.py): the renderer
+        # is a pixbuf cell bound to the themed symbolic icon, so every tool
+        # is drawn in one stroke weight and picks up the row's ink colour.
+        icon_cell = Gtk.CellRendererPixbuf()
+        icon_cell.set_property("width", 22)
+        icon_col = Gtk.TreeViewColumn("", icon_cell, icon_name=0)
+        lv.append_column(_fixed(icon_col, 44))
+        # State is a drawn dot in the theme's status ink, not an emoji:
+        # emoji ignore the theme and render differently on every machine
+        # (design pass 2026-10-27).
+        dot = Gtk.CellRendererText()
+        dot.set_property("xalign", 0.5)
+        dot_col = Gtk.TreeViewColumn("", dot, text=1, foreground=6)
+        lv.append_column(_fixed(dot_col, 40))
+        for idx, title, width in [(2, "Tool", 430), (3, "Status", 170)]:
             cell = Gtk.CellRendererText()
             col = Gtk.TreeViewColumn(title, cell, text=idx)
             lv.append_column(_fixed(col, width))
@@ -218,23 +284,33 @@ class MainWindow(Gtk.Window):
         sel = lv.get_selection()
         sel.set_mode(Gtk.SelectionMode.SINGLE)
         sel.connect("changed", self._list_selected)
-        frame.set_child(lv)
-        frame.set_vexpand(True)
+        self.table_stack = Gtk.Stack()
+        self.table_stack.set_transition_type(Gtk.StackTransitionType.NONE)
+        self.table_stack.add_named(self._wrap(lv), "list")
+        empty = Gtk.Label(
+            label="Nothing needs attention.\n"
+                  "Tick \u201cShow healthy\u201d to see every protection.",
+            justify=Gtk.Justification.CENTER)
+        empty.add_css_class("gw-meta")
+        self.table_stack.add_named(empty, "empty")
+        frame.set_child(self.table_stack)
+        frame.set_vexpand(False)
+        self.table_stack.set_size_request(-1, 470)
         st.append(frame)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.sel_note = Gtk.Label(xalign=0)
         self.sel_note.set_xalign(0)
-        self.sel_note.set_text("Select one protection to pause it or open details.")
+        self.sel_note.set_text("Select a protection.")
         self.sel_note.set_hexpand(True)
         actions.append(self.sel_note)
         self.pause_btn = Gtk.Button(label="Pause")
         self.pause_btn.connect("clicked", lambda *_b: self._pause_selected())
         self.resume_btn = Gtk.Button(label="Resume")
         self.resume_btn.connect("clicked", lambda *_b: self._resume_selected())
-        details_btn = Gtk.Button(label="View details")
+        details_btn = Gtk.Button(label="Details")
         details_btn.connect("clicked", lambda *_b: self._details_selected())
-        self.panic_btn = Gtk.Button(label="Panic: enable every protection")
+        self.panic_btn = Gtk.Button(label="Enable all")
         self.panic_btn.set_tooltip_text(
             "Starts what is stopped and turns the app firewall on.")
         self.panic_btn.connect("clicked", self._on_panic)
@@ -242,14 +318,24 @@ class MainWindow(Gtk.Window):
             actions.append(b)
         st.append(actions)
 
-        st.append(self._h2("Recent: the short log"))
-        self.recent_store = Gtk.ListStore(str, str, str)
+        st.append(self._h2("Recent activity"))
+        # [tool icon name, severity dot, time, sentence]
+        # 4 = severity ink for the state dot in column 1.
+        self.recent_store = Gtk.ListStore(str, str, str, str, str)
         recent = Gtk.TreeView(model=self.recent_store, headers_visible=False)
         recent.set_size_request(-1, 200)
-        for i in range(3):
+        icon_cell = Gtk.CellRendererPixbuf()
+        icon_cell.set_property("width", 18)
+        recent.append_column(Gtk.TreeViewColumn(
+            None, icon_cell, icon_name=0))
+        dot = Gtk.CellRendererText()
+        dot.set_property("xalign", 0.5)
+        recent.append_column(Gtk.TreeViewColumn(
+            None, dot, text=1, foreground=4))
+        for i in (2, 3):
             cell = Gtk.CellRendererText()
             col = Gtk.TreeViewColumn(None, cell, text=i)
-            if i == 2:
+            if i == 3:
                 col.set_expand(True)
             recent.append_column(col)
         rf = Gtk.Frame()
@@ -265,7 +351,7 @@ class MainWindow(Gtk.Window):
             self.sel_note.set_text(f"Selected: {model[it][2]}")
         else:
             self.sel_note.set_text(
-                "Select one protection to pause it or view details.")
+                "Select a protection.")
 
     def _restore_list_selection(self):
         sel = self.list_view.get_selection()
@@ -286,14 +372,26 @@ class MainWindow(Gtk.Window):
             self._open_detail(self._selected_tool)
 
     def _tools_view(self):
-        tools = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        tools = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         tools.set_margin_top(26); tools.set_margin_start(34); tools.set_margin_end(34)
-        tools.append(self._h1("Your protections: tools"))
+        tools.append(self._h1("Your protections"))
+        intro = Gtk.Label(xalign=0)
+        intro.set_xalign(0)
+        intro.set_wrap(True)
+        intro.set_markup(
+            f"<span size='13000' font_family='Inter' color='{pc_muted()}'>"
+            "Each protection below shows its plain name and the real tool "
+            "behind it. Configure anything without typing a command.</span>")
+        tools.append(intro)
         tools.append(self._scan_strip())
+        tools.append(self._baseline_card())
 
         self.cards_flow = Gtk.FlowBox()
-        self.cards_flow.set_max_children_per_line(4)
-        self.cards_flow.set_min_children_per_line(3)
+        self.cards_flow.set_max_children_per_line(3)
+        self.cards_flow.set_min_children_per_line(2)
+        self.cards_flow.set_row_spacing(12)
+        self.cards_flow.set_column_spacing(12)
+        self.cards_flow.set_homogeneous(True)
         self.cards_flow.set_selection_mode(Gtk.SelectionMode.NONE)
         self.card_widgets = {}
         for t in self.registry:
@@ -303,6 +401,46 @@ class MainWindow(Gtk.Window):
         self.cards_flow.set_vexpand(True)
         tools.append(self.cards_flow)
         return self._scroll(tools)
+
+    def _baseline_card(self):
+        """The baseline pass lives in the wizard, so this is the doorway.
+
+        The old top-level Harden page duplicated the wizard's scan/apply
+        flow with a second journal; two implementations of one job is how
+        they drift apart. One task, one home.
+        """
+        frame = Gtk.Frame()
+        frame.add_css_class("gw-card")
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        box.set_margin_top(16); box.set_margin_bottom(16)
+        box.set_margin_start(18); box.set_margin_end(18)
+        ic = Gtk.Image.new_from_icon_name("security-high-symbolic")
+        ic.set_pixel_size(40)
+        ic.set_valign(Gtk.Align.START)
+        box.append(ic)
+        words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        words.set_hexpand(True)
+        head = Gtk.Label(xalign=0)
+        head.set_xalign(0)
+        head.set_markup("<span size='17000' font_family='Inter' weight='600'>"
+                        "Security baseline hardening</span>")
+        body = Gtk.Label(xalign=0)
+        body.set_xalign(0)
+        body.set_wrap(True)
+        body.set_markup(
+            f"<span size='12000' font_family='Inter' color='{pc_muted()}'>"
+            "Check this computer against the baseline, preview every change, "
+            "apply them with one password prompt, then verify or undo.</span>")
+        words.append(head)
+        words.append(body)
+        box.append(words)
+        go = Gtk.Button(label="Open the baseline wizard")
+        go.add_css_class("gw-cta")
+        go.set_valign(Gtk.Align.CENTER)
+        go.connect("clicked", lambda *_a: self._open_setup_wizard())
+        box.append(go)
+        frame.set_child(box)
+        return frame
 
     def _scan_strip(self):
         strip = Gtk.Frame()
@@ -325,7 +463,16 @@ class MainWindow(Gtk.Window):
         btns.set_min_children_per_line(3)
         self._scan_btns = {}
         for m in SCAN_MODES:
-            b = Gtk.Button(label=f"{m['icon']} {m['title']}")
+            # Drawn icons, not emoji: they inherit the theme's ink colour
+            # like every other glyph in the app.
+            b = Gtk.Button()
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            row.set_halign(Gtk.Align.CENTER)
+            ic = Gtk.Image.new_from_icon_name(m["icon"])
+            ic.set_pixel_size(16)
+            row.append(ic)
+            row.append(Gtk.Label(label=m["title"]))
+            b.set_child(row)
             b.add_css_class("gw-cta")
             b.set_tooltip_text(m["about"])
             b.connect("clicked", self._start_scan, m)
@@ -338,28 +485,68 @@ class MainWindow(Gtk.Window):
         return strip
 
     def _tool_card(self, tool: dict):
+        """One protection: plain name, real tool name, what it does, live
+        state, and the actions that belong to it.
+
+        The card already carried the mono tool name, but at 11 px in the
+        muted ink beside a 15 px headline it read as a footnote; the owner
+        reported the Tools page as "not showing the real tool names". Name
+        and tool now share one line and a fixed type scale, and every card
+        offers its own guided setup instead of hiding it in Details.
+        """
         name = tool["name"]
         frame = Gtk.Frame()
         frame.add_css_class("gw-card")
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_top(16); box.set_margin_bottom(16)
-        box.set_margin_start(16); box.set_margin_end(16)
-        ic = Gtk.Label()
-        ic.set_markup(f"<span size='30000'>{CARD_ICONS.get(name, '•')}</span>")
-        ic.set_xalign(0)
-        box.append(ic)
+        box.set_margin_start(18); box.set_margin_end(18)
+
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        ic = Gtk.Image.new_from_icon_name(tool_icon(name))
+        ic.set_pixel_size(34)
+        ic.set_valign(Gtk.Align.START)
+        head.append(ic)
+
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        names.set_hexpand(True)
         fn = Gtk.Label(xalign=0)
         fn.set_xalign(0)
-        fn.set_markup(f"<span size='15000' font_family='Inter'>"
-                      f"{escape(friendly_name(name))}</span>")
-        box.append(fn)
+        fn.set_wrap(True)
+        # Two lines, not one: the tool name is a fact about the system, not
+        # decoration, so it gets its own readable line in mono.
+        fn.set_markup(
+            f"<span size='17000' font_family='Inter' weight='600'>"
+            f"{escape(friendly_name(name))}</span>\n"
+            f"<span size='12000' font_family='JetBrains Mono'"
+            f" color='{pc_muted()}'>{escape(name)}</span>")
+        names.append(fn)
+        what = Gtk.Label(xalign=0)
+        what.set_xalign(0)
+        what.set_wrap(True)
+        what.set_markup(f"<span size='12000' font_family='Inter' "
+                        f"color='{pc_muted()}'>{escape(what_is(name))}"
+                        f"</span>")
+        names.append(what)
+        head.append(names)
+        box.append(head)
+
         sub = Gtk.Label(xalign=0)
         sub.set_xalign(0)
         sub.set_wrap(True)
-        sub.set_markup("<span size='12000' font_family='Inter'>loading…</span>")
+        sub.set_markup(f"<span size='12000' font_family='Inter' "
+                       f"color='{pc_muted()}'>checking…</span>")
         box.append(sub)
 
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        row.set_margin_top(2)
+        wizard_key = WIZARD_FOR.get(name)
+        if wizard_key:
+            cfg = Gtk.Button(label="Configure…")
+            cfg.add_css_class("gw-cta")
+            cfg.set_tooltip_text("Guided setup — no commands to type")
+            cfg.connect("clicked",
+                        lambda *_b, k=wizard_key: self._open_wizard_for(k))
+            row.append(cfg)
         scan_keys = {m["key"] for m in SCAN_MODES}
         if name in scan_keys or name == "yara-watch":
             b = Gtk.Button(label="Scan now")
@@ -802,16 +989,22 @@ class MainWindow(Gtk.Window):
         self._detail_store = Gtk.ListStore(str)
         view = Gtk.TreeView(model=self._detail_store, headers_visible=False)
         view.set_size_request(-1, 260)
-        col = Gtk.TreeViewColumn(None, Gtk.CellRendererText(), text=0)
+        # markup: the severity dot is a coloured span; every other part of
+        # the line is escaped at build time.
+        col = Gtk.TreeViewColumn(None, Gtk.CellRendererText(), markup=0)
         col.set_expand(True)
         view.append_column(col)
+        # The feed is read-only: leaving row 0 selected painted it brass
+        # (looked like a chosen action) the moment the dialog opened.
+        sel = view.get_selection()
+        if sel is not None:
+            sel.set_mode(Gtk.SelectionMode.NONE)
+        self._detail_view = view
         wrap = self._wrap(view)
         wrap.set_hexpand(True)
         content.append(wrap)
 
-        wizard_key = {"ufw": "ufw", "fail2ban": "fail2ban",
-                      "tetragon": "tetragon", "arpwatch": "arpwatch",
-                      "yara-watch": "yara", "yara-tmp-scan": "yara"}.get(name)
+        wizard_key = WIZARD_FOR.get(name)
         if wizard_key:
             cfg = Gtk.Label(xalign=0)
             cfg.set_xalign(0)
@@ -846,16 +1039,20 @@ class MainWindow(Gtk.Window):
                 grouped.append({"key": key, "count": 1, "ev": e})
         if not grouped:
             self._detail_store.append(
-                ["📭 Nothing recorded yet. An event is written only "
+                ["Nothing recorded yet. An event is written only "
                  "when something happens."])
         for g in grouped[:300]:
             e = g["ev"]
-            mark = MARK_BY_SEVERITY.get(e.get("severity", ""), "")
+            # Severity travels as a coloured dot in the same sentence
+            # markup the view already renders (emoji removed 2026-10-27).
+            mark = (f"<span foreground='"
+                    f"{pc_severity_colour(e.get('severity', ''))}'>●</span>")
             ts = local_clock(e.get("ts", ""))
             suffix = f"  ×{g['count']}" if g["count"] > 1 else ""
             self._detail_store.append(
-                [f"{mark} {ts} {plain_sentence(e)}{suffix}   "
-                 f"[{e.get('text', '')[:160]}]"])
+                [f"{mark} {escape(ts)} {escape(plain_sentence(e))}"
+                 f"{escape(suffix)}   "
+                 f"[{escape(e.get('text', '')[:160])}]"])
 
     def _logs_view(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -879,14 +1076,23 @@ class MainWindow(Gtk.Window):
         row.append(self.logs_status)
         box.append(row)
 
-        self.logs_store = Gtk.ListStore(str, str, str)
+        # 0 tool icon name, 1 severity word, 2 severity ink, 3 time/tool,
+        # 4 event. The severity used to be an emoji (🔴/🟡/🟢); it is now the
+        # tool's own drawn symbol plus a word in the theme's status ink, so
+        # the raw log matches the rest of the dashboard.
+        self.logs_store = Gtk.ListStore(str, str, str, str, str)
         view = Gtk.TreeView(model=self.logs_store, headers_visible=True)
+        log_icon = Gtk.CellRendererPixbuf()
+        log_icon.set_property("width", 22)
         view.append_column(_fixed(
-            Gtk.TreeViewColumn("State", Gtk.CellRendererText(), text=0), 56))
+            Gtk.TreeViewColumn("", log_icon, icon_name=0), 44))
+        sev = Gtk.CellRendererText()
         view.append_column(_fixed(
-            Gtk.TreeViewColumn("Time / tool", Gtk.CellRendererText(), text=1),
+            Gtk.TreeViewColumn("State", sev, text=1, foreground=2), 86))
+        view.append_column(_fixed(
+            Gtk.TreeViewColumn("Time / tool", Gtk.CellRendererText(), text=3),
             300))
-        last = Gtk.TreeViewColumn("Event", Gtk.CellRendererText(), text=2)
+        last = Gtk.TreeViewColumn("Event", Gtk.CellRendererText(), text=4)
         last.set_expand(True)
         view.append_column(last)
         wrap = self._wrap(view)
@@ -917,32 +1123,32 @@ class MainWindow(Gtk.Window):
         self.logs_store.clear()
         for g in grouped:
             e = g["ev"]
-            mark = {"HIGH": "🔴", "CRITICAL": "🔴", "MEDIUM": "🟡",
-                    "INFO": "🟢"}.get(e.get("severity", ""), "⚪")
+            sev = e.get("severity", "")
             suffix = f"   ×{g['count']}" if g["count"] > 1 else ""
             self.logs_store.append(
-                [mark, f"{local_clock(e.get('ts', ''))} "
-                       f"{friendly_name(e.get('from_tool', ''))}",
+                [tool_icon(e.get("from_tool", "")), pc_severity_word(sev),
+                 pc_severity_colour(sev),
+                 f"{local_clock(e.get('ts', ''))} "
+                 f"{friendly_name(e.get('from_tool', ''))}",
                  e.get("text", "")[:400] + suffix])
 
     def _help_view(self):
         from ui.plain import FRIENDLY
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         box.set_margin_top(26); box.set_margin_start(34); box.set_margin_end(34)
-        box.append(self._h1("Help: what everything means"))
+        box.append(self._h1("Help"))
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
         intro.set_wrap(True)
-        help_one = "The ONE dashboard for every tool protecting this computer."
-        help_two = "Everything is in plain English. Raw details are a click away."
+        help_one = "Every protection on this computer, in one place."
+        help_two = "Plain words here; raw detail is one click away."
         lines = [
-            "Wizard: a few plain questions, then a real change.",
-            "Security: every protection, its state in words, pause or resume.",
-            "Tools: the protections as cards, with scans and live progress.",
-            "Settings: the look of the app, trusted items, and update lists.",
-            "App firewall: watch what programs connect to, with learning mode.",
-            "Updates: the lists show when they were fetched.",
-            "Logs: the raw record, newest first.",
+            "Wizard — guided setup.",
+            "Security — state of every protection.",
+            "Tools — cards, scans, progress.",
+            "Settings — theme, trusted items, updates.",
+            "App firewall — what programs connect to.",
+            "Logs — raw record, newest first.",
         ]
         markup = (f"<span size='14000' font_family='Inter'>"
                   f"{escape(help_one)}\n{escape(help_two)}</span>\n\n"
@@ -953,7 +1159,7 @@ class MainWindow(Gtk.Window):
         intro.set_tooltip_text(
             "The full guide, with screenshots, fills this tab as it is built.")
         box.append(intro)
-        box.append(self._h2("Every tool, one sentence each"))
+        box.append(self._h2("What each tool does"))
         grid = Gtk.FlowBox()
         grid.set_max_children_per_line(2)
         grid.set_min_children_per_line(2)
@@ -979,7 +1185,7 @@ class MainWindow(Gtk.Window):
             card.set_child(inner)
             grid.append(card)
         box.append(grid)
-        box.append(self._h2("Questions people ask"))
+        box.append(self._h2("Questions"))
         faq_lines = [
             ("What does greywatch do?",
              "One dashboard for every protection already on this computer."),
@@ -1000,7 +1206,8 @@ class MainWindow(Gtk.Window):
             ("Is my disk encrypted — how do I check?",
              "Not checked today. Run lsblk in a terminal; LUKS shows crypto."),
             ("How do I undo a wizard change?",
-             "Harden — Undo last change reverts the newest applied change."),
+             "Wizard — Security baseline hardening — Undo last change "
+             "reverts the newest applied change."),
         ]
         faq = Gtk.Label(xalign=0)
         faq.set_xalign(0)
@@ -1014,7 +1221,7 @@ class MainWindow(Gtk.Window):
         faq.set_tooltip_text(
             "The same ten questions, with screenshots, live in doc/help.html.")
         box.append(faq)
-        box.append(self._h2("Technical details"))
+        box.append(self._h2("Terminal"))
         deep = Gtk.Label(xalign=0)
         deep.set_xalign(0)
         deep.set_wrap(True)
@@ -1028,10 +1235,6 @@ class MainWindow(Gtk.Window):
             "\n".join([deep_one, deep_two, deep_three, deep_four, deep_five]))
         box.append(deep)
         return self._scroll(box)
-
-    def _harden_view(self):
-        from ui.harden import HardenView
-        return self._scroll(HardenView(win=self))
 
     def _cfg6(self) -> bool:
         from appfw import config as acfg
@@ -1057,33 +1260,66 @@ class MainWindow(Gtk.Window):
         except (ValueError, TypeError):
             pass
 
-    def _hardening_truth(self) -> str:
-        lines = []
+    def _unit_facts(self) -> list:
+        """(label, value, plain meaning) for the daemon's unit settings.
+
+        Values are the real `systemctl show` properties — nothing invented —
+        but each one is paired with a sentence a person can act on, because
+        the page used to print `ProtectSystem=no` and leave the reader to
+        work out what that meant.
+        """
+        # systemd 257 exposes `WatchdogTimestamp` (+ the monotonic variant);
+        # `WatchdogLastPingUSec` / `WatchdogTimestampUSec` are not properties
+        # here, and querying them made the page claim "no ping" while the
+        # daemon was pinging every 30 s.
+        props = ("Restart", "MemoryMax", "ProtectSystem", "WatchdogUSec",
+                 "WatchdogTimestamp", "WatchdogTimestampMonotonic")
+        raw = {}
         try:
             p = subprocess.run(
-                ["systemctl", "show", "greywatch.service", "-p", "Restart",
-                 "-p", "MemoryMax", "-p", "ProtectSystem"],
+                ["systemctl", "show", "greywatch.service"]
+                + [x for prop in props for x in ("-p", prop)],
                 capture_output=True, text=True, timeout=5)
-            lines += [l for l in p.stdout.splitlines() if l.strip()]
-        except Exception:
-            lines.append("systemctl unavailable: unit truth hidden")
-        try:
-            p = subprocess.run(
-                ["systemctl", "show", "greywatch.service", "-p",
-                 "WatchdogLastPingUSec", "-p", "WatchdogTimestampUSec"],
-                capture_output=True, text=True, timeout=5)
-            wd = [l.split("=", 1)[-1].strip()
-                  for l in p.stdout.splitlines() if l.strip()]
-            if not wd:
-                lines.append("watchdog: could not check")
-                return "\n".join(lines)
-            got_pings = bool(wd[-1] not in ("0", ""))
-            lines.append(
-                "watchdog: built-in (WatchdogSec=30, daemon self-pings, "
-                + ("alive, pinging" if got_pings else "NO PINGS YET") + ")")
-        except Exception:
-            lines.append("watchdog: could not check")
-        return "\n".join(lines)
+        except Exception:                 # noqa: BLE001 - the page must paint
+            return [("Service settings", "could not check",
+                     "systemctl is not answering, so nothing below is known.")]
+        for line in p.stdout.splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                raw[key.strip()] = value.strip()
+        rows = []
+        mem = raw.get("MemoryMax", "")
+        if mem.isdigit() and int(mem) > 0:
+            rows.append(("Memory cap", f"{int(mem) // (1024 * 1024)} MB",
+                         "The service is restarted if it grows past this."))
+        else:
+            rows.append(("Memory cap", "no limit",
+                         "Nothing stops a runaway service from taking all "
+                         "of the memory."))
+        rows.append(("Crash restart", raw.get("Restart") or "—",
+                     "What the service manager does when the program exits."))
+        prot = (raw.get("ProtectSystem") or "").lower()
+        locked = prot in ("yes", "strict", "full")
+        rows.append((
+            "System files", "locked" if locked else "not locked",
+            "Not locked: even root under the service can write to /usr, "
+            "/boot and /etc. This service must write /etc, so it is left "
+            "open." if not locked
+            else "Even root under the service cannot write to /usr, /boot "
+                 "or /etc."))
+        pinging = (raw.get("WatchdogTimestamp", "") not in
+                   ("", "0", "n/a")
+                   or raw.get("WatchdogTimestampMonotonic", "") not in
+                   ("", "0"))
+        period = raw.get("WatchdogUSec", "") or ""
+        every = (f"every {period.rstrip('s').replace('.000000', '')} "
+                 f"seconds") if period and period != "0" else ""
+        rows.append((
+            "Watchdog", "pinging" if pinging else "no ping yet",
+            (f"The service manager expects a ping {every}; silence restarts "
+             "the service." if every else
+             "No watchdog is set, so systemd does not expect pings.")))
+        return rows
 
     def _diag_truth(self) -> str:
         lines = []
@@ -1139,117 +1375,91 @@ class MainWindow(Gtk.Window):
             GLib.idle_add(done)
         threading.Thread(target=run, daemon=True).start()
 
+    def _settings_card(self, title, about):
+        """One settings group: a heading, one sentence saying what it is
+        for, and a card holding the controls.
+
+        The page used to be a flat column of ten headings with the raw unit
+        file pasted in, so "Workspace" or "ProtectSystem" had no explanation
+        anywhere (owner: redo the rest of the UI, 2026-10-27).
+        """
+        frame = Gtk.Frame()
+        frame.add_css_class("gw-card")
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        inner.set_margin_top(16); inner.set_margin_bottom(16)
+        inner.set_margin_start(18); inner.set_margin_end(18)
+        head = Gtk.Label(xalign=0)
+        head.set_xalign(0)
+        head.set_wrap(True)
+        head.set_markup(
+            f"<span size='16000' font_family='Inter' weight='600'>"
+            f"{escape(title)}</span>\n"
+            f"<span size='12000' font_family='Inter' color='{pc_muted()}'>"
+            f"{escape(about)}</span>")
+        inner.append(head)
+        frame.set_child(inner)
+        return frame, inner
+
+    def _settings_row(self, label, control, hint=""):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        name = Gtk.Label(xalign=0)
+        name.set_xalign(0)
+        name.set_markup(f"<span size='14000' font_family='Inter'>"
+                        f"{escape(label)}</span>")
+        name.set_size_request(190, -1)
+        row.append(name)
+        row.append(control)
+        if hint:
+            tip = Gtk.Label(xalign=0)
+            tip.set_xalign(0)
+            tip.set_wrap(True)
+            tip.set_hexpand(True)
+            tip.set_markup(f"<span size='12000' font_family='Inter' "
+                           f"color='{pc_muted()}'>{escape(hint)}</span>")
+            row.append(tip)
+        return row
+
     def _settings_view(self):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         box.set_margin_top(26); box.set_margin_start(30); box.set_margin_end(30)
         box.append(self._h1("Settings"))
+        intro = Gtk.Label(xalign=0)
+        intro.set_xalign(0)
+        intro.set_wrap(True)
+        intro.set_markup(
+            f"<span size='13000' font_family='Inter' color='{pc_muted()}'>"
+            "How the dashboard behaves, what the app firewall does, and "
+            "what this computer is really running.</span>")
+        box.append(intro)
 
-        theme_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        theme_row.append(Gtk.Label(label="Look of the app:"))
-        self.theme_combo = Gtk.ComboBoxText()
+        app_frame, app_inner = self._settings_card(
+            "Appearance and placement",
+            "Changes are remembered on this computer.")
+        theme_combo = Gtk.ComboBoxText()
         for label, kit in THEME_CHOICES.items():
-            self.theme_combo.append(kit, label)
+            theme_combo.append(kit, label)
         picked = load_setting() or dark_default(self._theme_store.names())
         shown = picked if picked in THEME_CHOICES.values() \
             else dark_default(self._theme_store.names())
-        self.theme_combo.set_active_id(shown)
-        self.theme_combo.connect("changed", self._on_theme_pick)
-        theme_row.append(self.theme_combo)
-        theme_row.append(Gtk.Label(label="(changes instantly, remembered)"))
-        box.append(theme_row)
-
-        box.append(self._h2("Dashboard placement"))
-        ws_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        ws_row.append(Gtk.Label(label="Launch workspace:"))
+        theme_combo.set_active_id(shown)
+        theme_combo.connect("changed", self._on_theme_pick)
+        self.theme_combo = theme_combo
+        app_inner.append(self._settings_row(
+            "Theme", theme_combo, "Colours and type for every screen."))
         ws_combo = Gtk.ComboBoxText()
         for i in range(1, 7):
             ws_combo.append(str(i), f"Workspace {i}")
         ws_combo.set_active_id(str(self._ws_pref()))
         ws_combo.connect("changed", self._on_ws_pick)
-        ws_row.append(ws_combo)
-        ws_row.append(Gtk.Label(
-            label="(remembered; launch-ws3.sh honors it on every launch)"))
-        box.append(ws_row)
+        app_inner.append(self._settings_row(
+            "Workspace", ws_combo,
+            "The virtual desktop the dashboard opens on."))
+        box.append(app_frame)
 
-        box.append(self._h2("App firewall options"))
-        v6_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        v6_row.append(Gtk.Label(label="Filter IPv6 too:"))
-        self._v6_check = Gtk.CheckButton()
-        self._v6_check.set_active(bool(self._cfg6()))
-        self._v6_check.connect("toggled", self._on_v6_toggle)
-        v6_row.append(self._v6_check)
-        v6_note = Gtk.Label(label="(off by default; IPv6 untouched)")
-        v6_note.set_tooltip_text(
-            "Turn on to filter IPv6 too. The daemon re-arms within ~10 s.")
-        v6_row.append(v6_note)
-        box.append(v6_row)
-
-        box.append(self._h2("Daemon hardening (read-only, live truth)"))
-        h_frame = Gtk.Frame()
-        h_frame.add_css_class("gw-card")
-        h_inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        h_inner.set_margin_top(10); h_inner.set_margin_bottom(10)
-        h_inner.set_margin_start(10); h_inner.set_margin_end(10)
-        h_label = Gtk.Label(xalign=0)
-        h_label.set_xalign(0)
-        h_label.set_wrap(True)
-        h_label.set_text(self._hardening_truth())
-        h_inner.append(h_label)
-        h_frame.set_child(h_inner)
-        box.append(h_frame)
-
-        box.append(self._h2("Diagnostics (live)"))
-        d_frame = Gtk.Frame()
-        d_frame.add_css_class("gw-card")
-        d_inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        d_inner.set_margin_top(10); d_inner.set_margin_bottom(10)
-        d_inner.set_margin_start(10); d_inner.set_margin_end(10)
-        self._diag_label = Gtk.Label(xalign=0)
-        self._diag_label.set_xalign(0)
-        self._diag_label.set_wrap(True)
-        self._diag_label.set_text("Checking daemon, snapshot, firewall and "
-                                  "network…")
-        d_inner.append(self._diag_label)
-        d_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        d_btn = Gtk.Button(label="Re-check now")
-        d_btn.connect("clicked", self._on_diag_refresh)
-        self._on_diag_refresh(d_btn)      # first truth arrives off-thread
-        d_row.append(d_btn)
-        d_note = Gtk.Label(label="(re-runs the checks)")
-        d_note.set_tooltip_text(
-            "A stale snapshot means stop and restart the app.")
-        d_row.append(d_note)
-        d_inner.append(d_row)
-        d_frame.set_child(d_inner)
-        box.append(d_frame)
-
-        box.append(self._h2("Installed tools and their lights"))
-        self.lights_store = Gtk.ListStore(str, str, str)
-        lights_view = Gtk.TreeView(model=self.lights_store, headers_visible=False)
-        lights_view.append_column(_fixed(
-            Gtk.TreeViewColumn(None, Gtk.CellRendererText(), text=0), 56))
-        lights_view.append_column(_fixed(
-            Gtk.TreeViewColumn(None, Gtk.CellRendererText(), text=1), 320))
-        last = Gtk.TreeViewColumn(None, Gtk.CellRendererText(), text=2)
-        last.set_expand(True)
-        lights_view.append_column(last)
-        lights_view.set_size_request(-1, 360)
-        lights_scroll = self._wrap(lights_view)
-        lights_scroll.set_size_request(-1, 360)
-        box.append(lights_scroll)
-        legend = Gtk.Label(xalign=0)
-        legend.set_xalign(0)
-        legend.set_wrap(True)           # a long legend must wrap, not push
-        legend.set_text(                # the whole page sideways (Pass 2)
-            "\n".join([
-                "Green = running. Red = installed but not running.",
-                "Amber = paused in the app (a choice, not a fault).",
-                "Yellow = needs attention or not installed.",
-                "White = could not check.",
-            ]))
-        box.append(legend)
-
-        box.append(self._h2("App firewall: what may use the internet"))
+        fw_frame, fw_inner = self._settings_card(
+            "App firewall",
+            "Decides whether a program may use the internet. It asks once, "
+            "then enforces your answer.")
         fw_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.fw_note = Gtk.Label(xalign=0)
         self.fw_note.set_xalign(0)
@@ -1260,34 +1470,50 @@ class MainWindow(Gtk.Window):
         self.fw_note.set_hexpand(True)
         fw_row.append(self.fw_note)
         fw_row.append(self.fw_btn)
-        box.append(fw_row)
+        fw_inner.append(fw_row)
         self.fw_status = Gtk.Label(xalign=0)
         self.fw_status.set_xalign(0)
         self.fw_status.set_wrap(True)
-        box.append(self.fw_status)
+        fw_inner.append(self.fw_status)
 
-        learn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.learn_check = Gtk.CheckButton(
-            label="Learning mode: allow now, record, review later")
-        self.learn_check.connect("toggled", self._on_learning_toggle)
-        self.learn_for = Gtk.ComboBoxText()
+        learn_check = Gtk.CheckButton(label="Learning mode")
+        learn_check.connect("toggled", self._on_learning_toggle)
+        self.learn_check = learn_check
+        learn_for = Gtk.ComboBoxText()
         for ident, label in (("15", "15 minutes"), ("60", "1 hour"),
                              ("480", "8 hours"), ("0", "until I stop it")):
-            self.learn_for.append(ident, label)
-        self.learn_for.set_active_id("60")
-        learn_row.append(self.learn_check)
-        learn_row.append(self.learn_for)
-        box.append(learn_row)
+            learn_for.append(ident, label)
+        learn_for.set_active_id("60")
+        self.learn_for = learn_for
+        learn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        learn_row.append(learn_check)
+        learn_row.append(learn_for)
+        fw_inner.append(learn_row)
         self.learn_note = Gtk.Label(xalign=0)
         self.learn_note.set_xalign(0)
         self.learn_note.set_wrap(True)
-        box.append(self.learn_note)
-        self.fw_block = Gtk.CheckButton(
-            label="Block anything not trusted (unknown apps stop until "
-                  "you allow them)")
-        self.fw_block.connect("toggled", self._on_fw_block_toggle)
-        box.append(self.fw_block)
+        fw_inner.append(self.learn_note)
+        block = Gtk.CheckButton(label="Block unknown apps")
+        block.connect("toggled", self._on_fw_block_toggle)
+        self.fw_block = block
+        fw_inner.append(block)
+        v6_check = Gtk.CheckButton()
+        v6_check.set_active(bool(self._cfg6()))
+        v6_check.connect("toggled", self._on_v6_toggle)
+        self._v6_check = v6_check
+        fw_inner.append(self._settings_row(
+            "Filter IPv6", v6_check,
+            "Off by default: IPv6 traffic is not filtered unless you turn "
+            "this on. Takes about ten seconds to apply."))
 
+        conn_head = Gtk.Label(xalign=0)
+        conn_head.set_xalign(0)
+        conn_head.set_wrap(True)
+        conn_head.set_markup(
+            f"<span size='13000' font_family='Inter' color='{pc_muted()}'>"
+            "Connections seen while learning. Nothing is blocked unless you "
+            "press a button.</span>")
+        fw_inner.append(conn_head)
         self.learn_store = Gtk.ListStore(str, str, str, str)   # path, app, site, last
         self.learn_view = Gtk.TreeView(model=self.learn_store)
         for i, title in enumerate(("program", "site", "last seen")):
@@ -1300,26 +1526,65 @@ class MainWindow(Gtk.Window):
         self.learn_view.set_size_request(-1, 170)
         learn_scroll = self._wrap(self.learn_view)
         learn_scroll.set_size_request(-1, 170)
-        box.append(learn_scroll)
+        fw_inner.append(learn_scroll)
         learn_btns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         for label, handler in (
                 ("Trust this program", self._on_learn_trust),
                 ("Trust this site", self._on_learn_site),
                 ("Block this site", self._on_learn_block),
-                ("Clear the list", self._on_learn_clear)):
+                ("Clear", self._on_learn_clear)):
             b = Gtk.Button(label=label)
             b.connect("clicked", handler)
             learn_btns.append(b)
-        box.append(learn_btns)
+        fw_inner.append(learn_btns)
+        box.append(fw_frame)
 
-        box.append(self._h2("Updates: virus definitions and the "
-                            "security list"))
+        # This computer: the unit's real settings, each with the plain
+        # meaning. The page used to paste systemctl's raw output here, so
+        # "ProtectSystem=no" was shown with no explanation of the risk.
+        unit_frame, unit_inner = self._settings_card(
+            "This computer",
+            "What the service manager is actually enforcing on the daemon.")
+        for label, value, meaning in self._unit_facts():
+            val = Gtk.Label(xalign=0)
+            val.set_xalign(0)
+            val.set_markup(f"<span size='13000' font_family='JetBrains Mono'>"
+                           f"{escape(value)}</span>")
+            unit_inner.append(self._settings_row(label, val, meaning))
+        box.append(unit_frame)
+
+        diag_frame, diag_inner = self._settings_card(
+            "Diagnostics",
+            "A live glance at the running service. A stale snapshot means "
+            "stop and restart the app.")
+        self._diag_label = Gtk.Label(xalign=0)
+        self._diag_label.set_xalign(0)
+        self._diag_label.set_wrap(True)
+        self._diag_label.add_css_class("gw-meta")
+        self._diag_label.set_text("Checking…")
+        diag_inner.append(self._diag_label)
+        d_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        d_btn = Gtk.Button(label="Re-check")
+        d_btn.connect("clicked", self._on_diag_refresh)
+        self._on_diag_refresh(d_btn)      # first truth arrives off-thread
+        d_row.append(d_btn)
+        d_note = Gtk.Label(label="")
+        d_note.set_tooltip_text(
+            "A stale snapshot means stop and restart the app.")
+        d_row.append(d_note)
+        diag_inner.append(d_row)
+        box.append(diag_frame)
+
+        up_frame, up_inner = self._settings_card(
+            "Updates",
+            "The two lists the dashboard reads: antivirus definitions and "
+            "the weekly list of known security flaws.")
         self.updates_note = Gtk.Label(xalign=0)
         self.updates_note.set_xalign(0)
         self.updates_note.set_wrap(True)
-        box.append(self.updates_note)
+        up_inner.append(self.updates_note)
         up_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.update_btn = Gtk.Button(label="Download the lists now")
+        self.update_btn = Gtk.Button(label="Update lists")
         self.update_btn.connect("clicked", self._on_update_now)
         self.update_note = Gtk.Label(xalign=0)
         self.update_note.set_xalign(0)
@@ -1327,13 +1592,24 @@ class MainWindow(Gtk.Window):
         self.update_note.set_hexpand(True)
         up_row.append(self.update_btn)
         up_row.append(self.update_note)
-        box.append(up_row)
+        up_inner.append(up_row)
+        box.append(up_frame)
 
         self.trust = self._trust
-        box.append(self._h2("Sites trust list"))
-        box.append(Gtk.Label(
-            label="Sites on TRUSTED: allowed without asking. On BLOCKED: "
-                  "never allowed. Subdomains included.", xalign=0))
+        trust_frame, trust_inner = self._settings_card(
+            "Trusted items",
+            "Answers you have already given. They are applied silently, "
+            "with no popup.")
+        trust_head = Gtk.Label(xalign=0)
+        trust_head.set_xalign(0)
+        trust_head.set_wrap(True)
+        trust_head.set_markup(
+            f"<span size='14000' font_family='Inter' weight='600'>"
+            "Websites</span>\n"
+            f"<span size='12000' font_family='Inter' color='{pc_muted()}'>"
+            "Allowed without asking, or blocked without asking. "
+            "Subdomains are included.</span>")
+        trust_inner.append(trust_head)
         entry_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.trust_combo = Gtk.ComboBoxText.new_with_entry()
         for choice in discover.site_choices():
@@ -1341,7 +1617,7 @@ class MainWindow(Gtk.Window):
                 choice["host"], f"{choice['host']} · {choice['why']}")
         self.trust_entry = self.trust_combo.get_child()
         self.trust_entry.set_placeholder_text(
-            "pick a site from the list, or type one you know")
+            "Site name")
         self.trust_entry.connect("activate", self._on_trust_add, "allow")
         self.trust_combo.set_hexpand(True)
         entry_row.append(self.trust_combo)
@@ -1350,11 +1626,11 @@ class MainWindow(Gtk.Window):
             b.add_css_class("gw-cta")
             b.connect("clicked", self._on_trust_add, verdict)
             entry_row.append(b)
-        box.append(entry_row)
+        trust_inner.append(entry_row)
         self.trust_note = Gtk.Label(xalign=0)
         self.trust_note.set_xalign(0)
         self.trust_note.set_wrap(True)
-        box.append(self.trust_note)
+        trust_inner.append(self.trust_note)
         self.trust_store = Gtk.ListStore(str, str)
         self.trust_view = Gtk.TreeView(model=self.trust_store)
         for i, title in enumerate(("policy", "site")):
@@ -1367,38 +1643,44 @@ class MainWindow(Gtk.Window):
         self.trust_view.set_size_request(-1, 200)
         trust_scroll = self._wrap(self.trust_view)
         trust_scroll.set_size_request(-1, 200)
-        box.append(trust_scroll)
-        del_b = Gtk.Button(label="Remove the selected site")
+        trust_inner.append(trust_scroll)
+        del_b = Gtk.Button(label="Remove site")
+        del_b.set_halign(Gtk.Align.START)
         del_b.connect("clicked", self._on_trust_remove)
-        box.append(del_b)
+        trust_inner.append(del_b)
 
-        box.append(self._h2("Trusted programs"))
-        prog_one = "A trusted program connects to the internet without asking."
-        prog_two = "Pick it from the list, or browse. No path to type."
-        box.append(Gtk.Label(
-            label=prog_one + "\n" + prog_two, xalign=0))
+        prog_head = Gtk.Label(xalign=0)
+        prog_head.set_xalign(0)
+        prog_head.set_wrap(True)
+        prog_head.set_markup(
+            f"<span size='14000' font_family='Inter' weight='600'>"
+            "Programs</span>\n"
+            f"<span size='12000' font_family='Inter' color='{pc_muted()}'>"
+            "These connect without asking. Pick from the list, or browse."
+            "</span>")
+        trust_inner.append(prog_head)
         app_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.app_combo = Gtk.ComboBoxText.new_with_entry()
         for prog in discover.programs():
             self.app_combo.append(prog["path"], prog["label"])
         self.app_entry = self.app_combo.get_child()
         self.app_entry.set_placeholder_text(
-            "pick a program from the list, or browse…")
+            "Program")
         self.app_entry.connect("activate", self._on_app_add, None)
         self.app_combo.set_hexpand(True)
         app_row.append(self.app_combo)
         browse_b = Gtk.Button(label="Browse…")
         browse_b.connect("clicked", self._on_app_browse)
         app_row.append(browse_b)
-        add_app = Gtk.Button(label="Trust this program")
+        add_app = Gtk.Button(label="Trust program")
         add_app.add_css_class("gw-cta")
         add_app.connect("clicked", self._on_app_add, None)
         app_row.append(add_app)
-        box.append(app_row)
+        trust_inner.append(app_row)
         self.app_note = Gtk.Label(xalign=0)
         self.app_note.set_xalign(0)
         self.app_note.set_wrap(True)
-        box.append(self.app_note)
+        trust_inner.append(self.app_note)
         self.app_store = Gtk.ListStore(str)
         self.app_view = app_view = Gtk.TreeView(model=self.app_store)
         app_col = Gtk.TreeViewColumn("trusted program", Gtk.CellRendererText(),
@@ -1409,10 +1691,12 @@ class MainWindow(Gtk.Window):
         app_view.set_size_request(-1, 180)
         app_scroll = self._wrap(app_view)
         app_scroll.set_size_request(-1, 180)
-        box.append(app_scroll)
-        del_app = Gtk.Button(label="Remove the selected program")
+        trust_inner.append(app_scroll)
+        del_app = Gtk.Button(label="Remove program")
+        del_app.set_halign(Gtk.Align.START)
         del_app.connect("clicked", self._on_app_remove)
-        box.append(del_app)
+        trust_inner.append(del_app)
+        box.append(trust_frame)
         self._refresh_trust()
         self._refresh_apps()
         return self._scroll(box)
@@ -1420,8 +1704,9 @@ class MainWindow(Gtk.Window):
     def _refresh_trust(self):
         self.trust_store.clear()
         empty = True
-        for verdict, entries in (("ALLOWED", sorted(self.trust.allow)),
-                                 ("BLOCKED", sorted(self.trust.block))):
+        # Sentence case: the policy column read as an API constant.
+        for verdict, entries in (("Allowed", sorted(self.trust.allow)),
+                                 ("Blocked", sorted(self.trust.block))):
             for e in entries:
                 self.trust_store.append([verdict, e])
                 empty = False
@@ -1441,7 +1726,7 @@ class MainWindow(Gtk.Window):
         path, _col = view.get_cursor()
         verdict = self.trust_store[path[0]][0] if path else ""
         self._trust_sel = (self.trust_store[path[0]][1]
-                           if path and verdict in ("ALLOWED", "BLOCKED")
+                           if path and verdict in ("Allowed", "Blocked")
                            else None)
 
     def _on_trust_add(self, _btn, verdict):
@@ -1642,21 +1927,26 @@ class MainWindow(Gtk.Window):
         learning = self._learn_store.active()
         block = self._fw_mode_store.load().block_unknown
         if not on:
-            text = ("⚪ Firewall off: programs use the internet without "
+            ink = pc_muted()
+            text = ("Firewall off: programs use the internet without "
                     "asking.")
         elif block:
-            text = ("🟢 Firewall on, strict. Nothing you have not trusted "
+            ink = pc_ok()
+            text = ("Firewall on, strict. Nothing you have not trusted "
                     "is allowed.")
         elif learning:
-            learn_head = "🟢 Firewall on, learning."
-            learn_body = "New connections pass once. Press Trust to keep one."
-            text = learn_head + " " + learn_body
+            ink = pc_ok()
+            text = ("Firewall on, learning. New connections pass once. "
+                    "Press Trust to keep one.")
         else:
-            watch_head = "🟢 Firewall on, watching."
-            watch_body = "New connections pass once. Learning mode records them."
-            text = watch_head + " " + watch_body
+            ink = pc_ok()
+            text = ("Firewall on, watching. New connections pass once. "
+                    "Learning mode records them.")
+        # One drawn dot in the status ink; the emoji that used to carry
+        # this meaning is gone (design pass 2026-10-27).
         self.fw_note.set_markup(
-            f"<span size='13000' font_family='Inter'>{text}</span>")
+            f"<span size='13000' font_family='Inter'>"
+            f"<span foreground='{ink}'>●</span> {escape(text)}</span>")
         if self.fw_btn.get_sensitive():     # while busy it says Starting…
             self.fw_btn.set_label("Turn off" if on else "Turn on")
         active = self._learn_store.active()
@@ -1879,8 +2169,10 @@ class MainWindow(Gtk.Window):
 
     @staticmethod
     def _plain_row(e: dict):
-        m = MARK_BY_SEVERITY.get(e.get("severity", ""), "-")
-        return [m, local_clock(e.get("ts", "")), plain_sentence(e)]
+        sev = e.get("severity", "")
+        return [tool_icon(e.get("from_tool", "")), "●",
+                local_clock(e.get("ts", "")), plain_sentence(e),
+                pc_severity_colour(sev)]
 
     def refresh(self):
         snap = daemon_mod.load_status(str(DATA_DIR / "status.json"))
@@ -1912,32 +2204,62 @@ class MainWindow(Gtk.Window):
         known = sum(1 for t in self.registry
                     if (tools.get(t["name"]) or {}).get("state")
                     in ("GREEN", "RED", "YELLOW"))
+        pill_state = "ok"
         if known == 0 and not self._state_override:
-            lead = "⚪ Status not available yet"
-            tail = ("the monitor has not reported. Nothing was checked")
-            if paused_n:
-                tail += f" · {paused_n} paused in the app, not a fault"
+            lead = "No status yet"
+            tail = "the monitor hasn't reported"
+            pill = "Waiting for monitor"
+            pill_state = "warn"
         else:
             if attention == 0 and paused_n == 0:
-                lead = "🛡 All protections running"
+                lead = "All clear"
+                pill = "All clear"
             elif attention == 0:
-                lead = f"⏸ {paused_n} protection(s) paused in the app"
+                lead = f"{paused_n} paused"
+                pill = f"{paused_n} paused"
+                pill_state = "warn"
             else:
-                lead = f"⚠ {attention} protection(s) need attention"
+                lead = f"{attention} need attention"
                 if paused_n:
                     lead += f" · {paused_n} paused"
-            tail = f"({running} of {len(self.registry)} running)"
+                pill = lead
+                pill_state = "fail"
+            tail = f"{running}/{len(self.registry)} running"
         self.status_words.set_markup(
             f"<span size='19000' font_family='Barlow Condensed' weight='600'>"
             f"{lead}"
             f"</span>  <span size='12000' font_family='Inter' color='{pc_muted()}'>"
             f"{tail}</span>")
+        if getattr(self, "header_pill", None) is not None:
+            self.header_pill.set_text(pill)
+            for cls in ("ok", "warn", "fail"):
+                self.header_pill.remove_css_class(cls)
+            self.header_pill.add_css_class(pill_state)
 
         now = _dt.datetime.now(_dt.timezone.utc)
-        fresh = len(self.list_store) != len(self.registry)
+        # Rank by what needs a human, not by registry order: anything failed
+        # or unverified sits at the top, paused next, healthy last. A flat
+        # alphabetical table makes the one broken tool the 14th row.
+        _rank = {"RED": 0, "YELLOW": 1, "UNKNOWN": 1}
+        def _urgency(t):
+            paused = self.paused.is_paused(t["name"])
+            state = self._display_state(t["name"], tools.get(t["name"], {}),
+                                        updated)
+            return (1.5 if paused else _rank.get(state, 2),
+                    friendly_name(t["name"]))
+        ordered = sorted(self.registry, key=_urgency)
+        if getattr(self, "show_all_btn", None) is not None \
+                and not self.show_all_btn.get_active():
+            ordered = [t for t in ordered if _urgency(t)[0] < 2]
+
+        if getattr(self, "table_stack", None) is not None:
+            self.table_stack.set_visible_child_name(
+                "list" if ordered else "empty")
+        fresh = len(self.list_store) != len(ordered)
         if fresh:
             self.list_store.clear()
-        for idx, t in enumerate(self.registry):
+
+        for idx, t in enumerate(ordered):
             name = t["name"]
             info = tools.get(name, {})
             state = self._display_state(name, info, updated)
@@ -1947,9 +2269,10 @@ class MainWindow(Gtk.Window):
             if stamp and not paused:
                 words = ("up to date" if state == "GREEN"
                          else "the list is old")
-            row = [CARD_ICONS.get(name, "•"), status_mark(state, paused),
-                   friendly_name(name), words,
-                   stamp or age_words(info.get("last_event"), now), name]
+            row = [tool_icon(name), "●",
+                   f"{friendly_name(name)} · {name}", words,
+                   stamp or age_words(info.get("last_event"), now), name,
+                   pc_state_colour(state, paused)]
             if fresh:
                 self.list_store.append(row)
             else:
@@ -1957,18 +2280,6 @@ class MainWindow(Gtk.Window):
                 for col, val in enumerate(row):
                     self.list_store[it][col] = val
         self._restore_list_selection()
-        if hasattr(self, "lights_store"):
-            self.lights_store.clear()
-            for t in self.registry:
-                name = t["name"]
-                info = tools.get(name, {})
-                state = self._display_state(name, info, updated)
-                self.lights_store.append([
-                    status_mark(state, self.paused.is_paused(name)),
-                    friendly_name(name),
-                    status_words(state, info.get("installed"),
-                                 self.paused.is_paused(name))])
-
         if hasattr(self, "card_widgets"):
             for t in self.registry:
                 frame = self.card_widgets.get(t["name"])
@@ -1982,17 +2293,14 @@ class MainWindow(Gtk.Window):
                            if e.get("from_tool") == name
                            and not str(e.get("text", "")).startswith(
                                "check-in:")), None)
-                state_color = "#ffc940" if paused else {
-                    "GREEN": "#4dd07a", "RED": "#ff5a52",
-                    "YELLOW": "#ffc940",
-                    "UNKNOWN": pc_muted()}.get(state, pc_muted())
+                state_color = pc_state_colour(state, paused)
                 words = status_words(state, info.get("installed"), paused)
                 stamp = self._update_detail(name)
                 if stamp and not paused:
                     words = ("up to date" if state == "GREEN"
                              else "the list is old")
                 head = (f"<span size='12000' font_family='Inter' "
-                        f"color='{state_color}'>{status_mark(state, paused)} "
+                        f"color='{state_color}'>● "
                         f"{escape(words)}</span>")
                 if stamp and not paused:
                     frame._sub.set_markup(
@@ -2043,15 +2351,28 @@ class MainWindow(Gtk.Window):
             self.present()
             self._show("tools")
 
+        def open_chooser():
+            # "Set up something else" hands back to the hub; the baseline
+            # window closes so only one wizard is on screen at a time.
+            win = self._setup_win
+            self._open_wizard()
+            if win is not None:
+                win.destroy()
+
         self._setup_win = SetupWizardWindow(
             parent=self,
             open_dashboard=open_dashboard,
-            open_chooser=lambda *_a: self._open_wizard())
+            open_chooser=open_chooser)
         self._setup_win.present()
         self._setup_win.connect(
             "destroy", lambda _w: setattr(self, "_setup_win", None))
 
     def _open_wizard_for(self, key):
+        if key == "baseline":
+            # The baseline is its own multi-step flow, but it is launched
+            # from the hub like every other task — not the other way round.
+            self._open_setup_wizard()
+            return
         from ui.wizard import RuleWizard
         self._wizard_win = RuleWizard(key, parent=self)
         self._wizard_win.connect("destroy", self._reload_trust)
@@ -2059,10 +2380,20 @@ class MainWindow(Gtk.Window):
     def _open_wizard(self):
         from ui.wizard import ToolChooser
 
+        existing = getattr(self, "_chooser", None)
+        if existing is not None:            # one hub, never a stack of them
+            try:
+                existing.present()
+                return
+            except Exception:
+                self._chooser = None
+
         def picked(key):
             self._open_wizard_for(key)
 
         self._chooser = ToolChooser(on_pick=picked, parent=self)
+        self._chooser.connect(
+            "destroy", lambda _w: setattr(self, "_chooser", None))
         self._chooser.present()
         try:
             self._chooser.cancel_btn.grab_focus()

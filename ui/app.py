@@ -97,7 +97,10 @@ def _single_instance() -> bool:
 
 
 def main() -> int:
-    _kill_duplicates()
+    # No duplicate-killing: a second launch used to SIGTERM the running GUI
+    # and every launcher (autostart, tray, desktop entry) raced to restart
+    # it, which looked like a storm of windows. The lock decides; a second
+    # launch bows out and the running window stays up.
     if not _single_instance():
         print("greywatch is already running (close it from the tray first).")
         return 0
@@ -119,6 +122,9 @@ def main() -> int:
         from ui.window import MainWindow
 
         broker = DecisionBroker()
+        # App-firewall asks arrive as files from the root daemon; without
+        # this the daemon has nobody to ask and answers with its fallback.
+        broker.watch_appfw()
 
         tray = None
         try:
@@ -133,9 +139,18 @@ def main() -> int:
         app = Gtk.Application(application_id="org.greywatch.Dashboard")
 
         def on_activate(application):
+            # "activate" fires again every time a second instance is
+            # launched or the desktop activates the app. Building a window
+            # per activation was the 5-windows-at-once bug; one window is
+            # created once and only raised afterwards.
+            win = getattr(application, "_gw_win", None)
+            if win is not None:
+                win.present()
+                return
             win = MainWindow(on_status_change=broker.pump,
                              tray_available=tray is not None,
                              quit_cb=application.quit)
+            application._gw_win = win
             application.add_window(win)
             if tray is not None:
                 tray.on_show = lambda: win.present()
@@ -146,8 +161,10 @@ def main() -> int:
             GLib.timeout_add_seconds(60, broker.pump_once)
             try:
                 from ui.minitile import MiniTileWindow, tile_wanted
-                if tile_wanted():
+                if tile_wanted() and getattr(application,
+                                             "_gw_tile", None) is None:
                     tile = MiniTileWindow()
+                    application._gw_tile = tile
                     application.add_window(tile)
                     tile.present()
             except Exception as e:

@@ -143,10 +143,10 @@ class Tray:
                         e.get("ts", "").replace("Z", "+00:00"))
                     if ts >= hour_ago and e.get("severity") in ("HIGH",
                                                                 "CRITICAL"):
-                        alerts.append((e.get("from_tool", "?"), "🔴",
+                        alerts.append((e.get("from_tool", "?"), "High",
                                        e.get("text", "")))
                     elif ts >= hour_ago and e.get("severity") == "MEDIUM":
-                        alerts.append((e.get("from_tool", "?"), "🟡",
+                        alerts.append((e.get("from_tool", "?"), "Medium",
                                        e.get("text", "")))
                 except (ValueError, TypeError):
                     continue

@@ -7,6 +7,17 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "packaging" / "build-wheel.sh"
 
 
+def _version():
+    """pyproject.toml is the only place the version lives, so the test
+    reads it instead of repeating it (a bump must not edit tests)."""
+    import tomllib
+    return tomllib.loads(
+        (ROOT / "pyproject.toml").read_text())["project"]["version"]
+
+
+VER = _version()
+
+
 def test_wheel_packages_the_program_tree():
     """packaging/build-wheel.sh yields an installable py3-none-any wheel."""
     if not (shutil.which("bash") and SCRIPT.exists()):
@@ -24,7 +35,7 @@ def test_wheel_packages_the_program_tree():
                        capture_output=True, text=True)
         wheels = list(out.glob("greywatch-*.whl"))
         assert len(wheels) == 1 and wheels[0].name == \
-            "greywatch-0.1.0-py3-none-any.whl"
+            f"greywatch-{VER}-py3-none-any.whl"
 
         names = subprocess.run(["python3", "-m", "zipfile", "-l",
                                 str(wheels[0])], capture_output=True,
@@ -52,4 +63,4 @@ def test_wheel_packages_the_program_tree():
         version = subprocess.run(
             [str(venv / "bin" / "gw"), "--version"],
             capture_output=True, text=True, check=True, cwd="/")
-        assert version.stdout.startswith("greywatch 0.1.0")
+        assert version.stdout.startswith(f"greywatch {VER}")

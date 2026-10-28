@@ -4,6 +4,7 @@ import argparse
 import datetime as _dt
 import json
 import os
+import re
 from collections import deque
 import pathlib
 import subprocess
@@ -145,11 +146,42 @@ class Daemon:
         self._last_snap = None      # last write_status() result (heartbeats)
         self._beat = 0.0
         self.ui_gid = self._ui_gid()
+        self._share_with_ui(self.events_path)
+        # Same failure class as status.json: written by root 0600, so the
+        # dashboard silently shows "nothing fetched yet" while the cache is
+        # right there. The CVE list is public data; 0640 root:grey is enough.
+        self._share_with_ui(self.data_dir / "cve-cache.json")
         self._fail_counts = {}      # category → {"count": int, "last": str}
         self._fail_log_at = {}      # category → monotonic of last log line
         self._ask_policy = "deny-once"    # re-read at start_appfw()
         self._ask_policy_label = ("deny-once — no approval dialog wired "
                                   "(headless fallback, NOT user-approved)")
+        self.healer = None       # built in run_forever (needs log/alert)
+        self._notice_at = {}     # generic notice dedupe table
+
+    def _share_with_ui(self, path) -> None:
+        """Let the desktop GUI read an existing root-owned file.
+
+        The daemon runs as root and the GUI as the desktop user. Files
+        created before the 0640 fix are root:root 0600, so the GUI reads
+        nothing — no feed, no prompts — and the failure is silent. Called
+        at startup so the next restart repairs the live file in place.
+        """
+        if self.ui_gid is None or os.geteuid() != 0:
+            return
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            return
+        try:
+            st = os.fstat(fd)
+            if st.st_uid == os.geteuid() and (st.st_mode & 0o170000) == 0o100000:
+                os.fchown(fd, -1, self.ui_gid)
+                os.fchmod(fd, 0o640)
+        except OSError:
+            pass
+        finally:
+            os.close(fd)
 
     @staticmethod
     def _ui_gid():
@@ -217,7 +249,8 @@ class Daemon:
                 return 0
             batch, self._outbox = self._outbox, []
         try:
-            append_checked(str(self.events_path), "\n".join(batch) + "\n")
+            append_checked(str(self.events_path), "\n".join(batch) + "\n",
+                           create_mode=0o640, gid=self.ui_gid)
         except OSError as e:
             self.count_failure("write", "events.jsonl", e)
             with self._lock:
@@ -347,9 +380,17 @@ class Daemon:
                 snap["tools"][name]["paused"] = True
         eng = getattr(self, "appfw_engine", None)
         try:
-            snap["appfw_engine"] = ("running" if eng is not None and
-                                    eng.running else
-                                    "off (owner switch in data/appfw)")
+            running = eng is not None and eng.running
+            enabled = True
+            try:
+                from appfw.engine import read_enabled
+                enabled = read_enabled(self.data_dir)
+            except Exception:
+                pass
+            snap["appfw_engine"] = (
+                "running" if running else
+                ("off (owner switch in data/appfw)" if not enabled
+                 else "off (engine failed to start — see the event log)"))
         except Exception as e:
             self.count_failure("status", "appfw summary", e)
         try:
@@ -420,15 +461,14 @@ class Daemon:
             self.appfw_engine = None
             return False
         self._ask_policy = self._headless_ask()
-        self._ask_policy_label = (f"{self._ask_policy} — no approval dialog "
-                                  "wired (headless fallback, NOT user-"
-                                  "approved)")
+        self._ask_policy_label = (f"ask the dashboard popup; "
+                                  f"{self._ask_policy} when it is closed "
+                                  f"(headless fallback)")
         from ui.settings import TrustList
         from ui.blocklist import BlockList
         eng = Engine(self.data_dir, on_event=self._appfw_event,
                      trust_list=TrustList(), blocklist=BlockList(),
-                     ask=(self._appfw_ask_deny if self._ask_policy == "deny-once"
-                          else self._appfw_ask_allow))
+                     ask=self._appfw_ask_user)
         if not eng.start():
             self.appfw_engine = None
             return False
@@ -495,6 +535,33 @@ class Daemon:
             self.count_failure("write", "net-watch mirror", e)
             print("net-watch mirror write failed:", e, flush=True)
 
+    def _notice(self, tool: str, severity: str, text: str,
+                dedupe_window_s: float = 600.0) -> None:
+        """One feed row for something the daemon itself decided (repairs,
+        escalations). Deduplicated like the appfw notices so a crash loop
+        cannot flood the feed."""
+        key = f"{tool}|{severity}|{text[:400]}"
+        now = time.monotonic()
+        prev = self._notice_at.get(key)
+        if prev is not None and now - prev < dedupe_window_s:
+            return
+        self._notice_at[key] = now
+        if len(self._notice_at) > 256:
+            self._notice_at = dict(sorted(
+                self._notice_at.items(), key=lambda kv: kv[1],
+                reverse=True)[:256])
+        try:
+            from events import Event
+            ev = Event(from_tool=tool, severity=severity, text=text[:500],
+                       ts=_dt.datetime.now(_dt.timezone.utc)
+                       .isoformat(timespec="seconds"))
+            enrich(ev)
+            with self._lock:
+                self._outbox.append(json.dumps(ev.to_dict(),
+                                               separators=(",", ":")))
+        except Exception as e:
+            self.count_failure("write", "self-heal notice", e)
+
     @staticmethod
     def _appfw_ask_allow(spec):
         # HEADLESS fallback, not approval: nothing here is user-verified.
@@ -506,6 +573,115 @@ class Daemon:
         # Headless fail-closed: no dialog wired and the operator asked for
         # unknown programs to be denied rather than let through.
         return ("deny", "once")
+
+    ASK_TIMEOUT_S = 15.0
+
+    def _ask_paths(self, spec):
+        """Request/answer file pair for one ask, keyed by the spec id.
+
+        The id contains the app name, pid and source port, so hashing it
+        keeps the filename safe and lets the GUI correlate the answer.
+        """
+        import hashlib
+        key = hashlib.sha256(
+            str(spec.get("id") or "").encode()).hexdigest()[:16]
+        base = self.data_dir / "appfw"
+        return (base / "asks" / f"{key}.json",
+                base / "answers" / f"{key}.json")
+
+    def _share_dir_with_ui(self, path) -> None:
+        """Create a directory the desktop GUI (a different user) can use.
+
+        Group-write is set explicitly: the daemon's umask decides the mode
+        otherwise, and a 0755 directory silently makes every ask time out
+        because the GUI cannot write its answer.
+        """
+        path.mkdir(parents=True, exist_ok=True)
+        try:
+            if self.ui_gid is not None and os.geteuid() == 0:
+                os.chown(path, -1, self.ui_gid)
+            os.chmod(path, 0o775)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _host_op(value):
+        """What the operator chose to remember.
+
+        The dashboard sends either a mode ("trust", "block-host", …) or the
+        destination it resolved. The old whitelist accepted only two of the
+        four modes, so "Always allow/block this site" reached the engine as
+        "nothing to remember" and the prompt came back forever (owner
+        report 2026-10-28). Validate instead of enumerating.
+        """
+        if not isinstance(value, str):
+            return None
+        value = value.strip()[:200]
+        if value in ("host", "block-host", "trust", "trust-block"):
+            return value
+        if re.fullmatch(r"[A-Za-z0-9*._:/-]{1,120}", value or ""):
+            return value
+        return None
+
+    def _appfw_ask_user(self, spec):
+        """Ask the running GUI instead of guessing.
+
+        The daemon is root with no display; the GUI polls this ask
+        directory every half second and writes the operator's answer into
+        the matching file. The engine's decision loop is serial, so at
+        most one ask is ever outstanding — which is what lets the GUI keep
+        its single-popup promise.
+
+        If no GUI answers in time (it may not be running at all) the
+        configured headless verdict is used, so behaviour degrades to
+        exactly what shipped before — never to an unasked allow.
+        """
+        fallback = (("deny", "once") if self._ask_policy == "deny-once"
+                    else ("allow", "once"))
+        req = ans = None
+        try:
+            req, ans = self._ask_paths(spec)
+            self._share_dir_with_ui(req.parent)
+            self._share_dir_with_ui(ans.parent)
+            for p in (req, ans):
+                try:
+                    p.unlink()
+                except FileNotFoundError:
+                    pass
+            payload = {"id": spec.get("id"),
+                       "ts": _dt.datetime.now(_dt.timezone.utc)
+                       .isoformat(timespec="seconds"),
+                       "spec": spec}
+            atomic_replace(str(req), json.dumps(payload))
+            try:
+                os.chmod(req, 0o644)
+            except OSError:
+                pass
+            deadline = time.monotonic() + self.ASK_TIMEOUT_S
+            while time.monotonic() < deadline:
+                if ans.exists():
+                    doc = json.loads(ans.read_text())
+                    action = str(doc.get("action") or "")
+                    if action not in ("allow", "deny"):
+                        break                 # malformed → fallback
+                    duration = str(doc.get("duration") or "once")
+                    host_op = self._host_op(doc.get("host_op"))
+                    return (action,
+                            duration if duration in ("once", "always")
+                            else "once",
+                            host_op)
+                time.sleep(0.1)
+        except (OSError, ValueError) as e:
+            self.count_failure("appfw", "ask bridge", e)
+        finally:
+            for p in (req, ans):
+                if p is None:
+                    continue
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+        return fallback
 
 
     def ensure_updates(self):
@@ -614,6 +790,22 @@ class Daemon:
         from appfw.sd_notify import notify as _sd
         _sd('READY=1')
         live = tailers or self.build_collectors()
+        try:
+            from selfheal import SelfHealer
+            import triage as _triage
+            self.healer = SelfHealer(
+                self.data_dir, self.registry,
+                log=lambda n, t: self._notice(n, "MEDIUM", t),
+                alert=lambda n, t: self._notice(n, "HIGH", t,
+                                                dedupe_window_s=3600.0),
+                triage=_triage.make(self.data_dir),
+                user=UI_USER, runtime_dir=ui_runtime_dir() or "")
+            print("greywatch self-heal: on"
+                  + ("" if _triage.make(self.data_dir) is None
+                     else " (ai triage on)"), flush=True)
+        except Exception as e:
+            self.healer = None
+            self.count_failure("heal", "init", e)
         self.supervisor = Supervisor()
         for t in live:
             t.start()
@@ -642,8 +834,13 @@ class Daemon:
                 self.supervisor.check_all()
                 now = time.monotonic()
                 if now >= status_at:
-                    self.write_status()
+                    snap = self.write_status()
                     status_at = now + unit_interval
+                    if self.healer is not None:
+                        try:
+                            self.healer.tick(snap.get("tools") or {})
+                        except Exception as e:
+                            self.count_failure("heal", "tick", e)
                 if now >= engine_check_at:
                     engine_check_at = now + 10
                     eng = getattr(self, "appfw_engine", None)

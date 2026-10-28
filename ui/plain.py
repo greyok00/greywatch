@@ -55,6 +55,46 @@ def warn() -> str:
     return _token("warn", "#ffc940")
 
 
+def ok() -> str:
+    return _token("ok", "#4dd07a")
+
+
+def fail() -> str:
+    return _token("fail", "#ff5a52")
+
+
+def state_colour(state: str, paused: bool = False) -> str:
+    """One place that turns a protection state into ink.
+
+    The dashboard had this mapping spelled out with hex literals in three
+    views, so a theme change (console green -> obsidian sage) only reached
+    whichever copy someone remembered. Paused is a warning, not a failure:
+    the owner did that on purpose.
+    """
+    if paused:
+        return warn()
+    return {"GREEN": ok(), "RED": fail(), "YELLOW": warn()}.get(
+        (state or "").upper(), muted())
+
+
+def severity_colour(severity: str) -> str:
+    sev = (severity or "").upper()
+    if sev in ("HIGH", "CRITICAL", "RED"):
+        return fail()
+    if sev in ("MEDIUM", "WARN", "YELLOW", "AMBER"):
+        return warn()
+    if sev in ("INFO", "GREEN"):
+        return ok()
+    return muted()
+
+
+def severity_word(severity: str) -> str:
+    """Plain word for the raw log's state column (emoji removed 2026-10-27)."""
+    sev = (severity or "").upper()
+    return {"HIGH": "High", "CRITICAL": "Critical", "MEDIUM": "Medium",
+            "INFO": "Info", "LOW": "Low"}.get(sev, "—")
+
+
 _LEAD_MARK = re.compile(r"^[^\w]+")
 
 
@@ -96,61 +136,60 @@ def _sentence(tool: str, t: str) -> str:
 
     if tool == "ufw":
         if "BLOCK_UNKNOWN" in t:
-            return f"⚠ The firewall blocked an unrecognized connection from {ip or 'an outside address'}."
-        return f"🔒 The firewall blocked a connection from {ip or 'an outside address'}."
+            return f"Firewall blocked unknown {ip or 'address'}"
+        return f"Firewall blocked {ip or 'address'}"
     if tool == "fail2ban":
         if "Unban" in t:
-            return f"✅ A computer ({ip}) was let back in after its lockout."
-        return f"🚫 {ip or 'A computer'} was locked out after repeated suspicious attempts."
+            return f"Unbanned {ip}"
+        return f"Banned {ip or 'address'}"
     if tool == "responderd":
         if "quarantine" in sev_low:
-            return f"🚨 A dangerous file ({path or 'file'}) was moved to quarantine. It can no longer run."
+            return f"Quarantined {path or 'file'}"
         if "kill" in sev_low:
-            return "🛑 A running process was stopped because it matched a threat rule."
+            return "Process stopped (threat rule)"
         if "firewall_drop" in sev_low:
             m = re.search(r"new external listener [\d.]+:(\d+)", t)
             if m:
-                return (f"🧱 A program opened port {m.group(1)} to the "
-                        f"internet; the firewall blocked access from outside.")
-            return f"🔒 The firewall was told to block {ip or 'an attacker'}."
+                return f"Blocked inbound on port {m.group(1)}"
+            return f"Blocked {ip or 'address'}"
         if "delete" in sev_low:
-            return f"🗑 A dangerous file ({path or 'file'}) was deleted."
-        return f"👀 {(_prog(path) or 'Activity')} was watched and logged (no action needed)."
+            return f"Deleted {path or 'file'}"
+        return f"{(_prog(path) or 'Activity')} · logged only"
     if tool in ("yara-watch", "yara-tmp-scan"):
-        return f"🧪 A file matches a known malware fingerprint: {path or 'unknown file'}."
+        return f"Malware match: {path or 'unknown file'}"
     if tool == "clamav":
         m = re.search(r"Infected files:\s*(\d+)", t)
         if m and m.group(1) != "0":
-            return f"🦠 The antivirus found {m.group(1)} infected file(s)!"
+            return f"{m.group(1)} infected file(s)"
         if "FOUND" in t:
-            return f"🦠 The antivirus detected malware in {path}."
-        return "✅ The antivirus finished its scan: no threats found."
+            return f"Malware in {path}"
+        return "Scan clean"
     if tool == "appfw":
         if "deny" in sev_low:
-            return f"⛔ {_prog(path)} was denied internet access."
-        return f"🌐 {_prog(path)} was allowed to use the internet."
+            return f"{_prog(path)} blocked"
+        return f"{_prog(path)} allowed"
     if tool == "tetragon":
-        return f"👀 {_prog(path)} started running."
+        return f"{_prog(path)} started"
     if tool == "arpwatch":
         if "new station" in sev_low:
-            return f"📶 A device ({ip or 'unknown'}) joined your WiFi."
-        return f"📶 A WiFi device changed behavior ({ip or 'check details'})."
+            return f"A device ({ip or 'unknown'}) joined your WiFi."
+        return f"A WiFi device changed behavior ({ip or 'check details'})."
     if tool == "auditd":
         if "ANOM_ABEND" in t:
-            return "💥 A program crashed on its own; it was recorded."
-        return "🫥 The kernel recorded routine system activity."
+            return "A program crashed on its own; it was recorded."
+        return "The kernel recorded routine system activity."
     if tool == "aide":
         if "no differences" in sev_low:
-            return "✅ The file-integrity check: nothing changed."
-        return "⚠ System files changed since the last check: worth reviewing."
+            return "The file-integrity check: nothing changed."
+        return "System files changed since the last check: worth reviewing."
     if tool == "apparmor":
-        return "🚧 A program tried something outside its allowed access and was stopped."
+        return "A program tried something outside its allowed access and was stopped."
     if tool == "lynis":
-        return "📋 The security auditor flagged something to improve."
+        return "The security auditor flagged something to improve."
     if tool == "rkhunter":
         if "warning" in sev_low:
-            return "⚠ The rootkit scanner found something suspicious."
-        return "✅ Rootkit scan clean: no hidden malware found."
+            return "The rootkit scanner found something suspicious."
+        return "Rootkit scan clean: no hidden malware found."
     if tool == "secops-mcp":
-        return "🫥 The security helper recorded routine activity."
+        return "The security helper recorded routine activity."
     return t[:120] or "An event was recorded."

@@ -15,9 +15,9 @@ def clean_settings(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_real_kit_loads_eleven_greyok_themes():
+def test_real_kit_loads_twelve_greyok_themes():
     ts = load_themes()
-    assert len(ts) == 11
+    assert len(ts) == 12
     assert all("--el-bg" in toks for toks in ts.values())
 
 

@@ -161,7 +161,7 @@ def test_block_unknown_denies_untrusted_only(tmp_path):
     assert (act, dur) == ("allow", "always")
 
 
-def test_ask_spec_carries_the_five_options(tmp_path):
+def test_ask_spec_carries_every_answer(tmp_path):
     policy = Policy(tmp_path)
     seen = {}
     def ask(spec):
@@ -171,7 +171,40 @@ def test_ask_spec_carries_the_five_options(tmp_path):
                                       process_path="/usr/bin/curl"),
                                 policy, ask=ask)
     assert act == "allow" and op == "example.net"
-    assert seen["id"].startswith("appfw:") and len(seen["options"]) == 5
+    assert seen["id"].startswith("appfw:")
+    ids = [o["id"] for o in seen["options"]]
+    # The operator could always allow and never always block (owner report
+    # 2026-10-28), and a persistent answer must exist for both verdicts.
+    assert {"deny-once", "allow-once", "allow-always", "block-always",
+            "trust-site", "block-site"} == set(ids)
+    assert seen["path"] == "/usr/bin/curl" and seen["host"] == "example.net"
+
+
+def test_unknown_app_still_offers_a_persistent_block(tmp_path):
+    policy = Policy(tmp_path)
+    seen = {}
+    def ask(spec):
+        seen.update(spec)
+        return ("deny", "once", None)
+    decide(_conn(dst_host="example.net", process_path=""),
+           policy, ask=ask)                                 # pid unresolved
+    ids = [o["id"] for o in seen["options"]]
+    assert "block-always" not in ids        # nothing to pin a program rule to
+    assert "block-site" in ids              # …but the site can still be blocked
+
+
+def test_registry_lookup_never_prompts(tmp_path):
+    # The identity card runs whois; that socket lives for milliseconds, so
+    # attribution often misses it and the prompt would say "<unknown> wants
+    # access" and auto-deny — which is exactly what killed the card live
+    # after the 2026-10-28 install (event: deny <unknown> → …:43).
+    policy = Policy(tmp_path)
+    got = []
+    act, dur, note, op = decide(
+        _conn(dst_ip="193.0.6.135", dst_port=43), policy,
+        ask=lambda s: got.append(s) or ("deny", "once"))
+    assert (act, dur) == ("allow", "once")
+    assert "registry lookup" in note and not got
 
 
 def test_fail_open_on_chain_error(tmp_path):

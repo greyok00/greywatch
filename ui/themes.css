@@ -182,3 +182,27 @@
   --el-font-body: 'Inter', 'Helvetica Neue', sans-serif;
   --el-font-display: 'Helvetica Neue', 'Inter', sans-serif;
 }
+
+/* Obsidian — sharp-edged dark (macOS type/space × Windows 11 structure).
+   Owner pick 2026-10-27: "sharp edges dark theme, stylish and elegant". */
+[data-theme="obsidian"] {
+  /* Graphite + sand (owner 2026-10-27: no bright blue, no fire-engine red).
+     Warm neutral surfaces, one muted brass accent, status colours drawn from
+     stone/sage/clay instead of signal-light primaries. */
+  --el-bg: #101113; --el-panel: #17181b; --el-panel-2: #1e2024; --el-panel-3: #26282d;
+  --el-line: #2c2e34; --el-line-2: #232529; --el-line-strong: #3d4046;
+  --el-ink: #e8e4dc; --el-ink-soft: #a4a19a; --el-mute: #74716b;
+  --el-on-accent: #17150f;
+  --el-accent: #b8996b; --el-accent-hover: #c9a97a; --el-accent-soft: rgba(184,153,107,0.15);
+  --el-ok: #8fb59a; --el-warn: #c9a55f; --el-fail: #c47b6b;
+  --el-info: #93a9b5; --el-live: #8fb59a; --el-teal: #8faaa3;
+  --el-shadow-1: none;
+  --el-shadow-2: none;
+  --el-shadow-3: 0 24px 70px rgba(0,0,0,.65);
+  --el-overlay: rgba(0,0,0,.72);
+  --el-focus-ring: rgba(184,153,107,.55);
+  --el-radius: 0px;
+  --el-font-body: 'Inter', 'SF Pro Text', 'Segoe UI Variable', sans-serif;
+  --el-font-display: 'Inter', 'SF Pro Display', 'Segoe UI Variable', sans-serif;
+  --el-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+}

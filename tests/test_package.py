@@ -7,6 +7,15 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "packaging" / "build-deb.sh"
 
 
+def _version():
+    import tomllib
+    return tomllib.loads(
+        (ROOT / "pyproject.toml").read_text())["project"]["version"]
+
+
+VER = _version()
+
+
 def test_deb_packages_the_program():
     """packaging/build-deb.sh yields a valid .deb with a runnable payload."""
     if not (shutil.which("dpkg-deb") and SCRIPT.exists()):
@@ -16,12 +25,12 @@ def test_deb_packages_the_program():
         out = pathlib.Path(tmp)
         subprocess.run([SCRIPT, str(out)], cwd=ROOT, check=True,
                        capture_output=True, text=True)
-        deb = out / "greywatch_0.1.0_amd64.deb"
+        deb = out / f"greywatch_{VER}_amd64.deb"
         assert deb.exists() and deb.stat().st_size > 1_000_000
 
         info = subprocess.run(["dpkg-deb", "--info", str(deb)],
                               capture_output=True, text=True, check=True)
-        assert "Version: 0.1.0" in info.stdout
+        assert f"Version: {VER}" in info.stdout
         assert "Maintainer: greyok00 <greyok00@users.noreply.github.com>" \
             in info.stdout
 
@@ -60,4 +69,4 @@ def test_deb_packages_the_program():
         cli = extract / "opt/greywatch/cli.py"
         version = subprocess.run(["python3", str(cli), "--version"],
                                  capture_output=True, text=True, check=True)
-        assert version.stdout.startswith("greywatch 0.1.0 (pyproject.toml)")
+        assert version.stdout.startswith(f"greywatch {VER} (pyproject.toml)")

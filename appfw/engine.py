@@ -7,6 +7,7 @@ import time
 import pathlib
 import socket
 import subprocess
+import sys
 import threading
 
 from . import config
@@ -79,12 +80,20 @@ class Engine:
         """Unsent verdict bytes queued on the control socket: SIOCOUTQ
         must be used through fcntl.ioctl() on AF_UNIX sockets —
         getsockopt(SOL_SOCKET, SIOCOUTQ) is not a valid query and fails.
-        A failed measurement returns None (UNKNOWN), never "empty"."""
+        A failed measurement returns None (UNKNOWN), never "empty".
+
+        The third ioctl argument is a POINTER to an int. Passing 0 gives
+        EFAULT on this kernel (verified 2026-10-27), which the watchdog
+        reported as "backlog measurement failed" forever — the stall
+        detector was blind while claiming to be degraded. Pass a 4-byte
+        mutable buffer; ioctl returns the filled buffer.
+        """
         sock = self._ctl_sock
         if sock is None:
             return None
         try:
-            return int(fcntl.ioctl(sock.fileno(), self.SIOCOUTQ, 0))
+            raw = fcntl.ioctl(sock.fileno(), self.SIOCOUTQ, b"\0\0\0\0")
+            return int.from_bytes(raw[:4], sys.byteorder)
         except (OSError, ValueError):
             return None
 
@@ -178,23 +187,32 @@ class Engine:
     def _install_nft(self) -> bool:
         script = config.build_ruleset(config.load(self.data_dir))
         mod_err = self._ensure_queue_module()
+        if mod_err:
+            self.on_event(f"appfw engine: {mod_err} — OFF")
+            return False
+        # Clear a leftover table FIRST. A previous failed arm can leave
+        # "greywatch_appfw" behind, and then every retry dies on
+        # "add table ... File exists" — the switch looks dead forever
+        # (owner report 2026-10-27). Deleting an absent table is harmless.
+        self._remove_nft()
         run = subprocess.run(["nft", "-f", "-"], input=script,
                              capture_output=True, text=True, timeout=10)
         if run.returncode == 0:
             return True
-        detail = (run.stderr or "").strip().splitlines()
-        detail = detail[-1] if detail else f"exit {run.returncode}"
-        if mod_err:
-            self.on_event(f"appfw engine: {mod_err} — OFF")
-        else:
-            self.on_event(f"appfw engine: nftables install failed "
-                          f"({detail}) — OFF")
-        subprocess.run(["nft", "-f", "-"],
-                       input=f"delete table inet {NFT_TABLE}\n",
-                       capture_output=True, text=True, timeout=10)
-        second = subprocess.run(["nft", "-f", "-"], input=script,
-                                capture_output=True, text=True, timeout=10)
-        return second.returncode == 0
+        try:                      # keep the full text for the next diagnosis
+            (self.data_dir / "appfw" / "nft-error.log").write_text(
+                (run.stderr or "") + "\n--- script ---\n" + script)
+        except OSError:
+            pass
+        lines = (run.stderr or "").strip().splitlines()
+        # nft prints "Error: ..." first and a caret line last; keeping the
+        # last line turned every failure into a row of ^^^^^ in the UI.
+        detail = next((ln for ln in lines if ln.startswith("Error:")),
+                      lines[-1] if lines else f"exit {run.returncode}")
+        self.on_event(f"appfw engine: nftables install failed "
+                      f"({detail.strip()}) — OFF")
+        self._remove_nft()        # never leave a half-installed table
+        return False
 
     def _remove_nft(self) -> None:
         subprocess.run(["nft", "-f", "-"],
@@ -340,13 +358,26 @@ class Engine:
         action, duration, note, host_op = decide(conn, self.policy,
                                                  store=self.store,
                                                  ask=self.ask)
-        if duration in ("always", "until restart") and (
-                conn.process_path or host_op):
+        if duration in ("always", "until restart"):
+            # host_op is either a mode ("trust", "block-host", …) or the
+            # destination itself. Passing the mode through as the rule
+            # value stored a rule for a host literally named "trust-block",
+            # so "Block this site" never matched anything (2026-10-28).
+            target = ""
+            if host_op:
+                target = (conn.host if str(host_op) in
+                          ("host", "block-host", "trust", "trust-block")
+                          else str(host_op))
             try:                               # never fail the verdict
-                self.store.add(rule_from_decision(
-                    conn, action,
-                    "always" if duration == "always" else "until restart",
-                    host=host_op))
+                if target:
+                    self.store.add(rule_from_decision(
+                        conn, action,
+                        "always" if duration == "always" else "until restart",
+                        host=target))
+                elif conn.process_path:
+                    self.store.add(rule_from_decision(
+                        conn, action,
+                        "always" if duration == "always" else "until restart"))
             except Exception:
                 pass
         try:

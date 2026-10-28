@@ -11,7 +11,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GLib            # noqa: E402
 
 from ui.harden import parse_apply_output, verby_args    # noqa: E402
-from ui.plain import escape, ink, soft, warn    # noqa: E402
+from ui.plain import escape, ink, soft, warn, ok, fail, muted    # noqa: E402
 
 from hardening.controls import load_controls   # noqa: E402
 import wizard.baseline as baseline            # noqa: E402
@@ -49,7 +49,6 @@ ROLE_HINTS = {
 GREEN, AMBER, RED, WHITE = "GREEN", "AMBER", "RED", "WHITE"
 PASS = "PASS"
 CANT = "CANT-CHECK"
-WHITE_MARK = "⚪"
 
 
 def now_journal_id(dt=None) -> str:
@@ -216,12 +215,13 @@ class SetupWizard(Gtk.Box):
         self._verify_white: list = []
 
         self.append(self._heading(
-            "The Setup Wizard: every protection, one pass"))
+            "Security baseline hardening"))
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
         intro.set_wrap(True)
         intro.set_markup(
             f"<span size='13000' font_family='Inter'>"
+            f"{escape('This task hardens the computer itself.')} "
             f"{escape('Six steps: scan, preview, apply, verify.')} "
             f"{escape('One password applies checked changes with a full '
                       'backup.')} "
@@ -264,12 +264,22 @@ class SetupWizard(Gtk.Box):
         self.fill(l, "")
         return l
 
-    def fill(self, label, text):
+    def fill(self, label, text, mark=None):
+        """Set the label's words; an optional (glyph, colour) mark leads.
+
+        The wizard used emoji for state (🟢/🟡/🔴/⚪). They ignore the theme
+        and render differently on every machine, so the mark is now a drawn
+        glyph tinted with the theme's status ink and the words stay ink.
+        """
         size, color = getattr(label, "_tag", (13000, None))
         color = color or ink()          # theme-aware, never a hardcoded gray
+        lead = ""
+        if mark is not None:
+            glyph, ink_colour = mark
+            lead = f"<span foreground='{ink_colour}'>{escape(glyph)}</span> "
         label.set_markup(
             f"<span size='{size}' font_family='Inter' color='{color}'>"
-            f"{escape(text or '')}</span>")
+            f"{lead}{escape(text or '')}</span>")
         return label
 
     def _btn(self, label, handler, sensitive=True):
@@ -366,7 +376,9 @@ class SetupWizard(Gtk.Box):
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         if self._open_chooser is not None:
-            chooser = self._btn("Guided tool setup…",
+            # This task is one entry in the hub; the button goes back to
+            # the list rather than pretending to be the wizard's front door.
+            chooser = self._btn("Set up something else…",
                                 lambda *_b: self._open_chooser())
             chooser.set_halign(Gtk.Align.START)
             actions.append(chooser)
@@ -464,8 +476,8 @@ class SetupWizard(Gtk.Box):
                 if self._scan is not None else []:
             cant = line.endswith(CANT_WORDS)
             words = self._words(size=12000)
-            mark = WHITE_MARK if cant else "✓"
-            self.fill(words, f"{mark} {line}")
+            self.fill(words, line, mark=("○", muted()) if cant
+                      else ("✓", ok()))
             self._inventory_box.append(words)
 
     def _build_preview(self, _step_no):
@@ -509,8 +521,10 @@ class SetupWizard(Gtk.Box):
         self._apply_btn.add_css_class("gw-cta")
         self._apply_btn.set_halign(Gtk.Align.END)
         box.append(self._apply_btn)
+        # "Back" belongs one step back, not two: it used to skip the scan
+        # page entirely and land on the welcome screen.
         box.append(self._step_nav("preview", back=(
-            "Back: scan again", "welcome")))
+            "Back: scan again", "scan")))
         return box
 
     def _on_row_toggled(self, _renderer, path):
@@ -549,8 +563,9 @@ class SetupWizard(Gtk.Box):
         white_lines = [line for line in inventory_lines(self._scan)
                        if line.endswith(CANT_WORDS)]
         self.fill(self._white_strip,
-                  f"{WHITE_MARK} Could not be checked (nothing is "
-                  f"guessed past these): {len(white_lines)} fact(s)")
+                  f"Could not be checked (nothing is guessed past these): "
+                  f"{len(white_lines)} fact(s)",
+                  mark=("○", muted()))
         child = self._risk_box.get_first_child()
         while child is not None:
             next_child = child.get_next_sibling()
@@ -562,7 +577,7 @@ class SetupWizard(Gtk.Box):
                 continue
             if "Break risk medium" in risk or "Break risk high" in risk:
                 warn_lab = self._words(size=12000, color=warn())
-                self.fill(warn_lab, "⚠ " + risk)
+                self.fill(warn_lab, risk, mark=("!", warn()))
                 self._risk_box.append(warn_lab)
         self._update_apply_button()
 
@@ -692,6 +707,12 @@ class SetupWizard(Gtk.Box):
                     "Skipped this pass (the helper cannot make this "
                     "change): " + ", ".join(skipped)
                     + ". These need the owner's own click.")
+        # A pass was applied, so Undo is now meaningful. The button was
+        # created disabled when the journal was still empty; without this
+        # it stayed disabled until an undo had already run.
+        undo = getattr(self, "_undo_btn", None)
+        if undo is not None and self._journal_id is not None:
+            undo.set_sensitive(True)
         self._step("verify")
 
     def _build_verify(self, _step_no):
@@ -742,16 +763,17 @@ class SetupWizard(Gtk.Box):
             child = next_child
         lines = []
         for line in (self._verify_white or []):
-            lines.append(("⚪ " + line))
+            lines.append((("○", muted()), line))
         for control_id, color in (self._verify_colors or {}).items():
-            mark = {"GREEN": "🟢", "AMBER": "🟡", "RED": "🔴"}.get(color,
-                                                                 WHITE_MARK)
-            lines.append(f"{mark} {control_id} {color}")
+            ink_colour = {"GREEN": ok(), "AMBER": warn(),
+                          "RED": fail()}.get(color, muted())
+            lines.append((("●", ink_colour), f"{control_id} {color}"))
         if not lines:
-            lines = [f"{WHITE_MARK} Nothing applied in this session yet."]
-        for line in lines:
+            lines = [(("○", muted()),
+                      "Nothing applied in this session yet.")]
+        for mark, line in lines:
             words = self._words(size=12000)
-            self.fill(words, line)
+            self.fill(words, line, mark=mark)
             self._strip_box.append(words)
 
     def _preview_ready(self):
@@ -777,6 +799,10 @@ class SetupWizard(Gtk.Box):
         enable_row.append(self._enable_btn)
         box.append(enable_row)
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        # Built once, at construction time, when no pass has been applied
+        # yet — so it starts disabled. It must be re-enabled here too, not
+        # only after an undo: previously the button stayed dead after the
+        # very apply that made it useful.
         self._undo_btn = self._btn("Undo last change", self._on_undo,
                                    sensitive=self._journal_id is not None)
         self._undo_btn.add_css_class("gw-cta")
@@ -828,14 +854,15 @@ class SetupWizard(Gtk.Box):
         if getattr(self, "_enable_btn", None) is not None:
             self._enable_btn.set_sensitive(True)
         if rc == 0:
-            text = "🟢 All protections started (app firewall ON)."
+            mark = ("●", ok())
+            text = "All protections started (app firewall ON)."
         else:
-            tried = "🟡 Every unit was attempted."
-            skipped = "Units that do not fit this host are skipped."
-            text = tried + " " + skipped
+            mark = ("●", warn())
+            text = ("Every unit was attempted. Units that do not fit this "
+                    "host are skipped.")
         if appfw_on:
             text += " The app firewall switch is ON."
-        self.fill(self._finish_note, text)
+        self.fill(self._finish_note, text, mark=mark)
         return False
 
     def _close_host(self, *_a):
@@ -879,8 +906,8 @@ class SetupWizard(Gtk.Box):
         threading.Thread(target=worker, daemon=True).start()
 
     def _undo_done(self, result):
-        mark = "🟢" if result["undoed"] else "🔴"
-        self.fill(self._finish_note, mark + " " + result["words"])
+        mark = ("●", ok()) if result["undoed"] else ("●", fail())
+        self.fill(self._finish_note, result["words"], mark=mark)
         self._undo_btn.set_sensitive(True)
         return False
 

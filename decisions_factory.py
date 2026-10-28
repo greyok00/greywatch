@@ -32,25 +32,71 @@ def interaction_for(ev) -> dict | None:
     ip = next(iter(IP_RE.findall(ev.text)), "")
     target = next(iter(FILE_RE.findall(ev.text)), "")
 
-    if tool == "responderd" and "quarantine" in text:
-        return _spec(ev, f"Responderd quarantined a file: {ev.text[:120]}. Keep or restore?", [
-            {"id": "keep", "label": "Keep quarantined", "helper": "keep-quarantine", "args": [target]},
-            {"id": "restore", "label": "Restore file", "helper": "restore-quarantine", "args": [target]},
-        ])
+    # Only the primary "quarantine" line may raise a decision. The follow-up
+    # "alert_local_only: quarantine: ..." line says the same thing and used to
+    # open a second identical dialog for one file (owner report 2026-10-27:
+    # a wall of nameless allow/deny boxes). One file → one prompt.
+    # The id is keyed on the file path, so answering once covers every repeat.
+    if tool == "responderd" and text.startswith("quarantine:"):
+        target = next(iter(FILE_RE.findall(ev.text)), "")
+        name = target.rsplit("/", 1)[-1] if target else "a file"
+        m = re.search(r"\(sha256:[0-9a-f]+\)\s+(\S+)", ev.text)
+        sig = m.group(1) if m else "a malware signature"
+        digest = hashlib.md5((target or ev.text).encode()).hexdigest()[:6]
+        return {"id": f"responderd:{digest}",
+                "eyebrow": "Threat found",
+                "subject": f"“{name}” was quarantined",
+                "detail": f"{sig} · {target or 'location unknown'}",
+                "question": "Keep it locked away, or put it back?",
+                "options": [
+                    {"id": "keep", "label": "Keep quarantined",
+                     "tone": "primary",
+                     "helper": "keep-quarantine", "args": [target]},
+                    {"id": "restore", "label": "Put it back",
+                     "tone": "danger",
+                     "helper": "restore-quarantine", "args": [target]},
+                ]}
 
+    # Ban prompts get the same treatment: name the file or address, quote what
+    # the scanner actually reported, and key the id to the subject so a repeat
+    # detection cannot spawn a second identical box.
     if (tool == "yara-watch" and "quarantine" in text) or \
             (tool == "secops-mcp" and "ban" in text):
-        return _spec(ev, "Scanner wants a ban confirmed:", [
-            {"id": "keep", "label": "Keep ban", "helper": "keep-scan-ban", "args": [target or ip]},
-            {"id": "unban", "label": "Unban", "helper": "unban-ip", "args": [ip]},
-            {"id": "widen", "label": "Widen ban scope", "helper": "widen-scan-ban", "args": [ip]},
-        ])
+        subject = target or ip or ev.text[:60]
+        digest = hashlib.md5(f"{tool}|{subject}".encode()).hexdigest()[:6]
+        who = pathlib.Path(target).name if target else (ip or "an unknown target")
+        return {"id": f"{tool}:{digest}",
+                "eyebrow": tool,
+                "subject": f"Block “{who}”?",
+                "detail": ev.text[:220],
+                "question": "Keep the block, lift it, or widen it?",
+                "options": [
+                    {"id": "keep", "label": "Keep block",
+                     "tone": "primary",
+                     "helper": "keep-scan-ban", "args": [target or ip]},
+                    {"id": "unban", "label": f"Unblock {ip or 'it'}",
+                     "tone": "danger",
+                     "helper": "unban-ip", "args": [ip]},
+                    {"id": "widen", "label": "Widen block",
+                     "tone": "quiet",
+                     "helper": "widen-scan-ban", "args": [ip]},
+                ]}
 
     if tool == "fail2ban" and "near-ignoreip" in text:
-        return _spec(ev, "Fail2ban flagged a near-ignoreip case:", [
-            {"id": "keep", "label": "Keep ban", "helper": "keep-scan-ban", "args": [ip]},
-            {"id": "unban", "label": "Unban IP", "helper": "unban-ip", "args": [ip]},
-        ])
+        digest = hashlib.md5(f"fail2ban|{ip}".encode()).hexdigest()[:6]
+        return {"id": f"fail2ban:{digest}",
+                "eyebrow": "Fail2ban",
+                "subject": f"Ban {ip or 'this address'}?",
+                "detail": ev.text[:220],
+                "question": "Keep the block, or lift it?",
+                "options": [
+                    {"id": "keep", "label": "Keep block",
+                     "tone": "primary",
+                     "helper": "keep-scan-ban", "args": [ip]},
+                    {"id": "unban", "label": f"Unblock {ip or 'it'}",
+                     "tone": "danger",
+                     "helper": "unban-ip", "args": [ip]},
+                ]}
     return None
 
 
@@ -94,9 +140,14 @@ def sanitize(spec: dict) -> dict | None:
             assert o["helper"] in HELPERS
             assert o["helper"] != "none" or o["label"].lower().startswith("investigate")
             assert isinstance(o.get("args", []), list)
-        return {"id": spec["id"], "question": spec["question"],
-                "options": [{"id": o["id"], "label": o["label"],
-                             "helper": o["helper"], "args": o.get("args", [])}
-                            for o in options]}
+        out = {"id": spec["id"], "question": spec["question"],
+               "options": [{"id": o["id"], "label": o["label"],
+                            "tone": o.get("tone", ""),
+                            "helper": o["helper"], "args": o.get("args", [])}
+                           for o in options]}
+        for key in ("eyebrow", "subject", "detail"):
+            if isinstance(spec.get(key), str):
+                out[key] = spec[key]
+        return out
     except (AssertionError, KeyError, TypeError):
         return None

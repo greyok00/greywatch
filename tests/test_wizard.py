@@ -370,7 +370,7 @@ def test_theme_rule_framework_choices_only():
     text = (ROOT / "wizard" / "ui_pages.py").read_text(encoding="utf-8")
     for name in ("coffee", "greyok", "add-on", "addon"):
         assert name not in text.lower()
-    assert sorted(THEME_CHOICES) == ["Dark Mode", "Light Mode"]
+    assert sorted(THEME_CHOICES) == ["Dark", "Light"]
 
 
 
@@ -430,7 +430,6 @@ def test_strip_honesty_states():
     assert refused["white"] and "refused" in refused["white"][0]
     silent = parse_strip("", "")
     assert silent["colors"] == {} and silent["white"]
-    assert ui_pages.WHITE_MARK == "⚪"
 
 
 def test_journal_id_grammar_and_paths(tmp_path):
@@ -743,9 +742,13 @@ def test_setup_wizard_window_hosted_and_destroyed():
         win.set_visible(False)             # hide unmaps without a loop
         pump(4)
         win.destroy()
+    # Bounded pumping only: a may_block=True iteration never returns on a
+    # bare Xvfb display (no window manager, no session events) — it hung the
+    # suite on 2026-10-27. The assertions below need the destroy delivered,
+    # not an idle main loop.
     for _ in range(6):
         pump(4)
-        GLib.main_context_default().iteration(may_block=True)
+        drain(0.01)
     assert win.wizard.stack.get_child_by_name("verify") is not None
 
 def test_finish_enable_all_start_all_one_call(tmp_path, monkeypatch):

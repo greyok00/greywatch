@@ -32,7 +32,10 @@ def build_menu(alerts, on_open, on_quit) -> Gtk.Menu:
     menu.append(summary)
     menu.append(Gtk.SeparatorMenuItem())
     for tool, mark, text in alerts:
-        item = Gtk.MenuItem(label=f"{mark} {tool}: {text[:44]}")
+        # `mark` is a severity word (High/Medium), not an emoji: a GTK menu
+        # label cannot carry the theme's status ink, and emoji render
+        # differently on every machine (design pass 2026-10-27).
+        item = Gtk.MenuItem(label=f"{mark} · {tool}: {text[:44]}")
         item.connect("activate", lambda _m: on_open())
         menu.append(item)
     menu.append(Gtk.SeparatorMenuItem())

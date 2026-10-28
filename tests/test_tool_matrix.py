@@ -120,7 +120,7 @@ def test_s8_config_ruleset_shapes():
     on = acfg.build_ruleset({**acfg.DEFAULTS, "ipv6_enabled": True})
     # ipv6 queue rule present only when enabled, with nfproto disambiguation
     assert "meta nfproto ipv6" not in off
-    assert "meta nfproto ipv6 protocol tcp" in on
+    assert "meta nfproto ipv6 meta l4proto tcp" in on
     for r in ("127.0.0.0/8", "udp dport 53", "tcp dport 53",
               "bypass"):                       # exemptions + fail-open live
         assert r in on and r in off

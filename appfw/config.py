@@ -88,12 +88,15 @@ def build_ruleset(cfg: dict) -> str:
         f"counter {queue_stmt}",
     ]
     if cfg.get("ipv6_enabled"):
-        # In the inet family, a bare "ip6 <match>" rule is ambiguous to the
-        # nft parser when the match is 'protocol' or 'ct' (both are valid
-        # for ip and ip6). "ip6 daddr ::1" works because daddr implies the
-        # family, but "ip6 protocol tcp" is a syntax error on nft 1.1.3.
-        # The fix: prefix with "meta nfproto ipv6" to disambiguate.
+        # In the inet family a bare "protocol" match needs a family keyword:
+        # "ip protocol tcp" is valid, "ip6 protocol tcp" is NOT (ip6 uses
+        # nexthdr). "meta nfproto ipv6 protocol tcp" still fails — nfproto
+        # selects the family but does not give 'protocol' a family context,
+        # and nft rejects it at parse time (owner report 2026-10-27: this
+        # one line kept the whole engine from ever arming — the caret in
+        # the error sat under this token, column 53, width 8). The portable
+        # form is "meta l4proto tcp", which needs no family context.
         lines.append(
             f"add rule inet greywatch_appfw out meta nfproto ipv6 "
-            f"protocol tcp ct state new counter {queue_stmt}")
+            f"meta l4proto tcp ct state new counter {queue_stmt}")
     return "\n".join(lines) + "\n"

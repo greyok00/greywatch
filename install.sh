@@ -157,11 +157,16 @@ check_icon_tree() { # $1 = home dir containing .local/share + Desktop
         [ -f "$data/icons/hicolor/${s}x${s}/apps/greywatch.png" ] \
             || { echo "✗ icon size $s missing under $data/icons/hicolor"; fail=1; }
     done
+    compgen -G "$data/icons/hicolor/scalable/apps/gw-tool-*-symbolic.svg" \
+        >/dev/null \
+        || { echo "✗ per-tool icons missing under $data/icons/hicolor/scalable"; fail=1; }
     grep -q "ui/app.py" "$data/applications/greywatch.desktop" 2>/dev/null \
         || { echo "✗ launcher entry missing in $data/applications"; fail=1; }
     [ -f "$1/Desktop/greywatch.desktop" ] \
         || { echo "✗ desktop shortcut missing in $1/Desktop"; fail=1; }
-    [ "$fail" -eq 0 ] && echo "✓ icons + launcher present"
+    grep -q "ui/app.py" "$1/.config/autostart/greywatch.desktop" 2>/dev/null \
+        || { echo "✗ autostart entry missing in $1/.config/autostart"; fail=1; }
+    [ "$fail" -eq 0 ] && echo "✓ icons + launcher + autostart present"
     return "$fail"
 }
 
@@ -329,7 +334,9 @@ do_uninstall_root() {
     if [ -n "$home" ]; then
         rm -f "$home/.local/share/icons/hicolor/"{16,24,32,48,64,128,256}x*/apps/greywatch.png 2>/dev/null || true
         rm -f "$home/.local/share/applications/greywatch.desktop" \
-              "$home/Desktop/greywatch.desktop" 2>/dev/null || true
+              "$home/Desktop/greywatch.desktop" \
+              "$home/.config/autostart/greywatch.desktop" \
+              "$home/.config/autostart/greywatch-tray.desktop" 2>/dev/null || true
     fi
     echo "system files removed."
     echo "keeps runtime state: $DATA_SYS (root-owned) — delete manually only if you mean it."

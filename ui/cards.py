@@ -1,35 +1,29 @@
 from __future__ import annotations
 
 
-CARD_ICONS = {
-    "responderd": "🛡", "tetragon": "👁", "yara-watch": "🧪",
-    "yara-tmp-scan": "🧪", "clamav": "🦠", "fail2ban": "🚫", "ufw": "🔒",
-    "auditd": "📜", "appfw": "🌐", "arpwatch": "📶",
-    "aide": "🔏", "apparmor": "🚧", "lynis": "📋", "rkhunter": "🔍",
-    "net-watch": "🛰", "cve-updater": "🔄", "freshclam": "⬇",
-    "secops-mcp": "🤝",
-}
+# Tool icons live in ui/toolicons.py and assets/icons/tools/ — one drawn
+# symbolic per protection, no emoji.
 
 SCAN_MODES = [
     {"key": "scan-all", "scope": "root", "helper": "tool-control",
-     "icon": "🗂", "title": "Scan everything",
+     "icon": "system-run-symbolic", "title": "Scan everything",
      "about": "Runs every scanner at once: antivirus, rootkit, audit, integrity, and a temp-folder sweep. One click, one password."},
     {"key": "yara-tmp-scan", "unit": "yara-tmp-scan.service", "scope": "user",
-     "icon": "🧪", "title": "Quick scan",
+     "icon": "gw-tool-yara-tmp-scan-symbolic", "title": "Quick scan",
      "about": "Scans the temporary folder for threats. Takes seconds."},
     {"key": "clamav", "scope": "root", "proc": "clamscan",
-     "icon": "🦠", "title": "Full antivirus scan",
+     "icon": "gw-tool-clamav-symbolic", "title": "Full antivirus scan",
      "about": "Deep scan of the home and temporary folders."},
     {"key": "rkhunter", "unit": "rkhunter-scan.service", "scope": "root",
      "proc": "rkhunter",
-     "icon": "🔍", "title": "Rootkit scan",
+     "icon": "gw-tool-rkhunter-symbolic", "title": "Rootkit scan",
      "about": "Checks system internals for hidden rootkits."},
     {"key": "lynis", "unit": "lynis-audit.service", "scope": "root",
      "proc": "lynis",
-     "icon": "📋", "title": "Security audit",
+     "icon": "gw-tool-lynis-symbolic", "title": "Security audit",
      "about": "Scores security and lists what to improve."},
     {"key": "aide", "unit": "aide-check.service", "scope": "root",
-     "icon": "🔏", "title": "File-integrity check",
+     "icon": "gw-tool-aide-symbolic", "title": "File-integrity check",
      "about": "Detects changes to system files."},
 ]
 

@@ -114,8 +114,11 @@ def test_watchdog_fail_open_on_sustained_stall(tmp_path, monkeypatch):
     stops = []
     monkeypatch.setattr("appfw.engine.time.monotonic", lambda: clock["t"])
     backlog = {"q": 1}
-    monkeypatch.setattr("appfw.engine.fcntl.ioctl",
-                        lambda fd, req, arg=0: backlog["q"])
+    # SIOCOUTQ's third argument is a pointer to an int, so ioctl hands back
+    # a 4-byte buffer (engine 2026-10-27: passing 0 returned EFAULT).
+    monkeypatch.setattr(
+        "appfw.engine.fcntl.ioctl",
+        lambda fd, req, arg=b"\0\0\0\0": backlog["q"].to_bytes(4, "little"))
     eng.stop = lambda: stops.append("stopped")
 
     assert eng._watchdog_step()                  # one spike: arms, no stop

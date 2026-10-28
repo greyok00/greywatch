@@ -18,6 +18,12 @@ for s in 16 24 32 48 64 128 256; do
 done
 rm -f "$ICONS/128x128/actions/greywatch.png"
 
+# Per-tool icons: uniform 24x24 stroke symbols, installed as *-symbolic so
+# GTK tints them with the theme's ink colour instead of shipping emoji.
+TOOLS="$GW/assets/icons/tools"
+mkdir -p "$ICONS/scalable/apps"
+cp "$TOOLS"/gw-tool-*-symbolic.svg "$ICONS/scalable/apps/"
+
 mkdir -p "$APPS"
 cat > "$APPS/greywatch.desktop" <<EOF
 [Desktop Entry]
@@ -40,6 +46,33 @@ chmod +x "$APPS/greywatch.desktop" "$DESKTOP/greywatch.desktop"
 if command -v gio >/dev/null; then
     gio set "$DESKTOP/greywatch.desktop" metadata::trusted true 2>/dev/null || true
 fi
+# Desktop-session autostart. The daemon is a systemd service and starts at
+# boot on its own; the GUI is a per-user app, so without this entry the
+# dashboard only ever appears when someone clicks the icon.
+AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
+mkdir -p "$AUTOSTART"
+cat > "$AUTOSTART/greywatch.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=greywatch
+Comment=Endpoint security dashboard (daemon runs as a system service)
+Exec=python3 $GW/ui/app.py
+Icon=greywatch
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=4
+EOF
+
+# Exactly one autostart entry. An older greywatch-tray.desktop launched the
+# same app from an older path; two entries raced at login (the single-instance
+# lock turns the loser into a no-op, but the duplicate is still noise).
+if [ -f "$AUTOSTART/greywatch-tray.desktop" ] \
+   && grep -q "ui/app.py" "$AUTOSTART/greywatch-tray.desktop"; then
+    rm -f "$AUTOSTART/greywatch-tray.desktop"
+    echo "removed duplicate autostart: $AUTOSTART/greywatch-tray.desktop"
+fi
+
 echo "installed: $ICONS/{16..256}/apps/greywatch.png"
 echo "installed: $APPS/greywatch.desktop (Exec -> $GW/ui/app.py)"
 echo "installed: $DESKTOP/greywatch.desktop (launches the dashboard)"
+echo "installed: $AUTOSTART/greywatch.desktop (starts the dashboard at login)"

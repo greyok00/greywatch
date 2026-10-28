@@ -108,7 +108,7 @@ def local_clock(ts) -> str:
 
 def age_words(ts: str, now=None) -> str:
     if not ts:
-        return "no events recorded"
+        return "—"
     import datetime as _dt
     try:
         when = _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))

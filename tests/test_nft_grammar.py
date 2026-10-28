@@ -6,7 +6,8 @@ surfaces even without root — that is exactly what we assert against.
 Verified on nftables v1.1.3 (2026-10-27):
   - "queue num N bypass"        → SYNTAX ERROR (fixed: "queue flags bypass num N")
   - "ip6 protocol tcp ..."      → SYNTAX ERROR in inet family
-  - "meta nfproto ipv6 protocol tcp ..." → OK
+  - "meta nfproto ipv6 protocol tcp ..." → SYNTAX ERROR (fixed:
+    "meta nfproto ipv6 meta l4proto tcp ...")
 """
 import shutil
 import subprocess

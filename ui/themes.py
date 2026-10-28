@@ -8,9 +8,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 THEMES_CSS = ROOT / "ui" / "themes.css"
 from gwpaths import data_dir as _gw_data
 SETTINGS_PATH = _gw_data() / "greywatch-ui-settings.json"
-DEFAULT_THEME = "console"           # dark, calm (GitHub-dark-like, blue accent)
+DEFAULT_THEME = "obsidian"          # sharp-edge dark, macOS/Windows-11 hybrid
 
-THEME_CHOICES = {"Dark Mode": "console", "Light Mode": "swiss"}   # owner pick 2026-10-25
+THEME_CHOICES = {"Dark": "obsidian", "Light": "swiss"}   # owner pick 2026-10-27
 
 _TOKEN_RE = re.compile(r"--el-([a-z0-9-]+):\s*([^;]+);")
 _THEME_RE = re.compile(r'\[data-theme="([a-z0-9-]+)"\]\s*\{([^}]*)\}', re.S)
@@ -57,6 +57,12 @@ def gtk_css(tokens: dict) -> str:
     mono = tok("--el-font-mono", "monospace")
     display = tok("--el-font-display", "Inter")
     mute = tok("--el-mute", "#8b9bb0")
+    body = tok("--el-font-body", "Inter")
+    # Sharp edges are a theme choice, not a global one: obsidian sets 0px,
+    # every other theme keeps its previous rounded corners.
+    radius = tok("--el-radius", "6px")
+    focus = tok("--el-focus-ring", "rgba(10,132,255,.6)")
+    onaccent = tok("--el-on-accent", bg)
 
     def _lum(hexc):
         h = hexc.lstrip("#")
@@ -101,11 +107,11 @@ def gtk_css(tokens: dict) -> str:
 
     return f"""
 /* READABILITY (owner: it's cramped/hurts to look at): bigger type + air */
-* {{ font-size: 16px; }}
-row, treeview row {{ min-height: 42px; padding: 6px 10px; }}
-button {{ padding: 10px 18px; font-size: 15px; }}
-entry, searchentry {{ padding: 9px 12px; font-size: 15px; }}
-notebook tab {{ padding: 12px 26px; font-size: 15px; }}
+* {{ font-size: 15px; letter-spacing: 0.1px; }}
+row, treeview row {{ min-height: 40px; padding: 6px 10px; }}
+button {{ padding: 9px 16px; font-size: 14px; letter-spacing: 0.2px; }}
+entry, searchentry {{ padding: 8px 12px; font-size: 14px; }}
+notebook tab {{ padding: 11px 24px; font-size: 14px; }}
 label {{ padding: 3px 0; }}
 .gw-card {{ padding: 12px; }}
 
@@ -128,7 +134,7 @@ treeview header {{ background-color: {panel}; color: {ink_soft}; }}
 .scrolledwindow {{ background-color: {panel}; }}
 textview view, textview {{ background-color: {panel}; color: {ink}; }}
 box, stack, notebook {{ background-color: {bg}; }}
-tooltip {{ background-color: {panel2}; color: {ink}; border-radius: 4px; }}
+tooltip {{ background-color: {panel2}; color: {ink}; border-radius: {radius}; }}
 popover, popover list {{ background-color: {panel}; color: {ink}; }}
 menubar {{ background-color: {bg}; color: {ink}; }}
 spinbutton {{ background-color: {panel2}; color: {ink}; }}
@@ -137,7 +143,7 @@ linkbutton {{ color: {accent}; }}
 .gw-rail {{ background-color: {bg}; border-right: 1px solid {line}; }}
 .gw-rail-label {{ color: {ink}; }}
 .gw-card {{ background-color: {panel}; color: {ink};
-  border: 1px solid {line}; border-radius: 10px; }}
+  border: 1px solid {line}; border-radius: {radius}; }}
 .gw-card > box {{ background-color: {panel}; }}
 /* The blanket `box` rule paints EVERY nested box with the page colors, so
    a box nested INSIDE a card rendered as a near-black band in the Tools
@@ -147,43 +153,53 @@ linkbutton {{ color: {accent}; }}
 frame.gw-card {{ background-color: {panel}; }}
 .gw-cta {{
   background-color: {accent}; color: {bg}; font-weight: 600;
-  border: none; border-radius: 7px; font-family: {display};
+  border: none; border-radius: {radius}; font-family: {display};
 }}
 treeview .gw-panel {{ background-color: {panel}; }}
 .gw-rail {{ background-color: {bg}; border-right: 1px solid {line}; }}
 .gw-rail-label {{ color: {ink}; }}
 .gw-card {{ background-color: {panel}; color: {ink};
-  border: 1px solid {line}; border-radius: 10px; }}
+  border: 1px solid {line}; border-radius: {radius}; }}
 .gw-card > box {{ background-color: {panel}; }}
 /* The blanket `box` rule paints EVERY nested box with the page colors, so
    a box nested INSIDE a card rendered as a near-black band in the Tools
    view (owner 2026-10-25). Inside a card, every descendant box shares
    the card's panel: */
 .gw-card box {{ background-color: {panel}; }}
+/* ...but a box INSIDE a button is the button's own content, not a band:
+   without this the wider `.gw-card box` selector out-specifies the plain
+   `button box {{ transparent }}` rule, so an icon+label button in a card
+   drew a dark pill over its accent fill AND the symbolic icon inherited
+   the button's on-accent ink against that dark pill — the icon vanished
+   (scan strip, 2026-10-27). */
+.gw-card button box {{ background-color: transparent; }}
 frame.gw-card {{ background-color: {panel}; }}
 .gw-cta {{
   background-color: {accent}; color: {bg}; font-weight: 600;
-  border: none; border-radius: 7px; font-family: {display};
+  border: none; border-radius: {radius}; font-family: {display};
 }}
+button.gw-cta image {{ color: {onaccent}; }}
 /* ONE raised tone (owner 2026-10-25: buttons, the active rail tile and the
    boxed treeview headers read as DIFFERENT shades near each other; they are
    now ONE chrome tone: panel2 fill + line border everywhere). */
 .gw-rail button {{ background-color: transparent; border: none;
                    outline: none; }}
 .gw-rail button:hover {{ background-color: {accent_soft}; }}
+.gw-rail image {{ color: {ink}; }}
+.gw-rail .gw-active image {{ color: {accent}; }}
 .gw-rail button.gw-active {{ background-color: {panel2};
-  border: 1px solid {line}; border-radius: 10px; }}
+  border: 1px solid {line}; border-radius: {radius}; }}
 .gw-rail button.gw-active:hover {{ background-color: {accent_soft}; }}
 .gw-rail .gw-active label {{ color: {accent}; }}
 treeview header button {{ background-color: {panel2}; color: {ink_soft};
-  border: 1px solid {line}; border-radius: 6px; }}
+  border: 1px solid {line}; border-radius: {radius}; }}
 treeview {{ color: {ink}; }}
 treeview:selected {{ background: {accent}; }}
 sidebar list {{ background-color: {bg}; }}
 label.dim {{ color: {ink_soft}; }}
 entry, searchentry {{
   background-color: {panel2}; color: {ink};
-  border: 1px solid {line}; border-radius: 4px; padding: 4px 8px;
+  border: 1px solid {line}; border-radius: {radius}; padding: 4px 8px;
 }}
 combobox stack, combobox entry {{ background-color: {panel2}; color: {ink}; }}
 menu {{ background-color: {panel}; color: {ink}; }}
@@ -206,9 +222,15 @@ notebook header {{ background-color: {bg}; }}
 notebook tab {{ background-color: {panel2}; color: {ink_soft}; padding: 5px 12px; }}
 notebook tab:checked {{ background-color: {panel}; color: {ink};
   border-bottom: 2px solid {accent}; }}
+/* Adwaita paints a button's background as a background-IMAGE gradient, which
+   covers a plain background-color from a lower-priority rule. Kill the image
+   so our flat tones (panel2 fill, accent fill for primary) actually show
+   (owner screenshot 2026-10-28: "Allow once" had an accent border but the
+   dark default fill). */
 button {{
+  background-image: none;
   background-color: {panel2}; color: {ink};
-  border: 1px solid {line}; border-radius: 6px; padding: 5px 12px;
+  border: 1px solid {line}; border-radius: {radius}; padding: 5px 12px;
 }}
 /* the child Box of a button (rail tile icon+label, treeview column header)
    used to paint bg over the button's own fill — the two-shade ring that
@@ -220,6 +242,98 @@ button:hover {{ background-color: {accent_soft}; }}
 .gw-fail {{ color: {fail}; }}
 .gw-line {{ background-color: {line}; }}
 .gw-header {{ background-color: {panel2}; }}
+
+/* ---- 2026-10-27 design pass: macOS type/space, Windows 11 structure ---- */
+* {{ font-family: {body}; }}
+window, dialog {{ font-family: {body}; }}
+.gw-titlebar {{
+  background-color: {bg}; border-bottom: 1px solid {line};
+  padding: 14px 22px; min-height: 46px;
+}}
+.gw-titlebar label {{ padding: 0; }}
+.gw-title {{
+  font-family: {display}; font-size: 16px; font-weight: 600;
+  letter-spacing: -0.1px; color: {ink};
+}}
+.gw-subtitle {{ font-size: 12px; letter-spacing: 0.3px; color: {mute}; }}
+.gw-pill {{
+  background-color: transparent; border: 1px solid {line};
+  border-radius: {radius}; padding: 3px 11px; font-size: 12px;
+  letter-spacing: 0.3px; color: {ink_soft};
+}}
+.gw-pill.ok {{ color: {ok}; border-color: {ok}; }}
+.gw-pill.warn {{ color: {warn}; border-color: {warn}; }}
+.gw-pill.fail {{ color: {fail}; border-color: {fail}; }}
+.gw-eyebrow {{
+  font-size: 11px; font-weight: 600; letter-spacing: 1.6px;
+  text-transform: uppercase; color: {mute};
+}}
+.gw-headline {{
+  font-family: {display}; font-size: 19px; font-weight: 600;
+  letter-spacing: -0.15px; color: {ink};
+}}
+.gw-meta {{ font-size: 13px; color: {ink_soft}; font-family: {mono};
+  font-feature-settings: "tnum" 1; }}
+/* Decision popup (OpenSnitch grammar): one subject, two buttons. */
+.gw-popup {{ background-color: {panel}; border: 1px solid {line2}; }}
+.gw-popup-header {{
+  background-color: {panel2}; border-bottom: 1px solid {line};
+  padding: 18px 22px;
+}}
+.gw-popup-body {{ padding: 16px 22px; }}
+.gw-popup-actions {{
+  padding: 14px 22px; border-top: 1px solid {line};
+  background-color: {bg};
+}}
+/* "Who is this?" card inside a decision popup (2026-10-28): the owner
+   could not tell who was on the other end of an address like
+   57.144.134.145:443, so every prompt now names the program and the
+   network in plain words before the buttons. */
+.gw-idcard {{
+  background-color: {panel2}; border: 1px solid {line};
+  border-radius: 10px; padding: 16px 18px;
+}}
+.gw-idname {{ font-size: 16px; font-weight: 650; color: {ink}; }}
+.gw-idline {{ font-size: 13px; color: {ink_soft}; }}
+.gw-idkey  {{ font-size: 12px; color: {mute}; }}
+.gw-idval  {{ font-size: 12px; color: {ink_soft}; font-family: {mono};
+  font-feature-settings: "tnum" 1; }}
+.gw-idwarn {{ font-size: 12px; color: {warn}; }}
+.gw-idicon {{ color: {accent}; }}
+/* Country tile: drawn text, not a flag emoji (which ignores the theme)
+   and not a downloaded flag set (this machine has none). */
+.gw-idflag {{
+  background-color: {accent_soft}; border: 1px solid {line2};
+  border-radius: 8px; color: {ink}; font-family: {mono};
+  font-size: 17px; font-weight: 700; letter-spacing: 1px;
+}}
+.gw-popup-actions button {{ min-height: 38px; font-size: 14px; }}
+button.gw-primary {{
+  background-image: none; background-color: {accent}; color: {onaccent};
+  border: 1px solid {accent}; font-weight: 650;
+}}
+/* GTK paints button text through a child label, which our global
+   `label {{ color: ink }}` rule would otherwise win — set it explicitly. */
+button.gw-primary label {{ color: {onaccent}; }}
+button.gw-primary:hover {{ background-color: {accent}; color: {onaccent}; opacity: .9; }}
+button.gw-danger {{
+  background-image: none; background-color: transparent; color: {fail};
+  border: 1px solid {fail}; font-weight: 600;
+}}
+button.gw-danger label {{ color: {fail}; }}
+button.gw-danger:hover {{ background-color: rgba(196,123,107,.14); }}
+button.gw-quiet {{ background-image: none;
+  background-color: transparent; border: 1px solid {line}; }}
+button.gw-quiet label {{ color: {ink}; }}
+/* The learning-mode escape hatch is a footnote to the answers, not a
+   second footer: no own band, smaller type, and it sits inside the same
+   footer background as the buttons above it (owner screenshot
+   2026-10-28). */
+.gw-popup-learn {{ padding: 0 22px 14px; background-color: {bg};
+  border-top: none; }}
+button.gw-learn {{ padding: 6px 14px; font-size: 13px; }}
+button:focus {{ outline: 2px solid {focus}; outline-offset: 1px; }}
+scrollbar slider {{ background-color: {line2}; border-radius: 0; min-width: 8px; }}
 """.replace("{css_bg(bg)}", "")
 
 

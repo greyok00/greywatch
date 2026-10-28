@@ -7,6 +7,19 @@ ACTIONS = ("allow", "deny", "reject")
 
 LOCAL_SERVICE_PORTS = frozenset({8888, 8899})
 
+# Port 43 is the WHOIS lookup protocol (RFC 3912): a one-line query to a
+# public registry, nothing else speaks it. The dashboard's "who is this?"
+# card depends on it, and a whois query lives for a fraction of a second —
+# far shorter than process attribution takes — so asking the operator about
+# every lookup produced an unanswerable "<unknown> wants access" box that
+# auto-denied under the headless rule and made the identity card useless
+# (owner install 2026-10-28).
+REGISTRY_LOOKUP_PORT = 43
+
+
+def is_registry_lookup(conn) -> bool:
+    return int(conn.dst_port or 0) == REGISTRY_LOOKUP_PORT
+
 
 @dataclass
 class Conn:

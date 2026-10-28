@@ -155,7 +155,8 @@ def atomic_replace(path: str, data: str, gid: int | None = None) -> None:
         raise
 
 
-def append_checked(path: str, text: str, create_mode: int = 0o600) -> None:
+def append_checked(path: str, text: str, create_mode: int = 0o600,
+                   gid: int | None = None) -> None:
     """Append to a root-owned event/log file in the shared state dir.
 
     GW-01: the desktop group can plant a SYMLINK named events.jsonl (or
@@ -178,6 +179,16 @@ def append_checked(path: str, text: str, create_mode: int = 0o600) -> None:
         raise OSError(errno.EPERM,
                       f"refusing append to {path}: not a private "
                       f"root-owned regular file")
+    if gid is not None:
+        # Same contract as status.json: root owns it, the desktop user's
+        # group may READ it (0640), nobody may write it. Without this the
+        # GUI — which runs as the desktop user — cannot read events.jsonl
+        # and every security prompt silently disappears (2026-10-27).
+        try:
+            os.fchown(fd, -1, gid)
+            os.fchmod(fd, 0o640)
+        except OSError:
+            pass
     with os.fdopen(fd, "a") as f:
         f.write(text)
 

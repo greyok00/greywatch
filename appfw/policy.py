@@ -6,7 +6,7 @@ import pathlib
 import threading
 import time
 
-from .base import is_local_service
+from .base import is_local_service, is_registry_lookup
 
 MAX_LEDGER_BYTES = 200_000
 KEEP_LEDGER_LINES = 1200
@@ -143,6 +143,8 @@ def decide(conn, policy: Policy, store=None, ask=None) -> tuple:
             return ("allow", "always", "auto-allowed (trusted program)", None)
         if is_local_service(conn):
             return ("allow", "once", "permitted local service", None)
+        if is_registry_lookup(conn):
+            return ("allow", "once", "permitted registry lookup", None)
         if policy.blocklisted(host):
             return ("deny", "once",
                     f"blocked by the downloaded list: {host}", None)
@@ -163,29 +165,57 @@ def decide(conn, policy: Policy, store=None, ask=None) -> tuple:
         except Exception:
             pass
         if ask is not None:
+            opts = [
+                {"id": "deny-once", "label": "Block once",
+                 "tone": "danger",
+                 "helper": "none", "args": ["deny", "once"]},
+                {"id": "allow-once", "label": "Allow once",
+                 "tone": "primary",
+                 "helper": "none", "args": ["allow", "once"]},
+            ]
+            if conn.process_path:
+                # A persistent answer needs a subject that keeps existing.
+                # "Always allow" was the only such button, so a program the
+                # operator wanted gone asked again and again (owner report
+                # 2026-10-28: "I can ALWAYS ALLOW. BUT I CANT ALWAYS
+                # BLOCK!!!").
+                opts.append({"id": "allow-always",
+                             "label": "Always allow this program",
+                             "tone": "quiet",
+                             "helper": "none", "args": ["allow", "always"]})
+                opts.append({"id": "block-always",
+                             "label": "Always block this program",
+                             "tone": "danger",
+                             "helper": "none", "args": ["deny", "always"]})
+            opts.append({"id": "trust-site",
+                         "label": "Always allow this site",
+                         "tone": "quiet",
+                         "helper": "none",
+                         "args": ["allow", "always", "trust"]})
+            opts.append({"id": "block-site",
+                         "label": "Always block this site",
+                         "tone": "quiet",
+                         "helper": "none",
+                         "args": ["deny", "always", "trust-block"]})
             spec = {
                 "id": (f"appfw:{conn.app_name}:{int(conn.pid or 0)}:"
                        f"{int(conn.src_port or 0)}"),
-                "question": (f"App firewall: {conn.process_path or '<unknown>'}"
-                             f"\ndst {host}:{conn.dst_port}"
-                             f" ({conn.protocol}) by {conn.pid}"),
+                "eyebrow": "App firewall",
+                "subject": f"{conn.app_name or 'An app'} wants internet "
+                           f"access",
+                "detail": (f"{conn.process_path or '<unknown path>'}\n"
+                           f"→ {host}:{conn.dst_port} ({conn.protocol}) · "
+                           f"pid {conn.pid}"),
+                "question": "",
                 "host": str(host or ""),
-                "options": [
-                    {"id": "allow-once", "label": "Allow once",
-                     "helper": "none", "args": ["allow", "once"]},
-                    {"id": "deny-once", "label": "Deny once",
-                     "helper": "none", "args": ["deny", "once"]},
-                    {"id": "allow-always", "label": "Allow forever",
-                     "helper": "none", "args": ["allow", "always"]},
-                    {"id": "trust-site",
-                     "label": "TRUST this site always (auto-allow)",
-                     "helper": "none",
-                     "args": ["allow", "always", "trust"]},
-                    {"id": "block-site",
-                     "label": "BLOCK this site always (auto-deny)",
-                     "helper": "none",
-                     "args": ["deny", "always", "trust-block"]},
-                ],
+                # Structured facts so the dashboard can draw the identity
+                # card without re-parsing the detail line.
+                "app_name": str(conn.app_name or ""),
+                "path": str(conn.process_path or ""),
+                "port": int(conn.dst_port or 0),
+                "proto": str(conn.protocol or ""),
+                "pid": int(conn.pid or 0),
+                "options": opts,
             }
             ans = ask(spec)
             action = ans[0] if ans else "allow"

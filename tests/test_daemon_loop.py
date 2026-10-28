@@ -264,3 +264,40 @@ def test_heartbeat_cannot_flood_the_activity_feeds():
                  "check-in: NOT RUNNING — needs attention"}
     assert not feed_worthy(high_ping)
     assert recent_rows([high_ping], 6) == []
+
+
+def test_quarantine_prompt_names_the_file_and_suppresses_the_alert_copy():
+    """Owner report 2026-10-27: prompts appeared as bare allow/deny buttons.
+    The question must name the file, and the responder's alert copy of the
+    same quarantine must not open a second prompt."""
+    main = Event(from_tool="responderd", severity="HIGH",
+                 text="quarantine: /home/grey/Downloads/evil.txt (sha256:abc123) "
+                      "clamav:Eicar-Test-Signature [real: matched] — moved to "
+                      "quarantine, restorable", ts="2026-10-27T10:00:00+00:00")
+    spec = interaction_for(main)
+    # 2026-10-27 design pass: the subject line carries the name, the detail
+    # line carries the signature and path; the question is now one short line.
+    assert "evil.txt" in spec["subject"]
+    assert "Eicar-Test-Signature" in spec["detail"]
+    assert [o["label"] for o in spec["options"]] == [
+        "Keep quarantined", "Put it back"]
+
+    repeat = Event(from_tool="responderd", severity="HIGH",
+                   text=main.text, ts="2026-10-27T10:05:00+00:00")
+    assert interaction_for(repeat)["id"] == spec["id"]     # answer once, per file
+
+    alert = Event(from_tool="responderd", severity="HIGH",
+                  text="alert_local_only: " + main.text,
+                  ts="2026-10-27T10:00:02+00:00")
+    assert interaction_for(alert) is None
+
+
+def test_ban_prompt_names_the_address_and_is_stable():
+    a = Event(from_tool="secops-mcp", severity="HIGH",
+              text="ban requested for 203.0.113.5 after 3 rebans",
+              ts="2026-10-27T10:00:00+00:00")
+    spec = interaction_for(a)
+    assert "203.0.113.5" in spec["subject"]
+    b = Event(from_tool="secops-mcp", severity="HIGH", text=a.text,
+              ts="2026-10-27T11:00:00+00:00")
+    assert interaction_for(b)["id"] == spec["id"]

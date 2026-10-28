@@ -48,7 +48,7 @@ def validate(name, action, duration, op_kind, op_value) -> Rule:
     if op_kind == "dst.host" and not re.match(HOST_RE, op_value):
         raise ValidationError(f"host invalid: {op_value!r}")
     if op_kind == "dst.ip" and "*" not in op_value \
-            and not re.match(IP_RE, op_value):
+            and not re.match(IP_RE, op_value) and ":" not in op_value:
         raise ValidationError(f"ip invalid: {op_value!r}")
     if op_kind == "dst.port":
         if not op_value.isdigit() or not 1 <= int(op_value) <= 65535:
@@ -70,7 +70,11 @@ def matches(rule: Rule, conn) -> bool:
     if rule.op_kind == "process.path":
         val = str(conn.process_path or "")
     elif rule.op_kind == "dst.host":
-        val = str(conn.dst_host or "")
+        # conn.dst_host is only filled when something resolved a name; the
+        # engine works in addresses, so a host/address rule has to compare
+        # against conn.host or every site rule silently never matches
+        # ("Block this site" did nothing, 2026-10-28).
+        val = str(conn.host or "")
     elif rule.op_kind == "dst.ip":
         val = str(conn.dst_ip or "")
     elif rule.op_kind == "dst.port":
@@ -84,15 +88,27 @@ def matches(rule: Rule, conn) -> bool:
     return val.lower() == v.lower()
 
 
+def _address_like(value: str) -> bool:
+    value = str(value or "")
+    return bool(value) and ("*" in value or ":" in value
+                            or re.match(IP_RE, value))
+
+
 def rule_from_decision(conn, action: str, duration: str,
                        host: str | None = None) -> Rule:
     if host:
-        return validate(f"appfw-site-{host}", action, duration,
-                        "dst.host", host)
-    return validate(f"appfw-app-"
-                    f"{pathlib.Path(str(conn.process_path or 'unknown')).name}",
-                    action, duration, "process.path",
-                    str(conn.process_path or ""))
+        # The engine works in addresses; a site rule is an address rule
+        # unless something really resolved a name.
+        kind = "dst.ip" if _address_like(host) else "dst.host"
+        return validate(f"appfw-site-{host}", action, duration, kind, host)
+    path = str(conn.process_path or "")
+    if not path:
+        # An empty path would be a catch-all "rule" that validates to
+        # nothing and matches no connection — refuse it instead of
+        # writing a phantom.
+        raise ValidationError("no process path and no host to remember")
+    return validate(f"appfw-app-{pathlib.Path(path).name}",
+                    action, duration, "process.path", path)
 
 
 def _to_dict(rule: Rule) -> dict:

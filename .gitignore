@@ -11,6 +11,8 @@ doc/HARDENING_PLAN.md
 doc/README-ART-PROMPT.md
 doc/shots/
 Security-crop.png
+doc/SELFHEAL-AND-UX-REPORT.md
+docs/superpowers/
 
 # scratch + build artifacts
 tmp/
