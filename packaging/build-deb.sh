@@ -31,7 +31,8 @@ mkdir -p "$PAYLOAD"
 # --- belong on an installed machine (tests, shot library, caches)
 tar -C "$GW" -cf - \
     --exclude='./.git' --exclude='./.github' --exclude='./tests' \
-    --exclude='./doc/shots' --exclude='./packaging' \
+    --exclude='./doc/shots' --exclude='./docs' --exclude='./packaging' \
+    --exclude='./tools' --exclude='./gates' \
     --exclude='./*.md' --exclude='./runbooks' --exclude='./tmp*' \
     --exclude='./data' --exclude='./build' --exclude='./*__pycache__*' \
     --exclude='./dist' --exclude='./.venv' --exclude='./venv' \

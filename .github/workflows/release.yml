@@ -52,9 +52,8 @@ jobs:
         run: |
           source .venv/bin/activate
           ./packaging/build-wheel.sh dist
-          WHEEL="$(ls dist/greywatch-*.whl | head -1)"
-          sha256sum "$WHEEL" > "${WHEEL}.sha256"
-          echo "WHEEL=$(basename "$WHEEL")" >> "$GITHUB_ENV"
+          WHEEL="$(basename "$(ls dist/greywatch-*.whl | head -1)")"
+          echo "WHEEL=$WHEEL" >> "$GITHUB_ENV"
 
       - name: Bundle program tree + compiled .so, add checksum
         run: |

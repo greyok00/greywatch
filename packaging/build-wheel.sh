@@ -51,6 +51,8 @@ EOF
 tar -C "$GW" -cf - \
     --exclude='./.git' --exclude='./.github' --exclude='./tests' \
     --exclude='./doc/shots' --exclude='./*.md' --exclude='./runbooks' \
+    --exclude='./docs' --exclude='./packaging' --exclude='./tools' \
+    --exclude='./gates' \
     --exclude='./tmp*' --exclude='./data' --exclude='./build' \
     --exclude='./*__pycache__*' --exclude='./dist' \
     --exclude='./.venv' --exclude='./venv' --exclude='./*.so' \
@@ -60,8 +62,10 @@ tar -C "$GW" -cf - \
     . | tar -C "$TREE" -xf -
 
 # the wheel is pure Python, so this is where a pip install gets its code:
-# strip comments and docstrings the same way the compiled package does
-python3 "$GW/packaging/strip-source.py" "$TREE"
+# strip comments and docstrings the same way the compiled package does.
+# The two files written above are part of the package too, so the whole
+# package is stripped, not just the tree.
+python3 "$GW/packaging/strip-source.py" "$PKG"
 
 # build metadata: the stage's own README and LICENSE, generated pyproject
 cp "$GW/README.md" "$STAGE/README.md"
@@ -95,4 +99,6 @@ greywatch = ["_tree/**/*"]
 EOF
 
 python3 -m build --wheel "$STAGE" --outdir "$OUT"
-echo "built: $(ls "$OUT"/greywatch-*.whl | head -1)"
+WHEEL="$(cd "$OUT" && ls greywatch-*.whl | head -1)"
+( cd "$OUT" && sha256sum "$WHEEL" > "$WHEEL.sha256" )
+echo "built: $OUT/$WHEEL"
