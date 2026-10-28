@@ -1,7 +1,7 @@
 import json
 
 from events import Event, normalize_event
-from registry import REGISTRY_PATH, load_registry, tool_names
+from registry import load_registry, tool_names
 
 REGISTRY = load_registry()
 

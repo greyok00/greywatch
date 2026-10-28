@@ -5,7 +5,6 @@ network calls are stubbed. The GUI test is display-guarded like the rest
 of the smoke suite.
 """
 
-import os
 import sys
 import pathlib
 

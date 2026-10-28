@@ -9,7 +9,7 @@ import os
 import stat as stat_mod
 
 import greywatch_daemon as gd
-from greywatch_daemon import Daemon, read_events
+from greywatch_daemon import Daemon
 from status import load_status, write_status
 
 

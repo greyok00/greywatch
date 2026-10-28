@@ -1,6 +1,5 @@
 import types
 
-import pytest
 
 import selfheal
 import triage

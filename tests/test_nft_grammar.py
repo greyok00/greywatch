@@ -62,8 +62,8 @@ def test_full_ruleset_fail_closed_parses_on_host_nft():
 def test_ipv6_queue_rule_is_nfproto_disambiguated():
     """The exact regression: bare 'ip6 protocol tcp' in inet family."""
     script = acfg.build_ruleset({**acfg.DEFAULTS, "ipv6_enabled": True})
-    ipv6_lines = [l for l in script.splitlines() if "queue" in l and "ip6" in l or "nfproto ipv6" in l]
-    queue_ipv6 = [l for l in script.splitlines() if "queue" in l and ("ip6" in l or "nfproto ipv6" in l)]
+    queue_ipv6 = [l for l in script.splitlines()
+                  if "queue" in l and ("ip6" in l or "nfproto ipv6" in l)]
     assert queue_ipv6, script
     for line in queue_ipv6:
         assert "meta nfproto ipv6" in line, (

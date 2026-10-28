@@ -743,7 +743,6 @@ class RuleWizard(Gtk.Assistant):
                 from wiz.yara_wizard import compile_gate
                 ok, err = compile_gate(src)
                 if not ok:
-                    from ui.plain import escape
                     self._done_body.set_markup(
                         f"<span size='14000'>The scanner rejected it: "
                         f"{escape(err)}. Nothing installed.</span>")

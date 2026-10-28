@@ -14,8 +14,7 @@ from registry import load_registry
 from ui.models import (status_words, recent_rows, age_words, local_clock)
 from ui.plain import (sentence as plain_sentence, friendly_name, what_is,
                       escape, without_mark, soft as pc_soft,
-                      muted as pc_muted, ok as pc_ok, fail as pc_fail,
-                      state_colour as pc_state_colour,
+                      muted as pc_muted, ok as pc_ok, state_colour as pc_state_colour,
                       severity_colour as pc_severity_colour,
                       severity_word as pc_severity_word)
 from ui.themes import (ThemeStore, dark_default, load_setting,
@@ -610,9 +609,9 @@ class MainWindow(Gtk.Window):
                 # five scanners start at once; each finishes independently
                 self.circle.stop()
                 self.scan_status.set_markup(
-                    f"<span size='13000' font_family='Inter'>"
-                    f"All scanners launched. Each card updates as its "
-                    f"scan finishes.</span>")
+                    "<span size='13000' font_family='Inter'>"
+                    "All scanners launched. Each card updates as its "
+                    "scan finishes.</span>")
                 return False
             self.scan_status.set_markup(
                 f"<span size='13000' font_family='Inter'>"

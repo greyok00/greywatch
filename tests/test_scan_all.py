@@ -5,7 +5,6 @@ single root helper invocation), NOT through per-scanner pkexec calls —
 that was the root cause of the ten back-to-back password prompts. These
 tests pin the wiring: the SCAN_MODES entry, the UI runner routing, the
 shell helper's scan-all branch, and the polkit allowlist action."""
-import json
 import pathlib
 import subprocess
 

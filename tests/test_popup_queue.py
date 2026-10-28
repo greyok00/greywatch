@@ -86,7 +86,6 @@ def test_appfw_ask_uses_the_same_single_slot(monkeypatch):
     b = Broker()
     b.ask_timeout = 0.1
     b.pump([_ev(0)])                 # a protection popup is already up
-    calls = []
 
     def fake_idle(fn, *a):
         fn(*a)
