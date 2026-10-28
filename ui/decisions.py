@@ -7,8 +7,15 @@ import time
 
 import gi
 gi.require_version("Gtk", "4.0")
-gi.require_version("Notify", "0.7")
-from gi.repository import Gtk, GLib, Notify as _NotifyModule  # noqa: E402
+from gi.repository import Gtk, GLib  # noqa: E402
+
+# Desktop notifications are optional: a machine without libnotify (and the
+# CI runner) must still be able to import and test this module.
+try:
+    gi.require_version("Notify", "0.7")
+    from gi.repository import Notify as _NotifyModule  # noqa: E402
+except (ValueError, ImportError):        # typelib not installed
+    _NotifyModule = None
 
 import greywatch_daemon as dm
 from decisions_factory import pending_ids, record_answer
@@ -514,7 +521,7 @@ class DecisionBroker:
                        if not str((q.get("spec") or {}).get("id", ""))
                        .startswith("appfw:")]
         try:
-            if not DecisionBroker._notify_ready:
+            if not DecisionBroker._notify_ready and _NotifyModule is not None:
                 DecisionBroker._notify_ready = bool(
                     _NotifyModule.init("greywatch"))
             if DecisionBroker._notify_ready:
