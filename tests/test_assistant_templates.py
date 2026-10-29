@@ -41,3 +41,20 @@ def test_tool_status_wording_uses_pack_paused():
     text = answer_tool_status(pack, "fail2ban")
     assert "paused" in text.lower()
     assert "current layer state: red" in text.lower()
+
+def test_event_no_canned_reassurance_for_high():
+    ev = [{"from_tool": "yara-watch", "severity": "HIGH",
+           "text": "YARA matched Eicar-Sig in /tmp/e",
+           "ts": "2026-10-29T10:00:00+00:00"}]
+    text = answer_event({"recent": ev})
+    assert "usually normal" not in text
+    assert text.endswith(".")
+
+
+def test_event_reassurance_kept_for_medium_and_clean_punctuation():
+    ev = [{"from_tool": "apparmor", "severity": "MEDIUM",
+           "text": "AppArmor DENIED profile=lynis comm=lynis",
+           "ts": "2026-10-29T10:00:00+00:00"}]
+    text = answer_event({"recent": ev})
+    assert "usually normal" in text
+    assert ".;" not in text

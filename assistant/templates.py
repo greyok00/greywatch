@@ -30,12 +30,16 @@ def answer_event(pack: dict) -> str:
     if not pack["recent"]:
         return "No events have been recorded yet."
     e = pack["recent"][0]
-    name, desc = _plain_bits(e["tool"])
-    body = (f"The newest event came from {name} ({e['tool']}) at "
+    tool = e.get("tool") or e.get("from_tool", "")
+    name, desc = _plain_bits(tool)
+    body = (f"The newest event came from {name} ({tool}) at "
             f"{e['ts']}, severity {e['severity']}: {e['text']}.")
     if desc:
-        body += f" {name} is the layer that {desc[0].lower() + desc[1:]}".rstrip(
-            ) + "; one denial is usually normal policy working."
+        clause = (desc[0].lower() + desc[1:]).rstrip(".")
+        body += f" {name} is the layer that {clause}"
+        if str(e.get("severity", "")).upper() in ("INFO", "MEDIUM"):
+            body += "; one denial is usually normal policy working."
+        body += "."
     return body
 
 

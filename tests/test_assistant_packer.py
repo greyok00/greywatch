@@ -3,6 +3,7 @@ import pathlib, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import assistant.packer as packer
 from assistant.packer import bm25_top, build_pack, load_index
+from assistant.templates import answer_tool_status
 
 CHUNKS = [
     {"id": "a", "source": "s", "title": "A", "text": "apparmor denies reads for the lynis profile"},
@@ -90,3 +91,27 @@ def test_build_pack_passes_through_installed_and_paused():
 
 def build_pack_for_tests():
     return build_pack(STATUS, EVENTS, "overview")
+
+def test_build_pack_recent_takes_newest_feed_worthy():
+    tail = [{"from_tool": "yara-watch", "severity": "HIGH",
+             "text": "YARA matched Eicar-Sig in /tmp/e",
+             "ts": "2026-10-29T10:00:00+00:00"}]
+    for i in range(1, 9):
+        tail.append({"from_tool": "auditd", "severity": "INFO",
+                     "text": "check-in: alive, running normally",
+                     "ts": f"2026-10-29T10:{i:02d}:00+00:00"})
+    tail.append({"from_tool": "fail2ban", "severity": "MEDIUM",
+                 "text": "fail2ban banned 192.0.2.9 (sshd)",
+                 "ts": "2026-10-29T10:09:00+00:00"})
+    pack = build_pack({"tools": {}}, tail, "explain the last block")
+    assert len(pack["recent"]) == 2
+    assert pack["recent"][0]["text"].startswith("fail2ban")
+    assert pack["recent"][1]["text"].startswith("YARA")
+    assert not any("check-in" in e["text"] for e in pack["recent"])
+
+def test_build_pack_keeps_unknown_installed_raw():
+    st = {"tools": {"fail2ban": {"state": "YELLOW", "label": "Fail2ban (bans)",
+                                 "installed": None}}}
+    pack = build_pack(st, [], "why is fail2ban yellow?")
+    assert pack["tools"][0]["installed"] is None
+    assert "needs attention" in answer_tool_status(pack, "fail2ban")
