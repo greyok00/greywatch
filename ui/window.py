@@ -466,6 +466,10 @@ class MainWindow(Gtk.Window):
         sc.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         sc.set_child(self.rail_list)
         sc.set_vexpand(True)
+        # GTK4's floating overlay scrollbar drags a grey pill across the
+        # row's right edge — right through the pause/play button. This
+        # rail is the one scroller that ends on controls of its own.
+        sc.set_overlay_scrolling(False)
         rail.append(sc)
         rail.append(self.sel_note)
         foot = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
