@@ -3,6 +3,8 @@ import pathlib
 import sys
 import threading
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from assistant.llm import ANSWER_SYSTEM, Llm
 
@@ -73,3 +75,36 @@ def test_error_path_reaches_on_error(tmp_path):
                    on_error=lambda e: (errors.append(e), hit.set()))
     assert hit.wait(5.0)
     assert "kaboom" in str(errors[0])
+
+
+def test_ask_sync_before_start_raises_runtimeerror():
+    llm = Llm(model_path="x", binding=lambda *a, **k: FakeModel([]))
+    with pytest.raises(RuntimeError, match="not ready"):
+        llm.ask_sync("hi")
+
+
+def test_stop_makes_ask_sync_raise_runtimeerror(tmp_path):
+    model = FakeModel(["hello world", "hello world"])
+    llm = Llm(model_path=str(tmp_path / "x.gguf"),
+              binding=lambda *a, **k: model)
+    _wait_ready(llm)
+    llm.stop()
+    with pytest.raises(RuntimeError, match="not ready"):
+        llm.ask_sync("hi")
+
+
+def test_start_twice_fires_on_ready_once(tmp_path):
+    model = FakeModel(["hello world", "hello world"])
+    llm = Llm(model_path=str(tmp_path / "x.gguf"),
+              binding=lambda *a, **k: model)
+    calls, done = [], threading.Event()
+
+    def cb(ok, err):
+        calls.append((ok, err or ""))
+        done.set()
+    llm.start(cb)
+    assert done.wait(5.0), "loader thread never called back"
+    llm.start(cb)                       # second start spawns nothing
+    assert llm.is_ready()
+    assert calls == [(True, "")]
+    assert len(calls) == 1

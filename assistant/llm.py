@@ -39,13 +39,19 @@ class Llm:
         self._n_ctx, self._n_threads = n_ctx, n_threads
         self._model = None
         self._err = "not started"
+        self._started = False
         self._lock = threading.Lock()
 
     def start(self, on_ready) -> None:
+        if self._started:
+            return
+        self._started = True
+
         def work():
             try:
                 if self._binding is not None:
                     self._model = self._binding()
+                    self._err = ""
                     on_ready(True, "")
                     return
                 if Llama is None:
@@ -79,12 +85,18 @@ class Llm:
 
     def ask_sync(self, prompt: str, max_tokens: int = 48) -> str:
         with self._lock:
+            if self._model is None:
+                raise RuntimeError("assistant model not ready")
             out = self._model.create_chat_completion(
                 messages=self._messages(prompt), max_tokens=max_tokens)
         return out["choices"][0]["message"]["content"].strip()
 
     def ask_stream(self, prompt: str, on_token, on_done, on_error,
                    max_tokens: int = 220) -> None:
+        if self._model is None:
+            on_error(RuntimeError("assistant model not ready"))
+            return
+
         def work():
             try:
                 acc = []
@@ -104,4 +116,5 @@ class Llm:
         threading.Thread(target=work, daemon=True).start()
 
     def stop(self) -> None:
-        self._model = None
+        with self._lock:
+            self._model = None
