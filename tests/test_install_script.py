@@ -83,6 +83,20 @@ def test_staged_program_tree_and_helpers_other_write_free(tmp_path):
     assert helper.stat().st_mode & 0o111
 
 
+def test_plain_check_of_a_staged_dir_passes(tmp_path):
+    """`--check DIR` on its own (the documented form) must validate the
+    deployment in DIR, not the real system paths. With only --check given,
+    the script has no --root, so any check that compares against the global
+    /usr/lib/greywatch instead of DIR fails a correct staging tree."""
+    stage = tmp_path / "stage"
+    out = run_install("--root", str(stage))
+    assert out.returncode == 0, out.stdout + out.stderr
+    chk = run_install("--check", str(stage))
+    assert chk.returncode == 0, chk.stdout + chk.stderr
+    assert "everything matches" in chk.stdout
+    assert "/usr/lib/greywatch" not in chk.stdout
+
+
 def test_check_fails_loudly_on_empty_deployment(tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()

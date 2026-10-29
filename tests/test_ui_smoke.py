@@ -777,6 +777,7 @@ def test_learning_toggle_writes_the_real_flag(win):
 
 def test_site_trust_box_offers_real_sites(win):
     from ui import discover
+    win._show("settings")       # lazy views: the trust box builds on first show
     ids = [row[1] for row in win.trust_combo.get_model()]
     assert ids, "no sites detected for the trust list"
     for row in discover.site_choices():

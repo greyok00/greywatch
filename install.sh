@@ -203,13 +203,15 @@ check_modules_file() { # $1 = modules-load.d file path
     echo "✓ modules-load.d file present (nfnetlink_queue, nft_queue)"
 }
 
-check_unit_file() { # $1 = unit file path, $2 = 1 for staged strict check
+check_unit_file() { # $1 = unit file path, $2 = 1 for staged strict check,
+                     # $3 = program tree it must point at, $4 = its state dir
+    local lib="${3:-$LIB}" data="${4:-$DATA}"
     [ -f "$1" ] || { echo "✗ unit file missing ($1)"; return 1; }
     if grep -q "__GW_LIB__\|__GW_DATA__\|__GW_HOME__" "$1"; then
         echo "✗ unit still contains an unresolved placeholder"; return 1
     fi
-    grep -q "ExecStart=/usr/bin/python3 $LIB/greywatch_daemon.py --data-dir $DATA" "$1" \
-        || { echo "✗ unit ExecStart does not point at $LIB with $DATA"; return 1; }
+    grep -Fq "ExecStart=/usr/bin/python3 $lib/greywatch_daemon.py --data-dir $data" "$1" \
+        || { echo "✗ unit ExecStart does not point at $lib with $data"; return 1; }
     if [ "${2:-0}" = "1" ]; then
         grep -q "CPUQuota=50%" "$1" && grep -q "MemoryMax=768M" "$1" \
             || { echo "✗ unit lacks the 50%/768M limits"; return 1; }
@@ -221,8 +223,8 @@ check_unit_file() { # $1 = unit file path, $2 = 1 for staged strict check
     echo "✓ unit file matches this checkout's template"
 }
 
-check_policy_file() { # $1 = policy file
-    local fail=0 id helper
+check_policy_file() { # $1 = policy file, $2 = program tree it must point at
+    local fail=0 id helper lib="${2:-$LIB}"
     [ -f "$1" ] || { echo "✗ polkit policy missing ($1)"; return 1; }
     if grep -q "__GW_LIB__\|__GW_DATA__\|__GW_HOME__" "$1"; then
         echo "✗ policy still has an unresolved placeholder"; return 1
@@ -232,8 +234,8 @@ check_policy_file() { # $1 = policy file
         grep -q "action id=\"$id\"" "$1" \
             || { echo "✗ deployed policy lacks action $id"; fail=1; continue; }
         grep -A6 "action id=\"$id\"" "$1" \
-            | grep -Fq "exec.path\">$LIB/apply/$helper" \
-            || { echo "✗ action $id does not allowlist $LIB/apply/$helper"; fail=1; }
+            | grep -Fq "exec.path\">$lib/apply/$helper" \
+            || { echo "✗ action $id does not allowlist $lib/apply/$helper"; fail=1; }
     done < <(grep -o 'action id="com\.greywatch\.apply\.[a-z-]*"' "$POLICY_TPL" \
               | cut -d'"' -f2)
     [ "$fail" -eq 0 ] && echo "✓ polkit allowlist contains every template helper"
@@ -266,16 +268,17 @@ do_check() {
         echo "checking staged deployment in $base"
         check_program_tree "$base/$LIB_REL" || fail=1
         check_state_dir "$base/$DATA_REL" || fail=1
-        check_unit_file "$base/$UNIT_REL" 1 || fail=1
-        check_policy_file "$base/$POLICY_REL" || fail=1
+        check_unit_file "$base/$UNIT_REL" 1 \
+            "$base/$LIB_REL" "$base/$DATA_REL" || fail=1
+        check_policy_file "$base/$POLICY_REL" "$base/$LIB_REL" || fail=1
         check_modules_file "$base/$MODULES_REL" || fail=1
         check_icon_tree "$base/home" || fail=1
     else
         echo "checking the real system deployment"
         check_program_tree "$LIB_SYS" || fail=1
         check_state_dir "$DATA_SYS" || fail=1
-        check_unit_file "$UNIT_SYS" 0 || fail=1
-        check_policy_file "$POLICY_SYS" || fail=1
+        check_unit_file "$UNIT_SYS" 0 "$LIB_SYS" "$DATA_SYS" || fail=1
+        check_policy_file "$POLICY_SYS" "$LIB_SYS" || fail=1
         check_modules_file "$MODULES_SYS" || fail=1
         check_unit_live || fail=1
         home="$(invoker_home)"
