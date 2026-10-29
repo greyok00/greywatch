@@ -36,3 +36,28 @@ def test_rail_builder_exists_and_panel_importable():
     from ui.assistant import AssistantPanel
     assert hasattr(MainWindow, "_build_assistant_rail")
     assert hasattr(MainWindow, "_assistant_intent")
+
+
+def test_assistant_pause_outcome_recorded_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    from ui import window as W
+    calls = []
+    monkeypatch.setattr(W.audit, "record",
+                        lambda action, tool, ok: calls.append((action, tool, ok)))
+    class FakeWin:
+        fired = []
+        def _pause_selected(self):
+            FakeWin.fired.append("pause")
+        def _resume_selected(self):
+            FakeWin.fired.append("resume")
+        def _open_detail(self, tool):
+            FakeWin.fired.append(tool)
+    win = FakeWin()
+    W.MainWindow._assistant_intent(win, "pause", "ufw")
+    assert FakeWin.fired == ["pause"]
+    assert win._assistant_pending == ("pause", "ufw")
+    assert calls == []                    # nothing recorded before the outcome
+    W.MainWindow._assistant_record_outcome(win, False)
+    assert calls == [("pause", "ufw", False)]
+    W.MainWindow._assistant_record_outcome(win, True)   # cleared: no-op
+    assert calls == [("pause", "ufw", False)]

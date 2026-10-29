@@ -11,6 +11,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Pango", "1.0")
 from gi.repository import Gtk, GLib, Gio, Pango    # noqa: E402
 
+from assistant import audit
 from registry import load_registry
 from ui.models import (status_words, recent_rows, age_words, local_clock)
 from ui.plain import (sentence as plain_sentence, friendly_name, what_is,
@@ -531,21 +532,27 @@ class MainWindow(Gtk.Window):
         return list(getattr(self, "_recent_snapshot", []) or [])
 
     def _assistant_intent(self, action, tool):
-        """Confirm-gated execution. The panel already showed the confirm
-        dialog and wrote the one assistant ledger line for the intent
-        (ui.assistant._confirmed); this mirrors the manual buttons exactly.
-        """
+        """Confirm-gated execution. The panel showed the assistant confirm
+        dialog; the window runs the action through the exact manual paths
+        and records the OUTCOME (ui.assistant._confirmed records details
+        directly)."""
         if action == "details":
             self._selected_tool = tool
             self._open_detail(tool)
             return
-        if action == "pause":
+        if action in ("pause", "resume"):
+            self._assistant_pending = (action, tool)
             self._selected_tool = tool
-            self._pause_selected()
-        elif action == "resume":
-            self._selected_tool = tool
-            self._resume_selected()
-        # overview needs no action — the template already answered.
+            self._pause_selected() if action == "pause" \
+                else self._resume_selected()
+
+    def _assistant_record_outcome(self, ok):
+        """One accurate audit line per accepted assistant intent; manual
+        toggles leave no pending marker, so this is a no-op for them."""
+        pending = getattr(self, "_assistant_pending", None)
+        if pending:
+            self._assistant_pending = None
+            audit.record(pending[0], pending[1], ok)
 
     def _start_chat_llm(self):
         """Wake the assistant model in-process (the installer drops the
@@ -902,6 +909,7 @@ class MainWindow(Gtk.Window):
             self.scan_status.set_markup(
                 f"<span size='13000' font_family='Inter'>"
                 f"{escape(friendly_name(name))} has no service to pause.</span>")
+            self._assistant_record_outcome(False)
             return
         dlg = Gtk.Dialog(title=f"Pause {friendly_name(name)}?",
                          transient_for=self, modal=True)
@@ -922,6 +930,8 @@ class MainWindow(Gtk.Window):
             d.destroy()
             if rid == Gtk.ResponseType.OK:
                 self._toggle_tool(name, pause=True)
+            else:
+                self._assistant_record_outcome(False)
         dlg.connect("response", _on_pause)
         dlg.present()
 
@@ -1135,6 +1145,7 @@ class MainWindow(Gtk.Window):
         return ""
 
     def _after_toggle(self, name, pause, rc, state=None):
+        self._assistant_record_outcome(rc == 0)
         if rc == 0:
             if state:
                 self._state_override[name] = (

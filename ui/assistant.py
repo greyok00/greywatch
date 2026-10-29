@@ -7,7 +7,7 @@ import plan_turn on headless runners.
 """
 from __future__ import annotations
 
-import json
+import threading
 
 from assistant import audit
 from assistant.intents import describe, parse_intent, validate
@@ -36,9 +36,9 @@ def plan_turn(question, pack, llm, registry_names: set, friendly: dict) -> dict:
             if reply.lstrip().startswith("{"):
                 return {"kind": "model", "prompt": question,
                         "intent_reply": reply}
-            return {"kind": "model", "prompt": question,
-                    "intent_reply": json.dumps({"task": "intent",
-                                                "tool": reply})}
+            # Intent slot with no action-bearing JSON: treat as a summary
+            # turn — nothing executes, nothing stalls.
+            return {"kind": "summary", "prompt": _pack_prompt(pack, question)}
         return {"kind": "summary", "prompt": _pack_prompt(pack, question)}
     # No model (or not warm yet): deterministic matching from the pack.
     name = _tool_from_question(question, friendly)
@@ -80,6 +80,15 @@ def _pack_prompt(pack: dict, question: str) -> str:
     lines.append("Summarize in 2-3 plain sentences. If the pack lacks the "
                  "answer, say so.")
     return "\n".join(lines)
+
+
+def warning_line(action: str, state: str) -> str:
+    """Extra confirm-dialog warning when the target is down (spec: warn
+    when the target tool is RED)."""
+    if action == "pause" and state == "RED":
+        return ("\nThis protection is currently RED — pausing it leaves "
+                "nothing running in its place.")
+    return ""
 
 
 GIOMM_OK = True
@@ -149,36 +158,66 @@ if GIOMM_OK:
                 return
             self.entry.set_text("")
             self._bubble(question, mine=True)
-            pack = build_pack(self._get_status(), self._get_recent(),
-                              question)
-            llm = self._get_llm()
-            plan = plan_turn(question, pack, llm, self._names,
-                             self._friendly)
-            if plan["kind"] == "template":
-                self._bubble(plan["text"])
-                return
-            if llm is None or not llm.is_ready():
-                self._bubble("The model is unavailable right now; from the "
-                             "data:\n" + (compose("overview", pack)
-                                          or compose("explain_event", pack)
-                                          or ""))
-                return
+            self._turn_seq = getattr(self, "_turn_seq", 0) + 1
+            seq = self._turn_seq
             holder = self._bubble("…")
-            acc = []
 
-            def on_token(tok):
-                acc.append(tok)
-                GLib.idle_add(holder.set_text, "".join(acc)[-600:])
+            def work():
+                try:
+                    pack = build_pack(self._get_status(), self._get_recent(),
+                                      question)
+                    plan = plan_turn(question, pack, self._get_llm(),
+                                     self._names, self._friendly)
+                except Exception as err:               # never eat the question
+                    GLib.idle_add(self._plan_error, seq, holder, str(err))
+                    return
+                GLib.idle_add(self._turn_planned, seq, holder, plan, pack)
 
-            def on_done(full):
-                GLib.idle_add(self._finished, plan, full, pack, holder)
+            threading.Thread(target=work, daemon=True,
+                             name="gw-assistant-plan").start()
 
-            def on_error(e):
-                GLib.idle_add(holder.set_text,
-                              "Model error; from the data:\n"
-                              + (compose("overview", pack) or str(e)))
+        def _plan_error(self, seq, holder, err):
+            """Main thread. A planning failure falls back to a readable bubble."""
+            if seq != getattr(self, "_turn_seq", 0):
+                return False
+            holder.set_text(f"Something went wrong answering that ({err}). "
+                            "Ask again, or use the rail buttons.")
+            return False
 
-            llm.ask_stream(plan["prompt"], on_token, on_done, on_error)
+        def _turn_planned(self, seq, holder, plan, pack):
+            """Main thread. The sequence guard drops superseded plans."""
+            if seq != getattr(self, "_turn_seq", 0):
+                return False
+            try:
+                if plan["kind"] == "template":
+                    holder.set_text(plan["text"])
+                    return False
+                llm = self._get_llm()
+                if llm is None or not llm.is_ready():
+                    holder.set_text("The model is unavailable right now; from "
+                                    "the data:\n"
+                                    + (compose("overview", pack)
+                                       or compose("explain_event", pack) or ""))
+                    return False
+                acc = []
+
+                def on_token(tok):
+                    acc.append(tok)
+                    GLib.idle_add(holder.set_text, "".join(acc)[-600:])
+
+                def on_done(full):
+                    GLib.idle_add(self._finished, plan, full, pack, holder)
+
+                def on_error(e):
+                    GLib.idle_add(holder.set_text,
+                                  "Model error; from the data:\n"
+                                  + (compose("overview", pack) or str(e)))
+
+                llm.ask_stream(plan["prompt"], on_token, on_done, on_error)
+            except Exception as err:
+                holder.set_text(f"Something went wrong answering that ({err}). "
+                                "Ask again, or use the rail buttons.")
+            return False
 
         def _finished(self, plan, full, pack, holder):
             """Stream done: route a model intent through the whitelist."""
@@ -196,18 +235,40 @@ if GIOMM_OK:
 
         def _confirm(self, intent):
             # Gtk.Dialog, not MessageDialog: repo lint bans Gtk3-era widget
-            # names in ui/*.py (tests/test_ui_smoke.py); same flow as the
-            # pause dialog in ui/window.py.
+            # names in ui/*.py (tests/test_ui_smoke.py); body idiom per
+            # _pause_tool in ui/window.py.
             dlg = Gtk.Dialog(title=describe(intent, self._friendly),
                              transient_for=self.get_root(), modal=True)
             ok = dlg.add_button("Confirm", Gtk.ResponseType.ACCEPT)
             ok.add_css_class("destructive-action")
             dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)
+            state = ""
+            if intent.action in ("pause", "resume"):
+                t = (self._get_status() or {}).get("tools", {}).get(intent.tool) or {}
+                state = str(t.get("state", "UNKNOWN"))
+            body = Gtk.Label(xalign=0)
+            body.set_xalign(0)
+            body.set_wrap(True)
+            body.set_text(
+                "Confirm and the app does this with its own normal controls — "
+                "the same buttons you would click yourself. Cancel leaves "
+                "everything as it is." + warning_line(intent.action, state))
+            content = dlg.get_content_area()
+            content.set_margin_top(14); content.set_margin_bottom(14)
+            content.set_margin_start(20); content.set_margin_end(20)
+            content.append(body)
             dlg.connect("response", self._confirmed, intent)
             dlg.present()
 
         def _confirmed(self, dlg, resp, intent):
             dlg.destroy()
-            if resp == Gtk.ResponseType.ACCEPT:
+            if resp != Gtk.ResponseType.ACCEPT:
+                return
+            if intent.action == "details":
+                # synchronous and truly executed — record here
                 self._on_intent(intent.action, intent.tool)
                 audit.record(intent.action, intent.tool, True)
+                return
+            # pause/resume: the window records the OUTCOME after its final
+            # gate and toggle — one accurate audit line per accepted intent.
+            self._on_intent(intent.action, intent.tool)
