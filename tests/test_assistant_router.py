@@ -29,6 +29,20 @@ def test_unknown_slot_or_bad_tool_degrades():
     assert r[0] == "summary"
 
 
+def test_retry_resends_full_prompt_with_question():
+    prompts = []
+
+    def ask(prompt):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            return "no json yet"
+        assert "pause ufw" in prompt and "apparmor ufw" in prompt
+        return '{"task":"intent","tool":"ufw"}'
+
+    r = router.route("pause ufw", ask, tool_names="apparmor ufw")
+    assert r == ("intent", "ufw") and len(prompts) == 2
+
+
 def test_words_only_skips_model():
     router.words_only = True
     try:

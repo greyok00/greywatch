@@ -40,9 +40,8 @@ def route(question: str, ask, tool_names: str = "",
     if words_only:
         return "summary", ""
     names = f"Tools: {tool_names}" if tool_names else "Tools: (none listed)"
-    for attempt in range(tries):
-        prompt = (f"{names}\nquestion: {question}" if attempt == 0
-                  else "Answer with only the JSON object.")
+    prompt = f"{names}\nquestion: {question}"
+    for _ in range(tries):
         reply = ask(prompt)
         got = _parse(reply, tool_names)
         if got:
