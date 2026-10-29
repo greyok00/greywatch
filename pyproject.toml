@@ -15,6 +15,10 @@ license-files = ["LICENSE"]
 [project.optional-dependencies]
 dev = ["pytest==9.1.1", "ruff==0.17.2"]
 build = ["cython==3.2.9", "setuptools==78.1.1"]
+# Optional, metadata-only: the in-process 360M chat brain. The app rules
+# say "runtime has no pip dependencies" — every import is guarded and the
+# chat degrades to docs-only when this is absent.
+assistant = ["llama-cpp-python>=0.3.0"]
 
 [tool.setuptools]
 packages = []  # not a setuptools build project; build-cython.sh builds bare extensions

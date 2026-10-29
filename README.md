@@ -86,6 +86,19 @@ control.
   preexisting toolchain of ours. (The protections it *manages* on your
   machine are the tools already listed above, which you control.)
 
+## Embedded assistant (chat)
+
+The window's far-right rail lists every protection; ask the chat panel
+anything about your tools, logs, or docs. Answers are composed in code
+from your real data; a small local model (SmolLM2-360M, ~250 MB, CPU
+only, no network, no port) routes questions and summarizes when needed.
+Actions it proposes (pause/resume/details/overview) always show a confirm
+dialog first and land in `assistant-actions.jsonl` tagged `via=assistant`.
+If the binding or model is missing, the chat works in docs-only mode.
+Upgrade path: drop `Qwen3-0.6B-Instruct-Q4_K_M.gguf` into
+`/var/lib/greywatch/models/` with the same file stem replaced in
+`ui/window.py` if answers ever feel thin.
+
 ## Installation
 
 Three ways, pick one.

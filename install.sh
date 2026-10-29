@@ -111,6 +111,52 @@ _make_state_dir() { # $1 = destination state dir
     echo "runtime state dir ready: $dest"
 }
 
+assistant_assets() { # optional chat assets: the model gguf under $DATA,
+    # the knowledge index, and the desktop user's llama-cpp-python
+    # binding. Every piece is optional — the chat degrades to docs-only
+    # without it — so a failure prints the exact follow-up command
+    # instead of failing the install. Runs in the real install only:
+    # the --root staging self-test stays offline and hermetic.
+    local grp model
+    grp="$(getent passwd "$UI_USER" | cut -d: -f4)"
+    mkdir -p "$DATA/models"
+    model="$DATA/models/smollm2-360m-instruct-q4_k_m.gguf"
+    if [ ! -s "$model" ]; then
+        if ! curl -L --fail -o "$model" \
+                "https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"; then
+            rm -f "$model" # a partial download must never pass the -s probe
+            echo "assistant model not fetched — chat stays docs-only"
+            echo "  fetch later: curl -L --fail -o $model \\"
+            echo "      https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"
+        fi
+    fi
+    if [ -f "$model" ]; then
+        # group-readable like the rest of the shared state
+        chmod 0644 "$model"
+        chown "root:$grp" "$model" 2>/dev/null || true
+        echo "assistant model ready: $model"
+    fi
+    # the index is built into the state dir this install just prepared
+    if GREYWATCH_DATA_DIR="$DATA" python3 "$GW/tools/build_knowledge_index.py"; then
+        chmod 0640 "$DATA/knowledge-index.json" 2>/dev/null || true
+        chown "root:$grp" "$DATA/knowledge-index.json" 2>/dev/null || true
+    else
+        echo "knowledge index not built — chat stays docs-only"
+    fi
+    # the binding is user-local (llama-cpp-python on the desktop user's
+    # site-packages); UI_USER is resolved and validated above (GW-02)
+    local home
+    home="$(getent passwd "$UI_USER" | cut -d: -f6)"
+    if sudo -u "$UI_USER" env HOME="$home" python3 -m pip install --user \
+            --break-system-packages "llama-cpp-python>=0.3.0"; then
+        echo "assistant binding installed for $UI_USER"
+    else
+        echo "assistant binding not installed — chat stays docs-only"
+        echo "  install later: sudo -u $UI_USER python3 -m pip install \\"
+        echo "      --user --break-system-packages 'llama-cpp-python>=0.3.0'"
+    fi
+}
+
 deploy_files() { # $1 = unit destination, $2 = policy destination
     local tmp; tmp="$(mktemp)"
     if ! { subst "$UNIT_TPL" > "$tmp" \
@@ -322,6 +368,8 @@ do_install_root() {
         icons_user "$home" 2>&1 | head -3 || true
         echo "(if the desktop shortcut ever asks to be trusted: run ./install-icons.sh yourself, no sudo)"
     fi
+    # optional chat assets last: the core install never waits on network
+    assistant_assets
     echo "system install done — verify with: ./install.sh --check"
 }
 
