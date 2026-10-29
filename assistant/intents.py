@@ -26,12 +26,13 @@ def parse_intent(text: str) -> tuple[Intent | None, str]:
     m = _JSON.search(text or "")
     if not m:
         return None, text or ""
+    rest = (text[:m.start()] + " " + text[m.end():]).strip()
     try:
         data = json.loads(m.group(0))
     except ValueError:
-        return None, text
+        return None, rest
     if data.get("task") != "intent":
-        return None, text
+        return None, rest
     raw = str(data.get("action") or "").strip().lower()
     if raw in ("stop", "pause"):
         action = "pause"
@@ -42,8 +43,7 @@ def parse_intent(text: str) -> tuple[Intent | None, str]:
     elif raw in ("overview", "status"):
         action = "overview"
     else:
-        return None, text
-    rest = (text[:m.start()] + " " + text[m.end():]).strip()
+        return None, rest
     return Intent(action, str(data.get("tool") or "").strip()), rest
 
 

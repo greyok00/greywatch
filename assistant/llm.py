@@ -19,15 +19,18 @@ ROUTER_SYSTEM = (
     "You route questions for a local security app. Reply with ONLY a JSON "
     'object, nothing else: {"task": "<slot>", "tool": "<tool or empty>"}. '
     "Slots: overview (state of all protections) | explain_event (explain a "
-    "recent alert) | tool_status (about one named tool) | intent (the user "
-    "asks to change or act: pause, resume, show) | summary (anything else). "
+    "recent alert) | tool_status (about one named tool) | "
+    "intent (the user asks to change or act) — for the intent slot the "
+    'JSON must include "action":"pause|resume|show|status" | summary '
+    "(anything else). "
     "tool must be one of the listed tool names or empty.")
 
 ANSWER_SYSTEM = (
     "You are the greywatch assistant. Obey three rules: (1) answer only "
     "from the supplied context pack and say when it lacks the answer; "
     "(2) propose state changes only as a JSON intent like "
-    '{"task":"intent","tool":"<name>"} — never as shell or instructions; '
+    '{"task":"intent","action":"<pause|resume|show|status>","tool":"<name>"}'
+    " — never as shell or instructions; "
     "(3) be brief and plain.")
 
 

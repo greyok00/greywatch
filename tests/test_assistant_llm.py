@@ -108,3 +108,7 @@ def test_start_twice_fires_on_ready_once(tmp_path):
     assert llm.is_ready()
     assert calls == [(True, "")]
     assert len(calls) == 1
+
+def test_prompts_carry_the_action_key_contract():
+    from assistant.llm import ROUTER_SYSTEM
+    assert '"action"' in ROUTER_SYSTEM and '"action"' in ANSWER_SYSTEM

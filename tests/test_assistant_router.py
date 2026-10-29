@@ -50,3 +50,18 @@ def test_words_only_skips_model():
             AssertionError("model must not be called"))) == ("summary", "")
     finally:
         router.words_only = False
+
+def test_route_intent_with_action_returns_json_text():
+    r = router.route(
+        "pause ufw",
+        ask=lambda p:
+            'sure! {"task":"intent","action":"pause","tool":"ufw"} thanks')
+    assert r[0] == "intent"
+    assert r[1] == '{"task":"intent","action":"pause","tool":"ufw"}'
+
+
+def test_route_intent_without_action_keeps_tool_reply():
+    r = router.route(
+        "pause ufw",
+        ask=lambda p: 'sure! {"task":"intent","tool":"ufw"} thanks')
+    assert r[0] == "intent" and r[1] == "ufw"

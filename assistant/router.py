@@ -3,12 +3,15 @@
 
 One strict JSON parse; two strikes degrade to the summary slot, which
 happens to be safe anywhere. words_only flips the whole router off.
+An intent whose JSON carries a valid mapped action passes through as the
+raw JSON text; assistant.intents owns the whitelist and validation.
 """
 from __future__ import annotations
 
 import json
 import re
 
+from assistant.intents import parse_intent
 from assistant.llm import ROUTER_SYSTEM
 
 SLOTS = ("overview", "explain_event", "tool_status", "intent", "summary")
@@ -31,7 +34,11 @@ def _parse(reply: str, tool_names: str):
         return None
     if task == "tool_status" and tool not in tool_names.split():
         return None
-    return task, tool
+    action = None
+    if task == "intent":
+        intent, _ = parse_intent(m.group(0))
+        action = intent.action if intent else None
+    return task, tool, action, m.group(0)
 
 
 def route(question: str, ask, tool_names: str = "",
@@ -45,7 +52,9 @@ def route(question: str, ask, tool_names: str = "",
         reply = ask(prompt)
         got = _parse(reply, tool_names)
         if got:
-            slot, tool = got
+            slot, tool, action, jtext = got
+            if slot == "intent" and action:
+                return slot, jtext
             rest = reply.replace(_JSON.search(reply).group(0), "").strip()
             return slot, (tool or rest)
     return "summary", ""

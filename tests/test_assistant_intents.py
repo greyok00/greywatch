@@ -30,3 +30,13 @@ def test_validate_rejects_unknown_tool():
 def test_describe_mentions_plain_name_and_action():
     sentence = describe(Intent("pause", "ufw"), FRIENDLY)
     assert "Firewall" in sentence and "pause" in sentence.lower()
+
+
+def test_failed_parse_strips_the_json_span():
+    for bad in ('plz {"task":intent broken} now',                  # invalid JSON
+                'plz {"task":"summary","tool":"ufw"} now',          # wrong task
+                'plz {"task":"intent","action":"banana"} now'):     # unmapped
+        intent, rest = parse_intent(bad)
+        assert intent is None and "{" not in rest and "}" not in rest
+    intent, rest = parse_intent("no json at all")
+    assert intent is None and rest == "no json at all"
