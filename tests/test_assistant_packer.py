@@ -86,3 +86,7 @@ def test_build_pack_passes_through_installed_and_paused():
     assert tools["watch"]["installed"] is True      # absent → default True
     assert tools["plain"]["installed"] is True
     assert tools["plain"]["paused"] is False
+
+
+def build_pack_for_tests():
+    return build_pack(STATUS, EVENTS, "overview")
