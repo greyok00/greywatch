@@ -15,7 +15,7 @@ from assistant.intents import Intent, describe, parse_intent, validate
 from assistant.llm import ROUTER_SYSTEM  # noqa: F401  (router contract)
 from assistant.packer import build_pack
 from assistant.router import route
-from assistant.templates import compose
+from assistant.templates import answer_detail, compose, event_rows
 
 SLOTS_WITH_TEMPLATES = ("overview", "explain_event", "tool_status")
 
@@ -40,17 +40,47 @@ _LABEL_NOISE = frozenset({"event", "system", "live", "watch", "watcher",
                           "scanner", "program", "helper", "device",
                           "security"})
 
+# Referential follow-ups ("what is that denied?") point at what the chat
+# just showed. The panel anchors the rows of its last event answer, and
+# the question's keywords pick the row — otherwise the turn re-lists the
+# same newest events, which is exactly what the owner reported as a
+# canned reply repeating itself.
+_REFERENTIAL = ("that", "this", "it", "its", "those", "these")
+_ASK_NOISE = frozenset({"what", "which", "where", "when", "why", "how",
+                        "does", "mean", "means", "explain", "about",
+                        "from", "with", "line", "event", "events", "log",
+                        "logs", "they", "them", "there", "here", "was",
+                        "were", "have", "into", "your"})
+# The question's word rarely matches the log's spelling exactly, and a
+# bare substring lies ('deny-once' in an engine-armed line is not a
+# denial). Each keyword maps to ranked patterns — strongest first.
+_ROW_PATTERNS = {
+    "denied": (r"answered:\s*deny", r"^\s*deny\b", r"\bdenied\b",
+               r"\bdeny\b"),
+    "blocked": (r"\bblocked\b", r"\bblock\b"),
+    "allowed": (r"\ballowed\b", r"\ballow\b"),
+    "found": (r"\bfound\b", r"\bfind\b"),
+    "warning": (r"\bwarning\b", r"\bwarn\b"),
+    "suspicious": (r"\bsuspicious\b",),
+}
 
-def plan_turn(question, pack, llm, registry_names: set, friendly: dict) -> dict:
+
+def plan_turn(question, pack, llm, registry_names: set, friendly: dict,
+              anchor=None) -> dict:
     """One question -> one answer plan. The widget only renders this.
 
-    Ladder: English action verbs + a named tool -> intent plan; a tool
-    word -> tool status; event/log wording -> event answers (tool-scoped
-    when the question names one); else the model routes or summarizes;
-    the overview template is always the safe floor."""
+    Ladder: English action verbs + a named tool -> intent plan; a
+    referential follow-up over the previously shown rows -> one-row
+    detail; a tool word -> tool status; event/log wording -> event
+    answers (tool-scoped when the question names one); else the model
+    routes or summarizes; the overview template is the safe floor."""
     intent = _intent_from_question(question, friendly)
     if intent is not None and validate(intent, registry_names) is None:
         return {"kind": "intent", "intent": intent}
+    row = _anchored_row(question, anchor, pack.get("recent") or [])
+    if row is not None:
+        return {"kind": "template", "slot": "detail",
+                "text": answer_detail(row)}
     tool = _tool_from_question(question, friendly)
     if tool and registry_names and tool not in registry_names:
         tool = None                    # never stage a tool outside the registry
@@ -66,7 +96,8 @@ def plan_turn(question, pack, llm, registry_names: set, friendly: dict) -> dict:
             text = compose("tool_status", pack, tool)
         if text is not None:
             return {"kind": "template", "slot": "explain_event",
-                    "text": text}
+                    "text": text,
+                    "rows": event_rows(pack, tool)[:3]}
     if llm is not None and llm.is_ready():
         slot, reply = route(question, llm.ask_sync,
                             tool_names=" ".join(sorted(registry_names)))
@@ -75,7 +106,10 @@ def plan_turn(question, pack, llm, registry_names: set, friendly: dict) -> dict:
                              and reply in registry_names) else None
             text = compose(slot, pack, hint)
             if text is not None:
-                return {"kind": "template", "slot": slot, "text": text}
+                plan = {"kind": "template", "slot": slot, "text": text}
+                if slot == "explain_event":
+                    plan["rows"] = event_rows(pack, hint)[:3]
+                return plan
             return {"kind": "summary", "prompt": _pack_prompt(pack, question)}
         if slot == "intent":
             if reply.lstrip().startswith("{"):
@@ -94,6 +128,36 @@ def plan_turn(question, pack, llm, registry_names: set, friendly: dict) -> dict:
 def _mentions(question: str) -> bool:
     low = (question or "").lower()
     return any(w in low for w in _EVENT_WORDS)
+
+
+def _anchored_row(question: str, anchor, recent=None) -> dict | None:
+    """Which previously shown row does a referential follow-up point at?
+
+    No anchor (first turn, or the last answer was not an event listing)
+    means no follow-up handling — the normal ladder decides. With an
+    anchor, a keyword like 'denied' picks its row (the live pack is
+    searched too, so a line that scrolled out of the last three is still
+    reachable); a bare 'what does that mean?' falls back to the newest
+    row that was shown."""
+    if not anchor:
+        return None
+    low = (question or "").lower()
+    if not any(re.search(rf"\b{w}\b", low) for w in _REFERENTIAL):
+        return None
+    words = [w for w in re.split(r"[^a-z0-9]+", low)
+             if len(w) >= 4 and w not in _ASK_NOISE
+             and w not in _REFERENTIAL]
+    pool = list(anchor) + [r for r in (recent or []) if r not in anchor]
+    for w in words:
+        pats = _ROW_PATTERNS.get(w, (rf"\b{re.escape(w)}\b",))
+        for pat in pats:
+            for row in pool:
+                hay = (str(row.get("text") or "").lower() + " "
+                       + str(row.get("tool")
+                             or row.get("from_tool") or "").lower())
+                if re.search(pat, hay):
+                    return row
+    return anchor[0]
 
 
 def _tool_from_question(question: str, friendly: dict) -> str | None:
@@ -179,6 +243,9 @@ if GIOMM_OK:
             self._get_llm, self._on_intent = get_llm, on_intent
             from ui.plain import FRIENDLY
             self._friendly = FRIENDLY
+            # Rows the last event answer displayed: a follow-up ("what is
+            # that denied?") resolves against these, not a fresh listing.
+            self._last_rows = []
             self.banner = Gtk.Label(xalign=0)
             self.banner.add_css_class("gw-meta")
             self.append(self.banner)
@@ -238,7 +305,8 @@ if GIOMM_OK:
                     pack = build_pack(self._get_status(), self._get_recent(),
                                       question)
                     plan = plan_turn(question, pack, self._get_llm(),
-                                     self._names, self._friendly)
+                                     self._names, self._friendly,
+                                     anchor=self._last_rows)
                 except Exception as err:               # never eat the question
                     GLib.idle_add(self._plan_error, seq, holder, str(err))
                     return
@@ -261,6 +329,8 @@ if GIOMM_OK:
                 return False
             try:
                 if plan["kind"] == "template":
+                    if plan.get("slot") == "explain_event":
+                        self._last_rows = plan.get("rows") or []
                     holder.set_text(plan["text"])
                     return False
                 if plan["kind"] == "intent":

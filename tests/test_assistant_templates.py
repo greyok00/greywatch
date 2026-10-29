@@ -103,3 +103,56 @@ def test_event_hint_with_no_rows_returns_none():
          "ts": "2026-10-29T20:53:51+00:00"},
     ]}
     assert answer_event(pack, "rkhunter") is None
+
+
+def test_answer_detail_explains_one_row_with_raw_line():
+    row = {"tool": "appfw", "severity": "MEDIUM",
+           "text": "appfw chromium → 192.179.30.141:443 allow",
+           "ts": "2026-10-29T14:44:18+00:00"}
+    from assistant.templates import answer_detail
+    text = answer_detail(row)
+    assert "allowed" in text.lower()
+    assert "raw: appfw chromium" in text
+    assert "App firewall" in text
+    assert "usually normal" in text
+
+
+def test_answer_detail_high_has_no_reassurance():
+    row = {"tool": "rkhunter", "severity": "HIGH",
+           "text": "Warning: suspicious (large) shared memory segments",
+           "ts": "2026-10-29T13:50:42+00:00"}
+    from assistant.templates import answer_detail
+    text = answer_detail(row)
+    assert "rootkit scanner found something suspicious" in text.lower()
+    assert "usually normal" not in text
+
+
+def test_plain_sentence_down_tools_are_not_described_as_clean():
+    """The listing said 'Rootkit scan clean' over a raw line reading
+    'is down and could not be repaired' — an outright contradiction."""
+    from ui import plain
+    down = "RKHunter (rootkit scan) is down and could not be repaired automatically"
+    assert "clean" not in plain.sentence({"from_tool": "rkhunter", "text": down}).lower()
+    assert "not running" in plain.sentence({"from_tool": "rkhunter", "text": down}).lower()
+    lynis = "Lynis (audit) is down and could not be repaired automatically"
+    assert "not running" in plain.sentence({"from_tool": "lynis", "text": lynis}).lower()
+
+
+def test_plain_sentence_auditd_avc_denial_is_named():
+    """An AppArmor denial relayed through auditd is not 'routine system
+    activity' — that is the line the owner asked about ('that denied')."""
+    from ui import plain
+    t = 'AVC apparmor="DENIED" operation="open" profile="/usr/sbin/clamd"'
+    s = plain.sentence({"from_tool": "auditd", "text": t}).lower()
+    assert "routine" not in s and "stopped" in s
+
+
+def test_answer_detail_layer_sentence_is_grammatical():
+    """auditd's description is a noun phrase ('the kernel's detailed
+    record…'), so the old 'is the layer that {desc}' spliced nonsense."""
+    row = {"tool": "auditd", "severity": "MEDIUM",
+           "text": "AVC apparmor=DENIED operation=open", "ts": None}
+    from assistant.templates import answer_detail
+    text = answer_detail(row)
+    assert "is the layer that" not in text
+    assert "System event log: the kernel's detailed record" in text

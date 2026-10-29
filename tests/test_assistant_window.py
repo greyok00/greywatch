@@ -90,3 +90,28 @@ def test_intent_plan_confirms_without_stream():
     assert ret is False
     assert stub.confirmed == [Intent("pause", "ufw")]
     assert texts and "Firewall" in texts[0]
+
+
+def test_event_plan_remembers_shown_rows_for_followups():
+    """The panel must keep the rows of its last event listing so the next
+    referential question can point at them."""
+    from ui.assistant import AssistantPanel
+
+    class Stub:
+        _turn_seq = 2
+        _friendly = {}
+        _last_rows = []
+
+    rows = [{"tool": "appfw", "severity": "MEDIUM",
+             "text": "deny x (answered: deny)", "ts": "2026-10-29T13:57:09+00:00"}]
+    texts = []
+
+    class Holder:
+        def set_text(self, t):
+            texts.append(t)
+    stub = Stub()
+    AssistantPanel._turn_planned(
+        stub, 2, Holder(),
+        {"kind": "template", "slot": "explain_event",
+         "text": "Newest events (local times): …", "rows": rows}, {})
+    assert stub._last_rows == rows and texts

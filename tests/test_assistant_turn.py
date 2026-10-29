@@ -147,3 +147,64 @@ def test_no_warning_for_other_paths():
     assert warning_line("pause", "GREEN") == ""
     assert warning_line("resume", "RED") == ""
     assert warning_line("overview", "RED") == ""
+
+
+DENY_ROW = {"tool": "appfw", "severity": "MEDIUM",
+            "text": "deny <unknown> → 172.217.119.4:443 (answered: deny)",
+            "ts": "2026-10-29T13:57:09+00:00"}
+
+
+def test_followup_resolves_to_the_line_it_refers_to():
+    """'what is that denied' after a listing must explain THE deny line —
+    without an anchor it re-listed the newest events (same canned reply)."""
+    rows = [DENY_ROW,
+            {"tool": "appfw", "severity": "MEDIUM",
+             "text": "appfw chromium → 192.179.30.141:443 allow",
+             "ts": "2026-10-29T14:44:18+00:00"}]
+    out = plan_turn("what is that denied", {"recent": rows}, None,
+                    {"appfw"}, {"appfw": ("App firewall", "x")}, anchor=rows)
+    assert out["kind"] == "template" and out["slot"] == "detail"
+    assert "answered: deny" in out["text"]
+    assert "App firewall" in out["text"]
+
+
+def test_followup_without_anchor_still_lists():
+    out = plan_turn("what is that denied", {"recent": [DENY_ROW]}, None,
+                    {"appfw"}, {"appfw": ("App firewall", "x")})
+    assert out["kind"] == "template" and out["slot"] == "explain_event"
+
+
+def test_followup_verbatim_means_newest_shown_row():
+    rows = [DENY_ROW]
+    out = plan_turn("what does that mean?", {"recent": rows}, None,
+                    {"appfw"}, {"appfw": ("App firewall", "x")}, anchor=rows)
+    assert out["slot"] == "detail" and "answered: deny" in out["text"]
+
+
+def test_followup_keyword_finds_the_row_even_outside_the_anchor():
+    """'that denied' must reach the deny line even when it has scrolled
+    out of the three rows the last listing showed."""
+    rows = [{"tool": "appfw", "severity": "MEDIUM",
+             "text": "appfw firefox-esr → 151.101.65.91:443 allow",
+             "ts": "2026-10-29T14:54:13+00:00"},
+            DENY_ROW]
+    out = plan_turn("what is that denied", {"recent": rows}, None,
+                    {"appfw"}, {"appfw": ("App firewall", "x")},
+                    anchor=rows[:1])
+    assert out["slot"] == "detail" and "answered: deny" in out["text"]
+    assert "firefox-esr" not in out["text"]
+
+
+def test_followup_denied_prefers_a_real_denial_over_an_armed_blurb():
+    """'deny-once' in an engine-armed status line is not a denial. The
+    strong forms ('answered: deny', a line starting with deny, DENIED)
+    win before a bare substring can match."""
+    armed = {"tool": "appfw", "severity": "MEDIUM",
+             "text": "appfw engine armed — ask the dashboard popup; deny-once "
+                     "when it is closed (headless fallback)",
+             "ts": "2026-10-29T21:52:25+00:00"}
+    rows = [armed, DENY_ROW]
+    out = plan_turn("what is that denied", {"recent": rows}, None,
+                    {"appfw"}, {"appfw": ("App firewall", "x")},
+                    anchor=rows[:1])
+    assert out["slot"] == "detail" and "answered: deny" in out["text"]

@@ -177,6 +177,9 @@ def _sentence(tool: str, t: str) -> str:
     if tool == "auditd":
         if "ANOM_ABEND" in t:
             return "A program crashed on its own; it was recorded."
+        if "AVC" in t and "denied" in sev_low:
+            # An AppArmor denial relayed through auditd — say what it is.
+            return "A program tried something outside its allowed access and was stopped."
         return "The kernel recorded routine system activity."
     if tool == "aide":
         if "no differences" in sev_low:
@@ -185,8 +188,14 @@ def _sentence(tool: str, t: str) -> str:
     if tool == "apparmor":
         return "A program tried something outside its allowed access and was stopped."
     if tool == "lynis":
+        if "down" in sev_low:
+            return "The security auditor is not running."
         return "The security auditor flagged something to improve."
     if tool == "rkhunter":
+        # A status line saying the scanner is down is NOT a clean scan —
+        # the listing showed 'Rootkit scan clean' above that raw text.
+        if "down" in sev_low:
+            return "The rootkit scanner is not running."
         if "warning" in sev_low:
             return "The rootkit scanner found something suspicious."
         return "Rootkit scan clean: no hidden malware found."
