@@ -28,7 +28,8 @@ def _tokens(text: str) -> list[str]:
     return text.lower().replace("\n", " ").split()
 
 
-def bm25_top(chunks: list[dict], query: str, k: int = 4) -> list[dict]:
+def bm25_top(chunks: list[dict], query: str, k: int = 4,
+             min_score: float = 0.0) -> list[dict]:
     q = _tokens(query)
     if not q:
         return []
@@ -49,7 +50,8 @@ def bm25_top(chunks: list[dict], query: str, k: int = 4) -> list[dict]:
                 continue
             idf = math.log(1 + (n - df.get(tok, 0) + 0.5) / (df.get(tok, 0) + 0.5))
             s += idf * (tf * 2.2) / (tf + 1.5 * (0.75 + 0.25 * len(seen) / avg))
-        scored.append((s, i))
+        if s >= min_score:
+            scored.append((s, i))
     scored.sort(reverse=True)
     return [chunks[i] for _, i in scored[:k]]
 

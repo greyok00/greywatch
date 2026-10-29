@@ -1,9 +1,8 @@
 # tests/test_assistant_packer.py
 import pathlib, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+import assistant.packer as packer
 from assistant.packer import bm25_top, build_pack, load_index
-
-IDX = pathlib.Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 
 CHUNKS = [
     {"id": "a", "source": "s", "title": "A", "text": "apparmor denies reads for the lynis profile"},
@@ -40,3 +39,35 @@ def test_build_pack_shape_and_budget():
     assert {t["name"] for t in pack["tools"]} >= {"apparmor", "fail2ban"}
     assert len(pack["recent"]) == 2
     assert sum(len(s["text"]) for s in pack["snippets"]) <= 8000
+
+
+def test_bm25_min_score_floor_excludes_unmatched_chunks():
+    assert [c["id"] for c in
+            bm25_top(CHUNKS, "why did apparmor deny lynis", k=2, min_score=0.01)] == ["a"]
+    assert len(bm25_top(CHUNKS, "why did apparmor deny lynis", k=2)) == 2
+
+
+def test_build_pack_snippets_truncate_and_rank(monkeypatch):
+    long_text = ("apparmor denies unconfined writes for profiles " * 10)[:400]
+    monkeypatch.setattr(packer, "load_index", lambda: [
+        {"id": "x", "source": "runbooks/aa.md", "title": "AppArmor", "text": long_text},
+        {"id": "y", "source": "runbooks/f2b.md", "title": "Fail2ban",
+         "text": "fail2ban bans ssh brute force attempts"}])
+    pack = build_pack(STATUS, EVENTS, "apparmor denied writes", registry=None)
+    assert [s["title"] for s in pack["snippets"]] == ["AppArmor", "Fail2ban"]
+    assert pack["snippets"][0]["text"] == long_text[:300]
+    assert pack["snippets"][1] == {"title": "Fail2ban", "source": "runbooks/f2b.md",
+                                   "text": "fail2ban bans ssh brute force attempts"}
+    assert sum(len(s["text"]) for s in pack["snippets"]) <= packer.CHAR_BUDGET
+
+
+def test_build_pack_budget_break(monkeypatch):
+    long_text = ("the app firewall queues packets in nftables rules " * 12)[:600]
+    monkeypatch.setattr(packer, "CHAR_BUDGET", 350)
+    monkeypatch.setattr(packer, "load_index", lambda: [
+        {"id": "n1", "source": "runbooks/nft.md", "title": "Nftables", "text": long_text},
+        {"id": "n2", "source": "runbooks/nft2.md", "title": "Nftables 2", "text": long_text}])
+    pack = build_pack(STATUS, EVENTS, "app firewall nftables packets", registry=None)
+    # first snippet (300 chars) passes the 350 budget; the second would push
+    # `used` to 600 > 350, so the loop must break after exactly one snippet
+    assert [len(s["text"]) for s in pack["snippets"]] == [300]
