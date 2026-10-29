@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import threading
 
-from assistant import audit
+from assistant import advice, audit
 from assistant.intents import Intent, describe, parse_intent, validate
 from assistant.llm import ROUTER_SYSTEM  # noqa: F401  (router contract)
 from assistant.packer import build_pack
@@ -70,13 +70,19 @@ def plan_turn(question, pack, llm, registry_names: set, friendly: dict,
     """One question -> one answer plan. The widget only renders this.
 
     Ladder: English action verbs + a named tool -> intent plan; a
-    referential follow-up over the previously shown rows -> one-row
-    detail; a tool word -> tool status; event/log wording -> event
-    answers (tool-scoped when the question names one); else the model
-    routes or summarizes; the overview template is the safe floor."""
+    help/remediation question -> the deterministic advice engine (meaning,
+    risk, numbered steps); a referential follow-up over the previously
+    shown rows -> one-row detail; a tool word -> tool status; event/log
+    wording -> event answers (tool-scoped when the question names one);
+    else the model routes or summarizes; the overview template is the
+    safe floor."""
     intent = _intent_from_question(question, friendly)
     if intent is not None and validate(intent, registry_names) is None:
         return {"kind": "intent", "intent": intent}
+    if _wants_advice(question):
+        plan = _advice_plan(question, pack, registry_names, friendly, anchor)
+        if plan is not None:
+            return plan
     row = _anchored_row(question, anchor, pack.get("recent") or [])
     if row is not None:
         return {"kind": "template", "slot": "detail",
@@ -128,6 +134,67 @@ def plan_turn(question, pack, llm, registry_names: set, friendly: dict,
 def _mentions(question: str) -> bool:
     low = (question or "").lower()
     return any(w in low for w in _EVENT_WORDS)
+
+
+# Help/remediation wording. The owner's real question ("it should analyze
+# and interpret my questions and help me solve issues") is this rung: the
+# deterministic advice engine answers it with facts the app holds, because
+# a small model inventing fixes would be worse than no answer.
+_ADVICE_WORDS = ("fix", "repair", "remediate", "resolve", "address", "solve",
+                 "dangerous", "advice", "recommend", "suggest", "help me",
+                 "steps", "what should i do", "what can i do",
+                 "what do i do", "what needs attention", "needs attention",
+                 "how do i", "how can i", "is this normal", "is that normal",
+                 "should i worry", "why is")
+
+
+def _wants_advice(question: str) -> bool:
+    low = (question or "").lower()
+    for w in _ADVICE_WORDS:
+        if " " in w:
+            if w in low:
+                return True
+        elif re.search(rf"\b{re.escape(w)}\b", low):
+            return True
+    return False
+
+
+def _advice_plan(question, pack, registry_names, friendly, anchor):
+    """Advice keeps the ladder's facts: a named tool wins, an anchored
+    follow-up ('how do I fix that?') explains the row it points at, a
+    bare 'what needs attention?' ranks every protection."""
+    tool = _tool_from_question(question, friendly)
+    if tool and registry_names and tool not in registry_names:
+        tool = None
+    row = _anchored_row(question, anchor, pack.get("recent") or [])
+    if row is not None:
+        row_tool = str(row.get("tool") or row.get("from_tool") or "")
+        if tool is None or tool == row_tool:
+            return {"kind": "template", "slot": "advice",
+                    "text": advice.advise_event(row)}
+    if tool is None:
+        low = (question or "").lower()
+        for want in ("yellow", "red"):
+            if want in low:
+                hit = next((t for t in pack.get("tools") or []
+                            if t["state"] == want.upper()), None)
+                if hit is not None:
+                    tool = hit["name"]
+                else:
+                    return {"kind": "template", "slot": "advice",
+                            "text": advice.advise_state_vs_events(pack)}
+                break
+    if tool:
+        text = advice.advise_tool(pack, tool)
+        if text:
+            return {"kind": "template", "slot": "advice", "text": text}
+    if not advice.needs_attention(pack):
+        # Nothing is broken: explain the two channels instead of printing
+        # an empty ranked list.
+        text = advice.advise_state_vs_events(pack)
+    else:
+        text = advice.advise_priorities(pack)
+    return {"kind": "template", "slot": "advice", "text": text}
 
 
 def _anchored_row(question: str, anchor, recent=None) -> dict | None:

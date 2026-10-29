@@ -68,7 +68,7 @@ def answer_event(pack: dict, tool_hint: str | None = None) -> str | None:
             # nonsense ("is the layer that the kernel's detailed record").
             body += f" {name}: {desc[0].lower()}{desc[1:].rstrip('.')}"
             if str(rows[0].get("severity", "")).upper() in ("INFO", "MEDIUM"):
-                body += "; one denial is usually normal policy working."
+                body += "; one denial is usually normal policy working"
             body += "."
         return body
     label = _plain.FRIENDLY.get(hint or tool, (tool, ""))[0]

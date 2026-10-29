@@ -145,4 +145,71 @@ def test_live_generation_is_tamed(tmp_path):
     assert cap.kw["stream"] is True
     assert cap.kw["temperature"] == 0.2
     assert cap.kw["repeat_penalty"] == 1.15
-    assert cap.kw["max_tokens"] == 110
+    assert cap.kw["max_tokens"] == 160   # 1.7B needs room for a real sentence
+
+
+# ---- Qwen3: CPU threads, thinking off, stream-side think filter -----------
+
+def test_default_threads_leaves_headroom_on_a_shared_box():
+    from assistant.llm import default_threads
+    n = default_threads()
+    assert 2 <= n <= 8
+
+
+def test_both_prompts_carry_no_think(tmp_path):
+    seen = []
+
+    class Rec(FakeModel):
+        def create_chat_completion(self, messages, **kw):
+            seen.append(messages)
+            return super().create_chat_completion(messages, **kw)
+    llm = Llm(model_path="x", binding=lambda *a, **k: Rec(["ok", "ok"]))
+    _wait_ready(llm)
+    llm.ask_sync("route")
+    hit = threading.Event()
+    llm.ask_stream("answer", on_token=lambda t: None,
+                   on_done=lambda f: hit.set(),
+                   on_error=lambda e: hit.set())
+    assert hit.wait(5.0)
+    assert all(m[-1]["content"].endswith("/no_think") for m in seen)
+
+
+def test_sync_strips_a_thinking_block():
+    llm = Llm(model_path="x", binding=lambda *a, **k: FakeModel([
+        "<thi" + "nk>step by step</thi" + "nk>The firewall is running."]))
+    _wait_ready(llm)
+    assert llm.ask_sync("q") == "The firewall is running."
+
+
+def test_stream_never_emits_thinking_tokens():
+    text = "<thi" + "nk>hidden reasoning</thi" + "nk>Visible answer."
+    llm = Llm(model_path="x", binding=lambda *a, **k: FakeModel([text]))
+    _wait_ready(llm)
+    tokens, hit, full = [], threading.Event(), {}
+    llm.ask_stream("q", on_token=tokens.append,
+                   on_done=lambda f: (full.__setitem__("done", f), hit.set()),
+                   on_error=lambda e: hit.set())
+    assert hit.wait(5.0)
+    out = "".join(tokens)
+    assert out == "Visible answer."
+    assert full["done"] == "Visible answer."
+
+
+def test_stream_think_filter_holds_partial_tags_across_tokens():
+    from assistant.llm import ThinkFilter
+    f = ThinkFilter()
+    out = "".join(f.feed(t) for t in ["<th", "ink>", "secret", "</thi",
+                                      "nk>", "H", "i"])
+    assert out == "Hi"
+
+
+def test_n_threads_can_be_pinned_for_tests():
+    llm = Llm(model_path="x", n_threads=3)
+    assert llm._n_threads == 3
+
+
+def test_model_constant_is_the_qwen3_file():
+    from assistant.model import MODEL_FILENAME, MODEL_URL, MODEL_MIN_BYTES
+    assert MODEL_FILENAME == "Qwen3-1.7B-Q4_K_M.gguf"
+    assert MODEL_URL.endswith("/" + MODEL_FILENAME)
+    assert MODEL_MIN_BYTES < 1_107_409_472

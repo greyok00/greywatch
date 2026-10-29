@@ -333,7 +333,29 @@ button.gw-quiet label {{ color: {ink}; }}
   border-top: none; }}
 button.gw-learn {{ padding: 6px 14px; font-size: 13px; }}
 button:focus {{ outline: 2px solid {focus}; outline-offset: 1px; }}
-scrollbar slider {{ background-color: {line2}; border-radius: 0; min-width: 8px; }}
+/* Scrollbars: GTK4's default Adwaita trough is a grey slab that reads as
+   a stray overlay on top of our surfaces, and its flat 8px thumb was the
+   "weird grey overlay" the owner kept seeing. The trough is transparent
+   everywhere and the thumb is a thin, quiet rail that brightens on hover. */
+scrollbar {{ background: transparent; border: none; }}
+scrollbar trough {{ background: transparent; border: none; box-shadow: none; }}
+scrollbar slider {{
+  background-color: {line}; border: none; border-radius: 4px;
+  min-width: 6px; min-height: 28px; margin: 2px;
+}}
+scrollbar slider:hover {{ background-color: {ink_soft}; }}
+scrollbar slider:active {{ background-color: {ink}; }}
+/* The tool rail is the one scroller that ends on its own pause/play
+   buttons, so its bar is hidden outright (wheel scrolling still works)
+   rather than painted across them. */
+.gw-rail-scroll scrollbar {{ opacity: 0; min-width: 0; min-height: 0; }}
+.gw-rail-scroll scrollbar slider {{ background: transparent;
+  min-width: 0; min-height: 0; margin: 0; }}
+/* Rail rows are a list of 17, not a data table: compact enough that the
+   whole rail is scannable without scrolling. Global row metrics (40px)
+   stay untouched for treeviews and the event table. */
+.gw-rail-rows row {{ min-height: 30px; padding: 2px 8px; }}
+.gw-rail-rows row:hover {{ background-color: {accent_soft}; }}
 """.replace("{css_bg(bg)}", "")
 
 

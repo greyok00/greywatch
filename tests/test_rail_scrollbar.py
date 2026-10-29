@@ -13,3 +13,31 @@ def test_rail_scroller_drops_the_overlay_scrollbar():
     list checks."""
     assert "sc.set_overlay_scrolling(False)" in (
         ROOT / "ui" / "window.py").read_text()
+
+
+def test_rail_scroller_is_hidden_by_css_not_just_layout():
+    """Layout alone was not enough: the Adwaita trough still painted the
+    grey slab over the rail's right edge after set_overlay_scrolling
+    (owner: "the overlay you said was the scrollbar is still there").
+    The bar must be off by class, with wheel scrolling left alone."""
+    win = (ROOT / "ui" / "window.py").read_text()
+    assert 'sc.add_css_class("gw-rail-scroll")' in win
+    from ui import themes
+    css = themes.gtk_css(themes.load_themes()["obsidian"])
+    assert ".gw-rail-scroll scrollbar" in css
+    assert "opacity: 0" in css
+
+
+def test_rail_rows_are_compact_without_touching_global_rows():
+    win = (ROOT / "ui" / "window.py").read_text()
+    assert 'self.rail_list.add_css_class("gw-rail-rows")' in win
+    from ui import themes
+    css = themes.gtk_css(themes.load_themes()["obsidian"])
+    assert ".gw-rail-rows row { min-height: 30px" in css
+    assert "row, treeview row { min-height: 40px" in css     # tables unchanged
+
+
+def test_scrollbar_trough_is_transparent_everywhere():
+    from ui import themes
+    css = themes.gtk_css(themes.load_themes()["obsidian"])
+    assert "scrollbar trough { background: transparent;" in css

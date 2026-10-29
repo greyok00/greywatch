@@ -90,14 +90,19 @@ control.
 
 The window's far-right rail lists every protection; ask the chat panel
 anything about your tools, logs, or docs. Answers are composed in code
-from your real data; a small local model (SmolLM2-360M, ~250 MB, CPU
-only, no network, no port) routes questions and summarizes when needed.
+from your real data; a local Qwen3-1.7B model (~1.1 GB, CPU only, no
+network, no port, thinking disabled) routes leftover questions and
+summarizes when needed. "How do I fix this?" is answered by a
+deterministic advice engine: what the line means, why it matters, and
+numbered steps drawn from the registry (copyable `systemctl`/`tail`
+commands you run yourself — never executed from chat).
 Actions it proposes (pause/resume/details/overview) always show a confirm
 dialog first and land in `assistant-actions.jsonl` tagged `via=assistant`.
 If the binding or model is missing, the chat works in docs-only mode.
-Upgrade path: drop `Qwen3-0.6B-Instruct-Q4_K_M.gguf` into
-`/var/lib/greywatch/models/` with the same file stem replaced in
-`ui/window.py` if answers ever feel thin.
+The model file and URL live once in `assistant/model.py`; to swap the
+brain, change `MODEL_FILENAME`/`MODEL_URL` there and the matching two
+lines in `install.sh`, drop the GGUF into `/var/lib/greywatch/models/`,
+and relaunch.
 
 ## Installation
 

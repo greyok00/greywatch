@@ -120,14 +120,18 @@ assistant_assets() { # optional chat assets: the model gguf under $DATA,
     local grp model msize
     grp="$(getent passwd "$UI_USER" | cut -d: -f4)"
     mkdir -p "$DATA/models"
-    model="$DATA/models/smollm2-360m-instruct-q4_k_m.gguf"
+    # The filename and URL mirror assistant/model.py (single source of
+    # truth for the app; kept literal here so a bare install needs no
+    # Python import).
+    model="$DATA/models/Qwen3-1.7B-Q4_K_M.gguf"
+    model_url="https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
     if [ ! -s "$model" ]; then
         if curl -L --fail --connect-timeout 15 --retry 2 -o "$model" \
-                "https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"; then
+                "$model_url"; then
             # plausibility floor: a truncated-but-nonempty download must
-            # not survive (the real artifact is ~250 MB)
+            # not survive (the real artifact is ~1.06 GiB)
             msize="$(stat -c %s "$model" 2>/dev/null || echo 0)"
-            if [ "$msize" -lt $((150 * 1024 * 1024)) ]; then
+            if [ "$msize" -lt $((900 * 1024 * 1024)) ]; then
                 rm -f "$model" # a truncated download must never pass the -s probe
             fi
         else
@@ -136,7 +140,14 @@ assistant_assets() { # optional chat assets: the model gguf under $DATA,
         if [ ! -s "$model" ]; then
             echo "assistant model not fetched — chat stays docs-only"
             echo "  fetch later: curl -L --fail --connect-timeout 15 --retry 2 -o $model \\"
-            echo "      https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"
+            echo "      $model_url"
+        fi
+    fi
+    # upgrade path: the old 360M brain is dead weight once this one is in
+    old_model="$DATA/models/smollm2-360m-instruct-q4_k_m.gguf"
+    if [ -s "$model" ] && [ -e "$old_model" ]; then
+        if rm -f "$old_model"; then
+            echo "removed the old 360M model"
         fi
     fi
     if [ -f "$model" ]; then

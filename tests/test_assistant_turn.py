@@ -208,3 +208,72 @@ def test_followup_denied_prefers_a_real_denial_over_an_armed_blurb():
                     {"appfw"}, {"appfw": ("App firewall", "x")},
                     anchor=rows[:1])
     assert out["slot"] == "detail" and "answered: deny" in out["text"]
+
+
+# ---- advice rung ----------------------------------------------------------
+
+FULL_FRIENDLY = {
+    "rkhunter": ("Rootkit scanner", "Hunts for hidden malware."),
+    "ufw": ("Firewall", "Blocks unwanted connections."),
+    "fail2ban": ("Intrusion blocker", "Locks out password guessers."),
+}
+
+
+def _advice_pack():
+    return {"tools": [
+        {"name": "ufw", "state": "RED", "installed": True, "paused": False},
+        {"name": "fail2ban", "state": "GREEN", "installed": True,
+         "paused": False},
+        {"name": "rkhunter", "state": "GREEN", "installed": True,
+         "paused": False},
+    ], "recent": [
+        {"tool": "rkhunter", "severity": "HIGH",
+         "text": "Rootkit scanner is down and could not be repaired",
+         "ts": "2026-10-29T13:50:00+00:00"},
+        {"tool": "fail2ban", "severity": "HIGH",
+         "text": "fail2ban banned 203.0.113.9 (sshd)",
+         "ts": "2026-10-29T13:49:00+00:00"},
+    ], "status_line": "2 of 3 protections green, 1 need attention"}
+
+
+def test_how_do_i_fix_a_named_tool_uses_the_advice_engine():
+    out = plan_turn("how do I fix the rootkit scanner?", _advice_pack(), None,
+                    set(FULL_FRIENDLY), FULL_FRIENDLY)
+    assert out["kind"] == "template" and out["slot"] == "advice"
+    assert "disagreement" in out["text"]        # green column, down in the log
+    assert "Rootkit scan" in out["text"]        # the app's real action
+
+
+def test_what_should_i_do_ranks_priorities():
+    out = plan_turn("what should I do?", _advice_pack(), None,
+                    set(FULL_FRIENDLY), FULL_FRIENDLY)
+    assert out["slot"] == "advice"
+    assert "Firewall" in out["text"]            # the stopped layer comes first
+    assert out["text"].index("Firewall") < out["text"].index("Rootkit")
+
+
+def test_how_do_i_fix_that_explains_the_anchored_row():
+    pack = _advice_pack()
+    anchor = [pack["recent"][1]]                # the fail2ban ban row
+    out = plan_turn("how do I fix that?", pack, None, set(FULL_FRIENDLY),
+                    FULL_FRIENDLY, anchor=anchor)
+    assert out["slot"] == "advice"
+    assert "locked out after repeated failed logins" in out["text"]
+    assert "fail2ban banned 203.0.113.9" in out["text"]
+
+
+def test_advice_never_takes_over_an_explicit_action():
+    """'pause the firewall' is an action, not a help question, even though
+    the pack is bad — the intent rung keeps priority."""
+    out = plan_turn("pause the firewall", _advice_pack(), None,
+                    set(FULL_FRIENDLY), FULL_FRIENDLY)
+    assert out["kind"] == "intent"
+
+
+def test_is_this_normal_reaches_advice():
+    out = plan_turn("is this normal?", {"tools": [], "recent": [
+        {"tool": "apparmor", "severity": "MEDIUM",
+         "text": "AppArmor DENIED profile=lynis", "ts": "2026-10-29T13:50:00+00:00"}]},
+        None, set(FULL_FRIENDLY), FULL_FRIENDLY)
+    assert out["slot"] == "advice"
+    assert "state column" in out["text"]

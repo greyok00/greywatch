@@ -189,9 +189,12 @@
   /* Graphite + sand (owner 2026-10-27: no bright blue, no fire-engine red).
      Warm neutral surfaces, one muted brass accent, status colours drawn from
      stone/sage/clay instead of signal-light primaries. */
-  --el-bg: #101113; --el-panel: #17181b; --el-panel-2: #1e2024; --el-panel-3: #26282d;
-  --el-line: #2c2e34; --el-line-2: #232529; --el-line-strong: #3d4046;
-  --el-ink: #e8e4dc; --el-ink-soft: #a4a19a; --el-mute: #74716b;
+  /* Surfaces stepped apart 2026-10-29: the owner read the old set as
+     "washed out" because bg/panel/line sat only a few units apart, so
+     cards, borders and the page dissolved into one field. */
+  --el-bg: #0e0f11; --el-panel: #1a1c20; --el-panel-2: #23262b; --el-panel-3: #2b2e34;
+  --el-line: #3a3d44; --el-line-2: #2a2d33; --el-line-strong: #4d5058;
+  --el-ink: #ece8e0; --el-ink-soft: #b3afa7; --el-mute: #85817a;
   --el-on-accent: #17150f;
   --el-accent: #b8996b; --el-accent-hover: #c9a97a; --el-accent-soft: rgba(184,153,107,0.15);
   --el-ok: #8fb59a; --el-warn: #c9a55f; --el-fail: #c47b6b;

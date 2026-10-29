@@ -429,6 +429,9 @@ class MainWindow(Gtk.Window):
         top.append(self.show_all_btn)          # moved from the dashboard
         rail.append(top)
         self.rail_list = Gtk.ListBox()
+        # Compact row metrics for the rail only; the global 40px row rule
+        # is right for tables and wrong for a 17-item list in 240px.
+        self.rail_list.add_css_class("gw-rail-rows")
         self.rail_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.rail_state = {}
         self.rail_rows = {}
@@ -467,9 +470,12 @@ class MainWindow(Gtk.Window):
         sc.set_child(self.rail_list)
         sc.set_vexpand(True)
         # GTK4's floating overlay scrollbar drags a grey pill across the
-        # row's right edge — right through the pause/play button. This
-        # rail is the one scroller that ends on controls of its own.
+        # row's right edge — right through the pause/play button. Layout
+        # opting out was not enough (the Adwaita trough still painted), so
+        # the bar is hidden by CSS class (ui/themes.py: .gw-rail-scroll)
+        # and only the wheel scrolls this list.
         sc.set_overlay_scrolling(False)
+        sc.add_css_class("gw-rail-scroll")
         rail.append(sc)
         rail.append(self.sel_note)
         foot = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -563,9 +569,9 @@ class MainWindow(Gtk.Window):
         gguf under $DATA/models). A retry builds a NEW Llm instance, since
         start() is one-shot per instance (assistant/llm.py contract)."""
         from assistant.llm import Llm
+        from assistant.model import MODEL_FILENAME
         import gwpaths
-        model = gwpaths.data_dir() / "models" / \
-            "smollm2-360m-instruct-q4_k_m.gguf"
+        model = gwpaths.data_dir() / "models" / MODEL_FILENAME
         self.assistant_panel.banner.set_text(
             "Assistant loading…"
             + ("" if getattr(self, "chat_llm", None) is None else " retrying"))
