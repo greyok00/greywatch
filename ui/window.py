@@ -8,7 +8,8 @@ import time
 
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, GLib, Gio    # noqa: E402
+gi.require_version("Pango", "1.0")
+from gi.repository import Gtk, GLib, Gio, Pango    # noqa: E402
 
 from registry import load_registry
 from ui.models import (status_words, recent_rows, age_words, local_clock)
@@ -20,6 +21,7 @@ from ui.plain import (sentence as plain_sentence, friendly_name, what_is,
 from ui.themes import (ThemeStore, dark_default, load_setting,
                        THEME_CHOICES)
 from ui.cards import SCAN_MODES, quiet_note
+from ui.assistant import AssistantPanel
 from ui.toolicons import icon_name as tool_icon
 from ui.settings import (TrustList, PausedStore, LearningStore,
                          FirewallModeStore)
@@ -67,6 +69,8 @@ class MainWindow(Gtk.Window):
         self._setup_win = None
         self._selected_tool = None
         self._state_override = {}
+        self.chat_llm = None             # assistant brain, woken on realize
+        self.chat_retry = None
         self._trust = TrustList()
         self.paused = PausedStore()
         self._learn_store = LearningStore()
@@ -234,21 +238,25 @@ class MainWindow(Gtk.Window):
             self._add_view(key, self._builders[key]())
 
     def _security_view(self):
+        # Assistant-first dashboard: the centre (chat) and the far-right
+        # protection rail share one pane, so resizing the chat can never
+        # squeeze the rail away.
+        pane = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        pane.set_vexpand(True)
+        pane.set_hexpand(True)
         st = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        st.set_margin_top(22); st.set_margin_start(34); st.set_margin_end(34)
+        st.set_margin_top(22); st.set_margin_start(34); st.set_margin_end(16)
 
         top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.status_words = Gtk.Label(xalign=0)
         self.status_words.set_xalign(0)
         self.status_words.set_hexpand(True)
         top.append(self.status_words)
-        # Healthy rows are the long tail: reachable, not competing for the
-        # top of the screen (SOC pattern: rank by what needs a human).
-        # On by default: an unticked box hid all seventeen healthy rows and
-        # left a large empty panel that read as "the app is broken".
-        self.show_all_btn = Gtk.CheckButton(label="Show healthy", active=True)
-        self.show_all_btn.connect("toggled", lambda *_a: self.refresh())
-        top.append(self.show_all_btn)
+        # Counts header: the tally behind the headline's big words, filled
+        # by refresh() from the same status snapshot (no extra reads).
+        self.counts = Gtk.Label(xalign=0)
+        self.counts.set_xalign(0)
+        top.append(self.counts)
         st.append(top)
 
         frame = Gtk.Frame()
@@ -295,34 +303,62 @@ class MainWindow(Gtk.Window):
         frame.set_child(self.table_stack)
         frame.set_vexpand(False)
         self.table_stack.set_size_request(-1, 470)
-        st.append(frame)
+        # The list stack kept: selection, restore and refresh still drive
+        # it, and the v1 rail replaces the big table — it stays built and
+        # updated, just no longer featured on the dashboard.
+        self.list_frame = frame
 
-        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        # The four controls the old actions strip had now live in the rail
+        # footer (same attributes, same handlers); the selection note rides
+        # along so "Select a protection first." still lands somewhere visible.
+        # "Show healthy" moves too — the rail header — still driving the same
+        # filter (healthy rows are the long tail: reachable, not competing
+        # for the top of the screen; unticking hid all seventeen healthy
+        # rows once and read as "the app is broken", so it is on by default).
+        self.show_all_btn = Gtk.CheckButton(label="Show healthy", active=True)
+        self.show_all_btn.connect("toggled", lambda *_a: self.refresh())
         self.sel_note = Gtk.Label(xalign=0)
         self.sel_note.set_xalign(0)
         self.sel_note.set_text("Select a protection.")
         self.sel_note.set_hexpand(True)
-        actions.append(self.sel_note)
         self.pause_btn = Gtk.Button(label="Pause")
         self.pause_btn.connect("clicked", lambda *_b: self._pause_selected())
         self.resume_btn = Gtk.Button(label="Resume")
         self.resume_btn.connect("clicked", lambda *_b: self._resume_selected())
-        details_btn = Gtk.Button(label="Details")
-        details_btn.connect("clicked", lambda *_b: self._details_selected())
+        self.details_btn = Gtk.Button(label="Details")
+        self.details_btn.connect(
+            "clicked", lambda *_b: self._details_selected())
         self.panic_btn = Gtk.Button(label="Enable all")
         self.panic_btn.set_tooltip_text(
             "Starts what is stopped and turns the app firewall on.")
         self.panic_btn.connect("clicked", self._on_panic)
-        for b in (self.pause_btn, self.resume_btn, details_btn, self.panic_btn):
-            actions.append(b)
-        st.append(actions)
+
+        # Chat centre: the assistant takes the big table's old place, and a
+        # visible restart affordance covers a failed model wake (a fresh Llm
+        # restarts — start() is one-shot per instance).
+        self.assistant_panel = AssistantPanel(
+            self.registry, self._get_status, self._get_recent,
+            lambda: self.chat_llm, self._assistant_intent)
+        self.chat_retry = Gtk.Button(label="Retry model")
+        self.chat_retry.set_visible(False)
+        self.chat_retry.connect(
+            "clicked", lambda *_a: self._start_chat_llm())
+        self.assistant_panel.append(self.chat_retry)
+        self.assistant_panel.set_vexpand(True)
+        # The chat stream is a scroll with no content of its own on waking:
+        # without a floor it would collapse to a sliver inside the page
+        # scroll and look like the panel never loaded.
+        self.assistant_panel.set_size_request(-1, 340)
+        st.append(self.assistant_panel)
 
         st.append(self._h2("Recent activity"))
         # [tool icon name, severity dot, time, sentence]
         # 4 = severity ink for the state dot in column 1.
         self.recent_store = Gtk.ListStore(str, str, str, str, str)
         recent = Gtk.TreeView(model=self.recent_store, headers_visible=False)
-        recent.set_size_request(-1, 200)
+        # Compacted strip: the chat is the centre now, the rail names every
+        # protection — the feed keeps five lines, not a second dashboard.
+        recent.set_size_request(-1, 150)
         icon_cell = Gtk.CellRendererPixbuf()
         icon_cell.set_property("width", 18)
         recent.append_column(Gtk.TreeViewColumn(
@@ -341,7 +377,16 @@ class MainWindow(Gtk.Window):
         rf.add_css_class("gw-card")
         rf.set_child(recent)
         st.append(rf)
-        return self._scroll(st)
+
+        pane.set_start_child(self._scroll(st))
+        pane.set_end_child(self._build_assistant_rail())
+        pane.set_resize_start_child(True)
+        pane.set_shrink_end_child(False)
+        # A first-run default; the divider stays user-draggable. Through the
+        # property, not the method: the repo lint bans the `set_position(`
+        # spelling (Gtk3-era window API) and the name collides here.
+        pane.set_property("position", 1080)
+        return pane
 
     def _list_selected(self, selection):
         model, it = selection.get_selected()
@@ -369,6 +414,161 @@ class MainWindow(Gtk.Window):
     def _details_selected(self):
         if self._selected_tool:
             self._open_detail(self._selected_tool)
+
+    def _build_assistant_rail(self):
+        """Far-right rail: one row per protection — icon, drawn dot, name,
+        pause/play; the footer carries the four controls the old actions
+        strip had. Drawn glyphs only (theme-consistent, design invariant)."""
+        rail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        rail.set_margin_top(22)
+        rail.set_margin_end(18)
+        rail.set_size_request(240, -1)
+        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        top.append(self._h2("Protections"))
+        top.append(self.show_all_btn)          # moved from the dashboard
+        rail.append(top)
+        self.rail_list = Gtk.ListBox()
+        self.rail_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.rail_state = {}
+        self.rail_rows = {}
+        for t in self.registry:
+            name = t["name"]
+            row = Gtk.ListBoxRow()
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            ic = Gtk.Image.new_from_icon_name(tool_icon(name))
+            ic.set_pixel_size(16)
+            box.append(ic)
+            lbl = Gtk.Label(label=friendly_name(name), xalign=0)
+            lbl.set_xalign(0)
+            lbl.set_hexpand(True)
+            # Pango is imported up top (minitile idiom); ellipsising without
+            # it would overflow the 240px rail on long plain names.
+            lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            lbl.set_tooltip_text(f"{t.get('label') or name} · {name}")
+            box.append(lbl)
+            dot = Gtk.Label(label="●")
+            dot.set_markup(f"<span color='{pc_muted()}'>●</span>")
+            box.append(dot)
+            tog = Gtk.Button()
+            tog_img = Gtk.Image.new_from_icon_name(
+                "media-playback-pause-symbolic")
+            tog_img.set_pixel_size(12)
+            tog.set_child(tog_img)             # drawn glyph, never an emoji
+            tog.connect("clicked", lambda *_b, name=name:
+                        self._rail_toggle(name))
+            box.append(tog)
+            row.set_child(box)
+            self.rail_rows[name] = (row, dot, tog)
+            self.rail_list.append(row)
+        self.rail_list.connect("row-selected", self._rail_selected)
+        sc = Gtk.ScrolledWindow()
+        sc.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        sc.set_child(self.rail_list)
+        sc.set_vexpand(True)
+        rail.append(sc)
+        rail.append(self.sel_note)
+        foot = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        # The four controls the old actions strip had, rebuilt here verbatim:
+        # same attributes, same handlers, no second code path.
+        for b in (self.pause_btn, self.resume_btn, self.details_btn,
+                  self.panic_btn):
+            foot.append(b)                     # reuse existing buttons
+        rail.append(foot)
+        return rail
+
+    def _rail_toggle(self, name):
+        """Same click path as the footer buttons, for a rail row."""
+        self._selected_tool = name
+        if self.rail_state.get(name) == "paused":
+            self._resume_selected()
+        else:
+            self._pause_selected()
+
+    def _rail_selected(self, _box, row):
+        """Row click selects; the footer buttons act on the selection."""
+        for name, (r, _dot, _tog) in self.rail_rows.items():
+            if r is row:
+                self._selected_tool = name
+                self.sel_note.set_text(
+                    f"Selected: {friendly_name(name)} · {name}")
+
+    def _refresh_rail(self, tools, updated):
+        """Paint the rail from the snapshot refresh() already read: one dot
+        per protection plus the pause/play glyph — no new daemon traffic."""
+        rows = getattr(self, "rail_rows", None)
+        if not rows:
+            return
+        alive = getattr(self, "show_all_btn", None)
+        show = alive is None or alive.get_active()
+        for t in self.registry:
+            name = t["name"]
+            entry = rows.get(name)
+            if entry is None:
+                continue
+            row, dot, tog = entry
+            paused = self.paused.is_paused(name)
+            state = self._display_state(name, tools.get(name, {}), updated)
+            # Same drawn-dot ink the cards and the list use; no emoji.
+            dot.set_markup(
+                f"<span color='{pc_state_colour(state, paused)}'>●</span>")
+            self.rail_state[name] = "paused" if paused else "running"
+            img = Gtk.Image.new_from_icon_name(
+                "media-playback-start-symbolic" if paused
+                else "media-playback-pause-symbolic")
+            img.set_pixel_size(12)
+            tog.set_child(img)
+            tog.set_tooltip_text(
+                f"Resume {friendly_name(name)}" if paused
+                else f"Pause {friendly_name(name)}")
+            # "Show healthy" still does its one job, just from the rail:
+            # an unticked box hides the long tail of green rows.
+            row.set_visible(show or paused or state != "GREEN")
+
+    def _get_status(self):
+        return dict(getattr(self, "_status_snapshot", {}) or {})
+
+    def _get_recent(self):
+        return list(getattr(self, "_recent_snapshot", []) or [])
+
+    def _assistant_intent(self, action, tool):
+        """Confirm-gated execution. The panel already showed the confirm
+        dialog and wrote the one assistant ledger line for the intent
+        (ui.assistant._confirmed); this mirrors the manual buttons exactly.
+        """
+        if action == "details":
+            self._selected_tool = tool
+            self._open_detail(tool)
+            return
+        if action == "pause":
+            self._selected_tool = tool
+            self._pause_selected()
+        elif action == "resume":
+            self._selected_tool = tool
+            self._resume_selected()
+        # overview needs no action — the template already answered.
+
+    def _start_chat_llm(self):
+        """Wake the assistant model in-process (the installer drops the
+        gguf under $DATA/models). A retry builds a NEW Llm instance, since
+        start() is one-shot per instance (assistant/llm.py contract)."""
+        from assistant.llm import Llm
+        import gwpaths
+        model = gwpaths.data_dir() / "models" / \
+            "smollm2-360m-instruct-q4_k_m.gguf"
+        self.assistant_panel.banner.set_text(
+            "Assistant loading…"
+            + ("" if getattr(self, "chat_llm", None) is None else " retrying"))
+        if getattr(self, "chat_retry", None) is not None:
+            self.chat_retry.set_visible(False)
+        self.chat_llm = Llm(model_path=str(model))
+        self.chat_llm.start(
+            lambda ok, err: GLib.idle_add(self._on_llm_ready, ok, err))
+
+    def _on_llm_ready(self, ok, err):
+        self.assistant_panel.note_state(ok, err)
+        if getattr(self, "chat_retry", None) is not None:
+            self.chat_retry.set_visible(not ok)
+        return False
 
     def _tools_view(self):
         tools = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
@@ -2181,6 +2381,10 @@ class MainWindow(Gtk.Window):
             events = []
         if not events:                    # the event store is root-only (0600)
             events = snap.get("recent") or []   # → the daemon's public digest
+        # The assistant facts source: the very snapshots refresh() already
+        # loaded — _get_status/_get_recent hand these over, no new reads.
+        self._status_snapshot = snap
+        self._recent_snapshot = events
         if events != self._recent_seen:
             self._recent_seen = events
             self.recent_store.clear()
@@ -2234,6 +2438,14 @@ class MainWindow(Gtk.Window):
             for cls in ("ok", "warn", "fail"):
                 self.header_pill.remove_css_class(cls)
             self.header_pill.add_css_class(pill_state)
+        # Counts header: green count, pauses and the attention tail, in the
+        # monitor's own words when it has not reported yet.
+        if getattr(self, "counts", None) is not None:
+            self.counts.set_text(
+                "waiting for the monitor"
+                if known == 0 and not self._state_override
+                else f"{running} running · {paused_n} paused · "
+                     f"{attention} need attention")
 
         now = _dt.datetime.now(_dt.timezone.utc)
         # Rank by what needs a human, not by registry order: anything failed
@@ -2279,6 +2491,7 @@ class MainWindow(Gtk.Window):
                 for col, val in enumerate(row):
                     self.list_store[it][col] = val
         self._restore_list_selection()
+        self._refresh_rail(tools, updated)
         if hasattr(self, "card_widgets"):
             for t in self.registry:
                 frame = self.card_widgets.get(t["name"])
