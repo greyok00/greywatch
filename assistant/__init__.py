@@ -1,0 +1,1 @@
+"""Embedded assistant: in-process LLM routing + template answers."""
