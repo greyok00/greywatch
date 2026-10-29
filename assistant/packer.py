@@ -65,7 +65,9 @@ def build_pack(status: dict, events: list[dict], question: str,
     labels = {t["name"]: t.get("label", "") for t in (registry or [])}
     pack_tools = [{"name": n,
                    "state": t.get("state", "UNKNOWN"),
-                   "label": labels.get(n) or t.get("label", "")}
+                   "label": labels.get(n) or t.get("label", ""),
+                   "installed": bool(t.get("installed", True)),
+                   "paused": bool(t.get("paused", False))}
                   for n, t in sorted(tools.items())]
     recent = [{"tool": e.get("from_tool", ""), "severity": e.get("severity", ""),
                "text": e.get("text", ""), "ts": e.get("ts", "")}

@@ -31,3 +31,13 @@ def test_tool_status_named_tool():
 def test_compose_dispatch_unknown_slot_is_none():
     assert compose("summary", build_pack()) is None
     assert compose("overview", build_pack()) is not None
+
+
+def test_tool_status_wording_uses_pack_paused():
+    from assistant.packer import build_pack
+    status = {"tools": {"fail2ban": {"state": "RED", "installed": True,
+                                     "paused": True}}}
+    pack = build_pack(status, [], "tool status", registry=None)
+    text = answer_tool_status(pack, "fail2ban")
+    assert "paused" in text.lower()
+    assert "current layer state: red" in text.lower()

@@ -44,9 +44,13 @@ def answer_tool_status(pack: dict, tool: str) -> str | None:
     if t is None:
         return None
     name, desc = _plain_bits(tool)
-    words = status_words(t["state"], True, False)
-    return (f"{name} ({tool}) is {words.lower()}. {desc} Current layer "
-            f"state: {t['state']}.").strip()
+    words = status_words(t["state"], t.get("installed", True),
+                         t.get("paused", False))
+    parts = [f"{name} ({tool}) is {words.lower()}."]
+    if desc:
+        parts.append(desc)
+    parts.append(f"Current layer state: {t['state']}.")
+    return " ".join(parts).strip()
 
 
 def compose(slot: str, pack: dict, tool: str | None = None) -> str | None:

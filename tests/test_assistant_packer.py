@@ -71,3 +71,18 @@ def test_build_pack_budget_break(monkeypatch):
     # first snippet (300 chars) passes the 350 budget; the second would push
     # `used` to 600 > 350, so the loop must break after exactly one snippet
     assert [len(s["text"]) for s in pack["snippets"]] == [300]
+
+
+def test_build_pack_passes_through_installed_and_paused():
+    status = {"tools": {
+        "f2b": {"state": "YELLOW", "installed": False},
+        "watch": {"state": "GREEN", "paused": True},
+        "plain": {"state": "GREEN"}}}
+    pack = build_pack(status, [], "what is running?", registry=None)
+    tools = {t["name"]: t for t in pack["tools"]}
+    assert tools["f2b"]["installed"] is False
+    assert tools["f2b"]["paused"] is False          # absent → default False
+    assert tools["watch"]["paused"] is True
+    assert tools["watch"]["installed"] is True      # absent → default True
+    assert tools["plain"]["installed"] is True
+    assert tools["plain"]["paused"] is False
