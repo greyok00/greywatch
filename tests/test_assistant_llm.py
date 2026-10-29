@@ -13,7 +13,8 @@ class FakeModel:
     def __init__(self, replies):
         self.replies = list(replies)
 
-    def create_chat_completion(self, messages, max_tokens=None, stream=False):
+    def create_chat_completion(self, messages, max_tokens=None, stream=False,
+                               **_ignored):
         text = self.replies.pop(0) if self.replies else "ok"
         if not stream:
             return {"choices": [{"message": {"content": text}}]}
@@ -112,3 +113,36 @@ def test_start_twice_fires_on_ready_once(tmp_path):
 def test_prompts_carry_the_action_key_contract():
     from assistant.llm import ROUTER_SYSTEM
     assert '"action"' in ROUTER_SYSTEM and '"action"' in ANSWER_SYSTEM
+
+
+def test_live_generation_is_tamed(tmp_path):
+    """The 360M model looped stock phrases at default sampling (0.8, no
+    repeat penalty — 'the answer is:' dead ends). Router and answers run
+    cool and penalised now."""
+    class Cap:
+        def __init__(self):
+            self.kw = {}
+
+        def create_chat_completion(self, **kw):
+            self.kw = dict(kw)
+            if kw.get("stream"):
+                return ([{"choices": [{"delta": {"content": "a"}}]},
+                         {"choices": [{"delta": {}}]}])
+            return {"choices": [{"message": {"content": "{}"}}]}
+
+    cap = Cap()
+    llm = Llm(model_path=str(tmp_path / "x.gguf"),
+              binding=lambda *a, **k: cap)
+    _wait_ready(llm)
+    llm.ask_sync("route me")
+    assert cap.kw["temperature"] == 0.2
+    assert cap.kw["repeat_penalty"] == 1.05
+    got, done = [], threading.Event()
+    llm.ask_stream("summarize", lambda t: got.append(t),
+                   lambda full: done.set(), lambda e: done.set())
+    assert done.wait(5.0)
+    assert "".join(got) == "a"
+    assert cap.kw["stream"] is True
+    assert cap.kw["temperature"] == 0.2
+    assert cap.kw["repeat_penalty"] == 1.15
+    assert cap.kw["max_tokens"] == 110

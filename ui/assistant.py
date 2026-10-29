@@ -7,10 +7,11 @@ import plan_turn on headless runners.
 """
 from __future__ import annotations
 
+import re
 import threading
 
 from assistant import audit
-from assistant.intents import describe, parse_intent, validate
+from assistant.intents import Intent, describe, parse_intent, validate
 from assistant.llm import ROUTER_SYSTEM  # noqa: F401  (router contract)
 from assistant.packer import build_pack
 from assistant.router import route
@@ -18,17 +19,61 @@ from assistant.templates import compose
 
 SLOTS_WITH_TEMPLATES = ("overview", "explain_event", "tool_status")
 
-_EVENT_WORDS = ("event", "alert", "happened", "newest", "last", "blocked",
-                "denied")
+# The live 360M router returned junk on the owner's real questions (an
+# empty reply for the rootkit question, then prose 'fail2ban' as a slot
+# tool), so the deterministic engine answers first; the model gets only
+# what no keyword engine can match. Its router + free text are tamed in
+# assistant/llm.py.
+_EVENT_WORDS = ("event", "events", "log", "logs", "alert", "happened",
+                "newest", "last", "blocked", "denied", "suspicious",
+                "warning", "found", "find", "scan", "scanner", "analyze",
+                "analysis", "history", "activity", "latest", "recently")
+
+_PAUSE_VERBS = ("pause", "suspend", "stop", "disable", "deactivate",
+                "turn off", "shut off", "shut down")
+_RESUME_VERBS = ("resume", "unpause", "start", "enable", "activate",
+                 "turn on")
+
+# Label words too generic to pin a tool: "what happened to this event?"
+# is an event question, not an auditd question.
+_LABEL_NOISE = frozenset({"event", "system", "live", "watch", "watcher",
+                          "scanner", "program", "helper", "device",
+                          "security"})
 
 
 def plan_turn(question, pack, llm, registry_names: set, friendly: dict) -> dict:
-    """One question -> one answer plan. The widget only renders this."""
+    """One question -> one answer plan. The widget only renders this.
+
+    Ladder: English action verbs + a named tool -> intent plan; a tool
+    word -> tool status; event/log wording -> event answers (tool-scoped
+    when the question names one); else the model routes or summarizes;
+    the overview template is always the safe floor."""
+    intent = _intent_from_question(question, friendly)
+    if intent is not None and validate(intent, registry_names) is None:
+        return {"kind": "intent", "intent": intent}
+    tool = _tool_from_question(question, friendly)
+    if tool and registry_names and tool not in registry_names:
+        tool = None                    # never stage a tool outside the registry
+    if tool and not _mentions(question):
+        text = compose("tool_status", pack, tool)
+        if text is not None:
+            return {"kind": "template", "slot": "tool_status", "text": text}
+    if _mentions(question):
+        text = compose("explain_event", pack, tool)
+        if text is None and tool:
+            # named tool, no events of its own in the window: its status
+            # is still a real answer
+            text = compose("tool_status", pack, tool)
+        if text is not None:
+            return {"kind": "template", "slot": "explain_event",
+                    "text": text}
     if llm is not None and llm.is_ready():
         slot, reply = route(question, llm.ask_sync,
                             tool_names=" ".join(sorted(registry_names)))
         if slot in SLOTS_WITH_TEMPLATES:
-            text = compose(slot, pack, reply)
+            hint = reply if (slot == "explain_event"
+                             and reply in registry_names) else None
+            text = compose(slot, pack, hint)
             if text is not None:
                 return {"kind": "template", "slot": slot, "text": text}
             return {"kind": "summary", "prompt": _pack_prompt(pack, question)}
@@ -40,14 +85,6 @@ def plan_turn(question, pack, llm, registry_names: set, friendly: dict) -> dict:
             # turn — nothing executes, nothing stalls.
             return {"kind": "summary", "prompt": _pack_prompt(pack, question)}
         return {"kind": "summary", "prompt": _pack_prompt(pack, question)}
-    # No model (or not warm yet): deterministic matching from the pack.
-    name = _tool_from_question(question, friendly)
-    if name and compose("tool_status", pack, name) is not None:
-        return {"kind": "template", "slot": "tool_status",
-                "text": compose("tool_status", pack, name)}
-    if _mentions(question):
-        return {"kind": "template", "slot": "explain_event",
-                "text": compose("explain_event", pack)}
     return {"kind": "template", "slot": "overview",
             "text": compose("overview", pack)
             or "Docs-only mode: I can describe tool states and recent "
@@ -60,11 +97,38 @@ def _mentions(question: str) -> bool:
 
 
 def _tool_from_question(question: str, friendly: dict) -> str | None:
+    """Tool name, then whole label, then single label token (word-bounded;
+    generic words excluded). 'rootkit scanner' pins rkhunter this way."""
     low = (question or "").lower()
     for name in friendly:
         if name and name in low:
             return name
+    for name, plate in friendly.items():
+        label = (plate[0] if plate else "").lower()
+        if label and label in low:
+            return name
+    for name, plate in friendly.items():
+        label = (plate[0] if plate else "").lower()
+        for tok in re.split(r"[^a-z0-9]+", label):
+            if len(tok) < 4 or tok in _LABEL_NOISE:
+                continue
+            if re.search(rf"\b{re.escape(tok)}\b", low):
+                return name
     return None
+
+
+def _intent_from_question(question: str, friendly: dict) -> Intent | None:
+    """Plain-English action verb + a named tool. An action with no
+    credible target never resolves — the model path keeps that case."""
+    low = (question or "").lower()
+    hit = next((w for w in _PAUSE_VERBS + _RESUME_VERBS
+                if re.search(rf"\b{re.escape(w)}\b", low)), None)
+    if not hit:
+        return None
+    tool = _tool_from_question(question, friendly)
+    if not tool:
+        return None
+    return Intent("pause" if hit in _PAUSE_VERBS else "resume", tool)
 
 
 def _pack_prompt(pack: dict, question: str) -> str:
@@ -76,9 +140,13 @@ def _pack_prompt(pack: dict, question: str) -> str:
                                    for e in pack["recent"][:5]]
     for s in pack["snippets"][:3]:
         lines.append(f"- docs[{s['source'][:60]}]: {s['text'][:200]}")
-    lines.append(f"question: {question}")
+    # The instruction sits ABOVE the question and the question is last:
+    # a tiny model "continues" the prompt's final line — with the old
+    # order the stream echoed "Summarize in 2-3 plain sentences" verbatim
+    # instead of answering (seen live with 'make it stop').
     lines.append("Summarize in 2-3 plain sentences. If the pack lacks the "
                  "answer, say so.")
+    lines.append(f"question: {question}")
     return "\n".join(lines)
 
 
@@ -148,6 +216,9 @@ if GIOMM_OK:
         def _bubble(self, text, mine: bool = False):
             lbl = Gtk.Label(xalign=1.0 if mine else 0.0)
             lbl.set_wrap(True)
+            # Selectable: the owner copies a log line straight out of the
+            # chat (asked for when the rkhunter answer couldn't be pasted).
+            lbl.set_selectable(True)
             lbl.set_text(text)
             self.stream.append(lbl)
             return lbl
@@ -191,6 +262,13 @@ if GIOMM_OK:
             try:
                 if plan["kind"] == "template":
                     holder.set_text(plan["text"])
+                    return False
+                if plan["kind"] == "intent":
+                    # Deterministic English intent (or a model one): straight
+                    # to the confirm gate — no stream sits between the
+                    # question and the dialog.
+                    holder.set_text(describe(plan["intent"], self._friendly))
+                    self._confirm(plan["intent"])
                     return False
                 llm = self._get_llm()
                 if llm is None or not llm.is_ready():

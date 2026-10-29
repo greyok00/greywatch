@@ -60,3 +60,33 @@ def test_assistant_pause_outcome_recorded_once(tmp_path, monkeypatch):
     assert calls == [("pause", "ufw", False)]
     W.MainWindow._assistant_record_outcome(win, True)   # cleared: no-op
     assert calls == [("pause", "ufw", False)]
+
+
+def test_intent_plan_confirms_without_stream():
+    """kind=intent plans go straight to the confirm gate — no model
+    stream, no slop text between the question and the dialog."""
+    from ui.assistant import AssistantPanel
+    from assistant.intents import Intent
+
+    class Stub:
+        _turn_seq = 1
+        _friendly = {"ufw": ("Firewall", "Blocks unwanted connections.")}
+
+        def __init__(self):
+            self.confirmed = []
+
+        def _confirm(self, intent):
+            self.confirmed.append(intent)
+
+    texts = []
+
+    class Holder:
+        def set_text(self, t):
+            texts.append(t)
+    stub = Stub()
+    ret = AssistantPanel._turn_planned(
+        stub, 1, Holder(),
+        {"kind": "intent", "intent": Intent("pause", "ufw")}, {})
+    assert ret is False
+    assert stub.confirmed == [Intent("pause", "ufw")]
+    assert texts and "Firewall" in texts[0]

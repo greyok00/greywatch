@@ -91,11 +91,12 @@ class Llm:
             if self._model is None:
                 raise RuntimeError("assistant model not ready")
             out = self._model.create_chat_completion(
-                messages=self._messages(prompt), max_tokens=max_tokens)
+                messages=self._messages(prompt), max_tokens=max_tokens,
+                temperature=0.2, repeat_penalty=1.05)
         return out["choices"][0]["message"]["content"].strip()
 
     def ask_stream(self, prompt: str, on_token, on_done, on_error,
-                   max_tokens: int = 220) -> None:
+                   max_tokens: int = 110) -> None:
         if self._model is None:
             on_error(RuntimeError("assistant model not ready"))
             return
@@ -106,7 +107,8 @@ class Llm:
                 with self._lock:
                     stream = self._model.create_chat_completion(
                         messages=self._answer_messages(prompt),
-                        max_tokens=max_tokens, stream=True)
+                        max_tokens=max_tokens, stream=True,
+                        temperature=0.2, repeat_penalty=1.15)
                     for part in stream:
                         tok = (part["choices"][0]["delta"].get("content")
                                or "")

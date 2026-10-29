@@ -58,3 +58,48 @@ def test_event_reassurance_kept_for_medium_and_clean_punctuation():
     text = answer_event({"recent": ev})
     assert "usually normal" in text
     assert ".;" not in text
+
+
+def test_event_with_tool_hint_lists_only_that_tool():
+    """A tool-named question must answer that tool's events in the user's
+    local time, with the raw log text intact so it can be copied out."""
+    pack = {"recent": [
+        {"tool": "appfw", "severity": "MEDIUM",
+         "text": "appfw ollama → 34.36.133.15:443 allow",
+         "ts": "2026-10-29T20:53:51+00:00"},
+        {"tool": "rkhunter", "severity": "HIGH",
+         "text": "Warning: The following suspicious (large) shared memory "
+                 "segment(s) were found",
+         "ts": "2026-10-29T20:50:42+00:00"},
+    ]}
+    text = answer_event(pack, "rkhunter")
+    assert "shared memory" in text
+    assert text.startswith("Newest")
+    assert "· High:" in text
+    # plain-language meaning first, raw line kept for copying
+    assert "rootkit scanner found something suspicious" in text.lower()
+    assert "\n  raw: Warning: The following suspicious" in text
+    assert "appfw ollama" not in text
+    # single HIGH line → no "normal policy" reassurance
+    assert "usually normal" not in text
+
+
+def test_event_hint_miss_falls_back_to_text_mention():
+    """The hint matches the log body too (a tool's warning relayed via
+    another channel), not just the from_tool column."""
+    pack = {"recent": [
+        {"tool": "auditd", "severity": "HIGH",
+         "text": "rkhunter reported: file properties changed",
+         "ts": "2026-10-29T20:51:00+00:00"},
+    ]}
+    text = answer_event(pack, "rkhunter")
+    assert text is not None
+    assert "file properties changed" in text
+
+
+def test_event_hint_with_no_rows_returns_none():
+    pack = {"recent": [
+        {"tool": "appfw", "severity": "MEDIUM", "text": "appfw x allow",
+         "ts": "2026-10-29T20:53:51+00:00"},
+    ]}
+    assert answer_event(pack, "rkhunter") is None

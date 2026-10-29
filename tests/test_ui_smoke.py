@@ -924,3 +924,15 @@ def test_tool_card_shows_plain_name_and_real_tool_name(win):
     blob = "\n".join(found)
     assert "Auto-responder" in blob
     assert "responderd" in blob
+
+
+def test_assistant_chat_answers_are_selectable():
+    """The owner asked to copy a log line out of the chat: the answer
+    bubbles must be selectable text, not painted-on labels."""
+    from ui.assistant import AssistantPanel
+    panel = AssistantPanel(registry=[], get_status=lambda: {},
+                           get_recent=lambda: [], get_llm=lambda: None,
+                           on_intent=lambda *a: None)
+    lbl = panel._bubble("copy this line")
+    assert lbl.get_selectable() is True
+
