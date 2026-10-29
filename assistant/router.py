@@ -12,7 +12,6 @@ import json
 import re
 
 from assistant.intents import parse_intent
-from assistant.llm import ROUTER_SYSTEM
 
 SLOTS = ("overview", "explain_event", "tool_status", "intent", "summary")
 

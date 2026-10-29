@@ -117,16 +117,25 @@ assistant_assets() { # optional chat assets: the model gguf under $DATA,
     # without it — so a failure prints the exact follow-up command
     # instead of failing the install. Runs in the real install only:
     # the --root staging self-test stays offline and hermetic.
-    local grp model
+    local grp model msize
     grp="$(getent passwd "$UI_USER" | cut -d: -f4)"
     mkdir -p "$DATA/models"
     model="$DATA/models/smollm2-360m-instruct-q4_k_m.gguf"
     if [ ! -s "$model" ]; then
-        if ! curl -L --fail -o "$model" \
+        if curl -L --fail --connect-timeout 15 --retry 2 -o "$model" \
                 "https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"; then
+            # plausibility floor: a truncated-but-nonempty download must
+            # not survive (the real artifact is ~250 MB)
+            msize="$(stat -c %s "$model" 2>/dev/null || echo 0)"
+            if [ "$msize" -lt $((150 * 1024 * 1024)) ]; then
+                rm -f "$model" # a truncated download must never pass the -s probe
+            fi
+        else
             rm -f "$model" # a partial download must never pass the -s probe
+        fi
+        if [ ! -s "$model" ]; then
             echo "assistant model not fetched — chat stays docs-only"
-            echo "  fetch later: curl -L --fail -o $model \\"
+            echo "  fetch later: curl -L --fail --connect-timeout 15 --retry 2 -o $model \\"
             echo "      https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"
         fi
     fi
@@ -144,10 +153,18 @@ assistant_assets() { # optional chat assets: the model gguf under $DATA,
         echo "knowledge index not built — chat stays docs-only"
     fi
     # the binding is user-local (llama-cpp-python on the desktop user's
-    # site-packages); UI_USER is resolved and validated above (GW-02)
+    # site-packages); UI_USER is resolved and validated above (GW-02).
+    # Skip entirely when the model is absent: an already docs-only install
+    # gains nothing from minutes of sdist compilation.
     local home
     home="$(getent passwd "$UI_USER" | cut -d: -f6)"
-    if sudo -u "$UI_USER" env HOME="$home" python3 -m pip install --user \
+    if [ ! -s "$model" ]; then
+        echo "assistant model missing — skipping the binding build; chat stays docs-only"
+        echo "  install later: sudo -u $UI_USER python3 -m pip install \\"
+        echo "      --user --break-system-packages 'llama-cpp-python>=0.3.0'"
+    elif sudo -u "$UI_USER" env HOME="$home" python3 -c "import llama_cpp" 2>/dev/null; then
+        echo "assistant binding already present for $UI_USER"
+    elif sudo -u "$UI_USER" env HOME="$home" python3 -m pip install --user \
             --break-system-packages "llama-cpp-python>=0.3.0"; then
         echo "assistant binding installed for $UI_USER"
     else

@@ -32,7 +32,15 @@ def record(action: str, tool: str, ok: bool) -> pathlib.Path | None:
             if need_dir:
                 path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
                 path.touch(mode=0o600, exist_ok=True)
+            fresh = not path.exists()
             with open(path, "a", encoding="utf-8") as fh:
+                if fresh:
+                    # creation-time hardening: the umask must not widen the
+                    # ledger (0600 like the rest of the daemon's writes)
+                    try:
+                        os.fchmod(fh.fileno(), 0o600)
+                    except OSError:
+                        pass
                 fh.write(line + "\n")
             return path
         except OSError:

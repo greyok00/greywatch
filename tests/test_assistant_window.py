@@ -1,8 +1,6 @@
 # tests/test_assistant_window.py
 import pathlib, sys
 
-import pytest
-
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 
@@ -33,7 +31,8 @@ def test_assistant_intent_dispatch_routes_to_toggle_helpers(
 
 def test_rail_builder_exists_and_panel_importable():
     from ui.window import MainWindow
-    from ui.assistant import AssistantPanel
+    # ui.window imports the panel itself, so a broken AssistantPanel class
+    # body fails this import too (the plain "panel importable" property).
     assert hasattr(MainWindow, "_build_assistant_rail")
     assert hasattr(MainWindow, "_assistant_intent")
 
