@@ -132,7 +132,7 @@ def gtk_css(tokens: dict) -> str:
 /* READABILITY (owner: it's cramped/hurts to look at): bigger type + air */
 * {{ font-size: 15px; letter-spacing: 0.1px; }}
 row, treeview row {{ min-height: 40px; padding: 6px 10px; }}
-button {{ padding: 9px 16px; font-size: 14px; letter-spacing: 0.2px; }}
+button {{ padding: 7px 14px; font-size: 14px; letter-spacing: 0.2px; }}
 entry, searchentry {{ padding: 8px 12px; font-size: 14px; }}
 notebook tab {{ padding: 11px 24px; font-size: 14px; }}
 label {{ padding: 3px 0; }}
@@ -319,9 +319,11 @@ window, dialog {{ font-family: {body}; }}
 }}
 .gw-popup-body {{ padding: 16px 22px; }}
 .gw-popup-actions {{
-  padding: 14px 22px; border-top: 1px solid {line};
+  padding: 10px 18px; border-top: 1px solid {line};
   background-color: {bg};
 }}
+.gw-popup-actions button {{ min-height: 30px; padding: 6px 13px;
+  font-size: 13px; }}
 /* "Who is this?" card inside a decision popup (2026-10-28): the owner
    could not tell who was on the other end of an address like
    57.144.134.145:443, so every prompt now names the program and the

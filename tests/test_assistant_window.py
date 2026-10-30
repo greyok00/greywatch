@@ -137,6 +137,37 @@ def test_theme_intent_runs_the_theme_store(tmp_path, monkeypatch):
     assert calls == [("theme", "swiss", True)]
 
 
+def test_allow_confirm_works_before_settings_has_built(tmp_path,
+                                                       monkeypatch):
+    """The exec path read `self.trust`, an alias the Settings builder only
+    creates — the first allow confirmed from chat crashed with
+    AttributeError before recording anything (owner 2026-10-30, found by
+    the popup sweep). The exec path owns `self._trust`, present from
+    boot."""
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    from ui import window as W
+    from ui.settings import TrustList
+    calls = []
+    monkeypatch.setattr(W.audit, "record",
+                        lambda a, t, ok: calls.append((a, t, ok)))
+
+    class FakeWin:
+        trust = None             # deliberately absent — the settings
+                                 # builder's alias, not yet created
+
+        def _refresh_trust(self):
+            pass
+
+        def _refresh_apps(self):
+            pass
+
+    win = FakeWin()
+    win._trust = TrustList(tmp_path / "trust-list.json")
+    W.MainWindow._assistant_intent(win, "trust_site", "", "52.92.36.48")
+    assert "52.92.36.48" in win._trust.allow and calls == [
+        ("trust_site", "52.92.36.48", True)]
+
+
 def test_retheme_snapshots_the_chat_and_reopens_the_feed(tmp_path,
                                                          monkeypatch):
     """_retheme is the only path both symptoms came from (owner 2026-10-30):

@@ -95,6 +95,9 @@ def parse_intent(text: str) -> tuple[Intent | None, str]:
     return Intent(action, str(data.get("tool") or "").strip(), value), rest
 
 
+_SITE_OK_IPV4 = re.compile(r"(?:\d{1,3}\.){3}\d{1,3}")
+
+
 def _site_ok(value: str) -> bool:
     """A plain site name, never a URL with a scheme, a port or a path."""
     text = (value or "").strip().lower()
@@ -151,7 +154,11 @@ def validate(intent: Intent, tool_names: set[str],
             return f"'{intent.value}' is not on or off"
         return None
     if intent.action in ("trust_site", "block_site"):
-        if not _site_ok(intent.value):
+        # A blocked destination is often an unresolved address, and the
+        # trust list accepts it: the firewall matches conn.host exactly,
+        # IP or name alike. "Unblock last blocked site" resolves to one.
+        if not (_site_ok(intent.value)
+                or _SITE_OK_IPV4.fullmatch(intent.value)):
             return "that is not a plain site name like example.com"
         return None
     if intent.action == "trust_program":
@@ -178,6 +185,10 @@ def describe(intent: Intent, friendly: dict, scan_titles=None) -> str:
                 "recorded?" if intent.value == "on"
                 else "Stop learning mode?")
     if intent.action in ("trust_site", "block_site"):
+        if _SITE_OK_IPV4.fullmatch(intent.value):
+            verb = ("Allow connections to" if intent.action == "trust_site"
+                    else "Block connections to")
+            return f"{verb} {intent.value} from now on, without asking?"
         verb = ("Trust" if intent.action == "trust_site" else "Block")
         return f"{verb} {intent.value} from now on, without asking?"
     if intent.action == "trust_program":

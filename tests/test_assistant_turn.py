@@ -908,6 +908,81 @@ def test_a_question_about_the_firewall_is_not_a_firewall_change():
     assert out["kind"] != "intent"
 
 
+# --- unblocking: the ask must act on the block the log shows -------------
+
+def _deny_pack():
+    """Newest event is an app-firewall denial, like the owner's session:
+    'appfw chromium → 52.92.36.48:443 deny' (owner 2026-10-30)."""
+    return {"tools": {}, "recent": [
+        {"tool": "appfw", "severity": "MEDIUM", "ts": _today_at(10),
+         "text": "appfw chromium → 52.92.36.48:443 deny [ask]"},
+        {"tool": "appfw", "severity": "MEDIUM", "ts": _today_at(9),
+         "text": "appfw chromium → 52.94.8.11:443 deny [ask]"}]}
+
+
+def test_unblock_last_blocked_site_offers_the_allow_intent():
+    """The real failing ask (owner 2026-10-30): it fell through to the
+    locking advice — the same refusal explanation every time — instead of
+    the confirm-gated allow the trust list already supports."""
+    out = plan_turn("unblock last blocked site", _deny_pack(), None,
+                    set(), FRIENDLY)
+    assert out["kind"] == "intent"
+    assert out["intent"] == Intent("trust_site", value="52.92.36.48")
+    assert validate(out["intent"], set()) is None
+
+
+def test_unblock_pronoun_resolves_to_the_newest_denial():
+    out = plan_turn("unblock it", _deny_pack(), None, set(), FRIENDLY)
+    assert out["kind"] == "intent"
+    assert out["intent"].value == "52.92.36.48"      # newest, not the one below
+
+
+def test_unblock_it_prefers_the_rows_the_conversation_show():
+    anchor = [{"tool": "appfw", "severity": "MEDIUM", "ts": _today_at(12),
+               "text": "appfw firefox → 3.14.15.9:443 deny [ask]"}]
+    out = plan_turn("unblock that site", _deny_pack(), None, set(),
+                    FRIENDLY, anchor=anchor)
+    assert out["kind"] == "intent"
+    assert out["intent"].value == "3.14.15.9"
+
+
+def test_allow_the_last_blocked_site_routes_the_same_way():
+    out = plan_turn("allow the last blocked site", _deny_pack(), None,
+                    set(), FRIENDLY)
+    assert out["kind"] == "intent"
+    assert out["intent"] == Intent("trust_site", value="52.92.36.48")
+
+
+def test_unblock_a_named_site_needs_no_log_line():
+    out = plan_turn("unblock example.com", _pack(), None, set(), FRIENDLY)
+    assert out["kind"] == "intent"
+    assert out["intent"] == Intent("trust_site", value="example.com")
+
+
+def test_how_do_i_unblock_is_still_advice_not_an_action():
+    out = plan_turn("how do I unblock the last blocked site?", _deny_pack(),
+                    None, set(), FRIENDLY)
+    assert out["kind"] != "intent"
+
+
+def test_no_logged_denial_leaves_the_ask_unrouted():
+    out = plan_turn("unblock the last blocked site", _pack(), None,
+                    set(), FRIENDLY)
+    assert out["kind"] != "intent"
+
+
+def test_fail2ban_ban_is_not_silently_unblocked():
+    """The trust list steers the app firewall only; a fail2ban ban is not
+    lifted by allowing a site, so the rung refuses and the advice covers
+    the tool that holds the block."""
+    pack = {"tools": {}, "recent": [
+        {"tool": "fail2ban", "severity": "HIGH", "ts": _today_at(10),
+         "text": "Ban 203.0.113.7"}]}
+    out = plan_turn("unblock the last blocked site", pack, None,
+                    set(), FRIENDLY)
+    assert out["kind"] != "intent"
+
+
 def test_advice_offers_the_one_action_the_app_can_take():
     pack = build_pack_for_tests()
     tool = {"name": "lynis", "state": "YELLOW", "label": "Lynis (audit)",

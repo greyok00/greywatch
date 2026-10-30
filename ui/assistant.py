@@ -158,6 +158,9 @@ def plan_turn(question, pack, llm, registry_names: set, friendly: dict,
     if pause_view is not None:
         return {"kind": "template", "slot": "advice",
                 "tool": pause_view[0], "text": pause_view[1]}
+    unblock = _unblock_intent(question, pack, anchor)
+    if unblock is not None and validate(unblock, registry_names) is None:
+        return {"kind": "intent", "intent": unblock}
     if _wants_action_without_target(question, friendly, last_tool):
         # An action verb with nothing to act on: asking is honest; guessing
         # would pause the wrong protection.
@@ -408,6 +411,71 @@ _ASK_TARGET = (
     "Which protection should I change? I can pause or resume one at a time, "
     "for example the firewall, the antivirus, or the network watcher. Say "
     "the name and I will show a confirm box first.")
+
+
+_UNBLOCK_VERB = re.compile(r"\bun ?block\b")
+_ALLOW_VERB = re.compile(r"\b(allow|trust|permit|let\b[^.]{0,16}\bthrough)\b")
+_BLOCK_REFERENT = re.compile(
+    r"\b(last|latest|newest)\s+(blocked?|denied?|block|deny|denial)\b"
+    r"|\b(blocked|denied)\s+(site|host|address|ip|target|connection|website)\b"
+    r"|\b(blocked|denied)\s+site\b"
+    r"|\b(that|this|the same)\s+(site|host|address|ip|one|connection|website)\b"
+    r"|\b(?:it|them)\b")
+_APPFW_ROWS = ("appfw",)
+
+
+def _block_target(row: dict) -> str | None:
+    """The destination a block line was refusing, or None.
+
+    The app firewall writes 'program → host:port deny'; ufw writes
+    DST=…/SRC=… pairs, where the site is DST — taking the first address
+    there would allow the machine that asked, the opposite of the ask."""
+    text = str(row.get("text", ""))
+    match = re.search(r"\bDST=(\d{1,3}(?:\.\d{1,3}){3})", text)
+    if match:
+        return match.group(1)
+    dest = _DEST_PAT.search(text)
+    if dest:
+        host = _strip_port(dest.group(2))
+        if host:
+            return host
+    addr = _ADDR_PAT.search(text)
+    return addr.group(1) if addr else None
+
+
+def _unblock_intent(question, pack, anchor=None):
+    """'Unblock the last blocked site' acts on a block the log shows.
+
+    This used to fall through to the blocking advice — the same refusal
+    explanation every time, and the owner's allow request did nothing
+    (2026-10-30). The newest denied or dropped line from the app firewall
+    resolves to a destination, and the request becomes the same
+    confirm-gated trust action the Settings page performs. The trust list
+    only steers the app firewall: a fail2ban ban is not lifted by it, so
+    a newer ban row refuses here and the honest advice covers it."""
+    low = (question or "").lower().strip()
+    if not low or not _command_shape(low):
+        return None
+    if _UNBLOCK_VERB.search(low) is None and not (
+            _ALLOW_VERB.search(low) and _BLOCK_REFERENT.search(low)):
+        return None
+    literal = _SITE_WORD.search(low)
+    if literal is not None and _UNBLOCK_VERB.search(low) is not None:
+        return Intent("trust_site", value=literal.group(1).lower())
+    rows = _dedupe_newest(list(anchor or [])
+                          + list(pack.get("recent") or []))
+    hits = [r for r in rows if _BLOCK_PAT.search(str(r.get("text", "")))]
+    if not hits:
+        hits = _block_rows(pack)
+    newest = next((r for r in hits if str(r.get("tool")
+                                            or r.get("from_tool") or "")
+                   in _APPFW_ROWS), None)
+    if newest is None:
+        return None
+    host = _block_target(newest)
+    if not host:
+        return None
+    return Intent("trust_site", value=host)
 
 
 # The app itself as the subject: what it is for, how to read it, and what
@@ -1754,6 +1822,11 @@ if GIOMM_OK:
             # Selectable: the owner copies a log line straight out of the
             # chat (asked for when the rkhunter answer couldn't be pasted).
             lbl.set_selectable(True)
+            # But never focusable: when focus landed on a bubble (scroll,
+            # tab, or the newest answer) GTK selected the whole label, and
+            # the answer painted as a highlighted band (popup sweep
+            # 2026-10-30). Selection by mouse still works.
+            lbl.set_focusable(False)
             lbl.set_text(text)
             # Keep the transcript for handover: a theme switch rebuilds the
             # page this panel lives in (rebuilding the panel with it), and
@@ -2163,6 +2236,10 @@ if GIOMM_OK:
             what = describe(intent, self._friendly, _SCAN_TITLES)
             dlg = Gtk.Dialog(title=what,
                              transient_for=self.get_root(), modal=True)
+            # The app's own palette, not Adwaita's default: a bare dialog
+            # rendered mismatched against both themes (popup sweep
+            # 2026-10-30).
+            dlg.add_css_class("gw-popup")
             ok = dlg.add_button("Confirm", Gtk.ResponseType.ACCEPT)
             ok.add_css_class("destructive-action")
             dlg.add_button("Cancel", Gtk.ResponseType.CANCEL)

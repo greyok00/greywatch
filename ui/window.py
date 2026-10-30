@@ -759,14 +759,17 @@ class MainWindow(Gtk.Window):
             self._on_update_now(None)
             return
         if action in ("trust_site", "block_site"):
+            # self._trust, not self.trust: the alias only exists once the
+            # Settings page builds, so the first allow confirm from chat
+            # crashed before recording (owner 2026-10-30).
             verdict = "allow" if action == "trust_site" else "block"
-            ok = self.trust.add(value, verdict)
+            ok = self._trust.add(value, verdict)
             if ok:
                 self._refresh_trust()
             audit.record(action, value, ok)
             return
         if action == "trust_program":
-            ok = self.trust.add_app(value)
+            ok = self._trust.add_app(value)
             if ok:
                 self._refresh_apps()
             audit.record(action, value, ok)
@@ -2689,6 +2692,13 @@ class MainWindow(Gtk.Window):
         return section
 
     def _refresh_trust(self):
+        store = getattr(self, "trust_store", None)
+        if store is None:
+            return      # Settings has not built its widgets yet; the page
+                        # refills both lists from the trust list when it
+                        # opens. The exec path runs before that build, and
+                        # crashed here after the add had already landed
+                        # (no audit line, owner 2026-10-30).
         self.trust_store.clear()
         empty = True
         # Sentence case: the policy column read as an API constant.
@@ -2702,6 +2712,9 @@ class MainWindow(Gtk.Window):
                                          "Add a site above."])
 
     def _refresh_apps(self):
+        store = getattr(self, "app_store", None)
+        if store is None:
+            return      # same pre-Settings guard as _refresh_trust
         self.app_store.clear()
         if not self.trust.apps_allow:
             self.app_store.append(["Nothing trusted yet. Programs you "

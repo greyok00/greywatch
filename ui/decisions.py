@@ -135,6 +135,10 @@ def _identity_card(spec, dlg):
     dest.add_css_class("gw-idname")
     dest_line = Gtk.Label(label=_address_line(facts), xalign=0, wrap=True,
                           selectable=True)
+    # A selectable label is focusable, and the first focusable widget of
+    # a freshly mapped dialog takes focus — GTK then selects the whole
+    # label, so the address painted as a blue band on first show.
+    dest_line.set_focusable(False)      # the map guard below also races it
     dest_line.add_css_class("gw-idval")
     # A selectable label is focusable, and the first focusable widget of
     # a freshly mapped dialog takes focus — GTK then selects the whole
@@ -256,6 +260,17 @@ def _decision_dialog(spec, modal=False, eyebrow="Protection", on_learn=None):
     dlg.set_default_size(560, -1)
     dlg.add_css_class("gw-popup")
     area = dlg.get_content_area()
+    # The middle grows when the identity lookup fills in a second later;
+    # unbounded, it shoved the answer buttons under the popup's bottom
+    # edge (owner: "the popups bottom window overlaps the buttons",
+    # 2026-10-30). A capped scroller keeps the buttons on the screen; the
+    # card scrolls inside instead of growing the window.
+    mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+    scroll = Gtk.ScrolledWindow()
+    scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    scroll.set_propagate_natural_height(True)
+    scroll.set_max_content_height(400)
+    scroll.set_child(mid)
 
     head = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
     head.add_css_class("gw-popup-header")
@@ -274,11 +289,11 @@ def _decision_dialog(spec, modal=False, eyebrow="Protection", on_learn=None):
                          selectable=True)
         meta.add_css_class("gw-meta")
         head.append(meta)
-    area.append(head)
+    area.append(head)          # pinned: the subject never scrolls away
 
     card = _identity_card(spec, dlg)
     if card is not None:
-        area.append(card)
+        mid.append(card)
 
     if spec.get("question") and spec.get("detail"):
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -287,8 +302,9 @@ def _decision_dialog(spec, modal=False, eyebrow="Protection", on_learn=None):
                       selectable=True)
         q.add_css_class("gw-meta")
         body.append(q)
-        area.append(body)
+        mid.append(body)
 
+    area.append(scroll)
     actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
     actions.add_css_class("gw-popup-actions")
     actions.set_halign(Gtk.Align.FILL)
