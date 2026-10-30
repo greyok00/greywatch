@@ -99,6 +99,8 @@ greywatch = ["_tree/**/*"]
 EOF
 
 python3 -m build --wheel "$STAGE" --outdir "$OUT"
-WHEEL="$(cd "$OUT" && ls greywatch-*.whl | head -1)"
+# newest by mtime: a plain glob sorts alphabetically, so the report named
+# the previous version's wheel while the new one was just written.
+WHEEL="$(cd "$OUT" && ls -t greywatch-*.whl | head -1)"
 ( cd "$OUT" && sha256sum "$WHEEL" > "$WHEEL.sha256" )
 echo "built: $OUT/$WHEEL"

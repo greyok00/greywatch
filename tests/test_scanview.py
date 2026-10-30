@@ -9,7 +9,7 @@ pytest.importorskip("gi")
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib  # noqa: E402
+from gi.repository import GLib, Gtk  # noqa: E402
 
 from ui.scanview import ScanView, card_text, read_history  # noqa: E402
 
@@ -50,6 +50,18 @@ def test_card_text_speaks_plainly_and_names_failures():
     assert "clean" in card_text("lynis", done)
 
 
+def test_the_tools_grid_gets_short_labels_that_fit_its_column():
+    # "Scanning · 12,844 files scanned · 1 finding" was ellipsised mid-word
+    # in the narrow protection grid (2026-10-30 screenshot pass).
+    text = card_text("clamav", LIVE)
+    assert "1,284 files" in text and "files scanned" not in text
+    assert "2 findings" in text
+    done = {"scanners": {"rkhunter": {"state": "done", "count": 41,
+                                      "counter_label": "checks completed",
+                                      "findings": 0, "detail": ""}}}
+    assert "41 checks" in card_text("rkhunter", done)
+
+
 def test_rows_findings_and_routine_fold(tmp_path):
     (tmp_path / "scan-findings.jsonl").write_text("\n".join(json.dumps(r) for r in (
         {"scan_id": LIVE["scan_id"], "tool": "clamav", "severity": "HIGH",
@@ -87,6 +99,26 @@ def test_history_lists_finished_scans_and_can_be_pinned(tmp_path):
     view.show_live()
     assert view._pinned is None
     view.unparent()
+
+
+def test_the_findings_pane_shrinks_to_its_content(tmp_path):
+    # A fixed 170px viewport left a dead band between the last finding and
+    # "Recent scans" when a scan found only one thing.
+    view = ScanView(tmp_path)
+    scrollers = [w for w in _walk(view) if isinstance(w, Gtk.ScrolledWindow)]
+    assert scrollers, "the findings list scrolls"
+    assert scrollers[0].get_propagate_natural_height() is True
+    assert scrollers[0].get_max_content_height() == 240
+    assert scrollers[0].get_size_request().height == -1
+    view.unparent()
+
+
+def _walk(widget):
+    child = widget.get_first_child()
+    while child is not None:
+        yield child
+        yield from _walk(child)
+        child = child.get_next_sibling()
 
 
 def test_an_empty_state_explains_what_will_happen(tmp_path):

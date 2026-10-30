@@ -1837,8 +1837,9 @@ class MainWindow(Gtk.Window):
                 ("Wizard", "Guided setup, one task at a time."),
                 ("Security", "State of every protection at a glance."),
                 ("Tools", "Every protection, its scans and progress."),
-                ("Settings", "Theme, app firewall, trusted items, updates."),
+                ("Scans", "Live progress and findings while scans run."),
                 ("Logs", "The raw record, newest first."),
+                ("Settings", "Theme, app firewall, trusted items, updates."),
                 ("Help", "What each protection does, in plain words."))):
             left = Gtk.Label(xalign=0)
             left.set_xalign(0)
@@ -1857,7 +1858,7 @@ class MainWindow(Gtk.Window):
             guide.attach(right, 1, row, 1, 1)
         card, inner = self._settings_card(
             "How to use it",
-            "Six pages, one job each. Nothing here needs a command.")
+            "Seven pages, one job each. Nothing here needs a command.")
         inner.append(guide)
         return self._settings_section(card)
 

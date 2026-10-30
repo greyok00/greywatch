@@ -372,15 +372,18 @@ button:focus {{ outline: 2px solid {focus}; outline-offset: 1px; }}
 /* Scrollbars: GTK4's default Adwaita trough is a grey slab that reads as
    a stray overlay on top of our surfaces, and its flat 8px thumb was the
    "weird grey overlay" the owner kept seeing. The trough is transparent
-   everywhere and the thumb is a thin, quiet rail that brightens on hover. */
+   everywhere and the thumb is a thin, quiet rail that brightens on hover.
+   The thumb is a translucent tint of the theme's own ink, not an opaque
+   line colour: an opaque 10px band down the page edge still read as a slab
+   in the 2026-10-30 screenshot pass (owner's standing "no grey slab" note). */
 scrollbar {{ background: transparent; border: none; }}
 scrollbar trough {{ background: transparent; border: none; box-shadow: none; }}
 scrollbar slider {{
-  background-color: {line}; border: none; border-radius: 4px;
-  min-width: 6px; min-height: 28px; margin: 2px;
+  background-color: alpha({ink_soft}, 0.22); border: none;
+  border-radius: 3px; min-width: 5px; min-height: 28px; margin: 3px;
 }}
-scrollbar slider:hover {{ background-color: {ink_soft}; }}
-scrollbar slider:active {{ background-color: {ink}; }}
+scrollbar slider:hover {{ background-color: alpha({ink_soft}, 0.42); }}
+scrollbar slider:active {{ background-color: alpha({ink}, 0.55); }}
 /* The tool rail is the one scroller that ends on its own pause/play
    buttons, so its bar is hidden outright (wheel scrolling still works)
    rather than painted across them. */

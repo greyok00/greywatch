@@ -181,7 +181,7 @@ wire the systemd units, polkit policy, or icons — use the .deb or
 
 Every hardening change and firewall rule is dry-run first, applied
 through explicit user decisions, and recorded. The test battery
-(`python3 -m pytest tests/ -q`, 1036 passing + 2 that skip on machines
+(`python3 -m pytest tests/ -q`, 1116 passing + 2 that skip on machines
 without optional hardware) covers the event model,
 parsers, status permissions, install-script staging (`--root` rehearses
 into a throwaway tree and `--check` rejects other-writable files), the

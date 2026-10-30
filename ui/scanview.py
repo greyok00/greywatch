@@ -71,6 +71,14 @@ def read_history(data_dir, limit=8):
     return out
 
 
+# The Tools grid gives each protection a narrow status cell, so the counter
+# label is shortened there ("12,844 files", not "12,844 files scanned …").
+# The Scans page keeps the full label.
+_GRID_WORD = {"files scanned": "files", "checks completed": "checks",
+              "tests completed": "tests", "differences listed": "diffs",
+              "temp folders swept": "folders"}
+
+
 def card_text(tool: str, live) -> str:
     """One plain sentence about this protection's scan, or ""."""
     if not live:
@@ -82,7 +90,8 @@ def card_text(tool: str, live) -> str:
     state = sc.get("state")
     n = int(sc.get("count") or 0)
     finds = int(sc.get("findings") or 0)
-    label = sc.get("counter_label") or "checks"
+    label = _GRID_WORD.get(sc.get("counter_label") or "checks",
+                           sc.get("counter_label") or "checks")
     if state == "queued":
         return "Queued"
     if state == "running":
@@ -150,9 +159,13 @@ class ScanView(Gtk.Box):
 
         self.findings_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                                     spacing=4)
+        # The findings list is as tall as it needs to be, up to a cap: a
+        # fixed 170px pane left a dead gap between the last finding and
+        # "Recent scans" on a short scan.
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_size_request(-1, 170)
+        scroll.set_propagate_natural_height(True)
+        scroll.set_max_content_height(240)
         scroll.set_child(self.findings_box)
         self.append(scroll)
 

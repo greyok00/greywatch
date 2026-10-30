@@ -21,6 +21,16 @@ def test_one_page_margin_scale():
     assert metrics.PAGE_SPACING == 12
 
 
+def test_the_scroll_thumb_is_a_tint_not_a_slab():
+    # An opaque 10px band down the page edge read as the "grey overlay"
+    # again in the 2026-10-30 pass; the thumb is now a translucent tint of
+    # the theme's own ink, and the trough stays clear.
+    css = gtk_css(load_themes()["obsidian"])
+    assert "background-color: alpha(#b4b2ad, 0.22)" in css
+    assert "scrollbar trough { background: transparent;" in css
+    assert "min-width: 5px; min-height: 28px; margin: 3px;" in css
+
+
 def test_css_carries_the_padding_scale():
     css = gtk_css(load_themes()["obsidian"])
     assert "button { padding: 8px 16px;" in css
