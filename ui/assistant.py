@@ -2236,6 +2236,11 @@ if GIOMM_OK:
             what = describe(intent, self._friendly, _SCAN_TITLES)
             dlg = Gtk.Dialog(title=what,
                              transient_for=self.get_root(), modal=True)
+            # Dialog scale, not text-width scale: a wrapped Gtk.Label's
+            # natural width is the whole unwrapped sentence, so without a
+            # default the confirm box stretched to ~970px (bug sweep S2 —
+            # same rule as the 560px decision popup).
+            dlg.set_default_size(560, -1)
             # The app's own palette, not Adwaita's default: a bare dialog
             # rendered mismatched against both themes (popup sweep
             # 2026-10-30).
@@ -2250,6 +2255,7 @@ if GIOMM_OK:
             body = Gtk.Label(xalign=0)
             body.set_xalign(0)
             body.set_wrap(True)
+            body.set_max_width_chars(60)
             extra = ("\nSome scans ask for your password before they start."
                      if intent.action == "scan" else "")
             body.set_text(
@@ -2266,6 +2272,7 @@ if GIOMM_OK:
             heading = Gtk.Label(xalign=0)
             heading.set_xalign(0)
             heading.set_wrap(True)
+            heading.set_max_width_chars(44)
             heading.set_markup(
                 f"<span size='15000' weight='bold'>{escape(what)}</span>")
             content.append(heading)

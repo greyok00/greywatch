@@ -4,7 +4,18 @@ GW="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 if [ -n "${1:-}" ]; then
   WS_LABEL="$1"
 else
-  WS_FILE="$GW/data/workspace.json"
+  # Same resolution order gwpaths.data_dir() uses, so the picker (which
+  # writes <state dir>/workspace.json) and this launcher read the same
+  # file — the checkout's data/ is why the picker looked dead in real
+  # installs, where state lives in /var/lib/greywatch (bug sweep B1).
+  if [ -n "${GREYWATCH_DATA_DIR:-}" ]; then
+    WS_DIR="$GREYWATCH_DATA_DIR"
+  elif [ -r /var/lib/greywatch ] && [ -w /var/lib/greywatch ]; then
+    WS_DIR=/var/lib/greywatch
+  else
+    WS_DIR="$GW/data"
+  fi
+  WS_FILE="$WS_DIR/workspace.json"
   WS_LABEL=3
   if [ -r "$WS_FILE" ]; then
     P=$(sed -n 's/.*"ws"[ :]*\([0-9]\+\).*/\1/p' "$WS_FILE" | head -1)

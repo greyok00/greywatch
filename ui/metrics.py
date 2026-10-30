@@ -55,10 +55,14 @@ def window_size() -> tuple[int, int]:
 
 
 def wizard_size() -> tuple[int, int]:
-    """The setup wizard: wider than a dialog, shorter than the screen."""
+    """The setup wizard: task-dialog scale, not dashboard scale.
+
+    The pages are short forms over a fixed reading column, so a window wider
+    or taller than the content just means dead space — and when the default
+    sat near the full screen height the last rows clipped off the bottom."""
     sw, sh = screen_size()
-    width = span(sw or 1920, 0.62, 860, 1320)
-    height = span(sh or 1080, 0.88, 560, 1040)
+    width = span(sw or 1920, 0.50, 800, 1020)
+    height = span(sh or 1080, 0.64, 560, 820)
     return width, height
 
 

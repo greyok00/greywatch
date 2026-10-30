@@ -310,12 +310,14 @@ def _decision_dialog(spec, modal=False, eyebrow="Protection", on_learn=None):
     actions.set_halign(Gtk.Align.FILL)
     # Six answers (block/allow once, always, and the two site rules) do
     # not fit on one 560 px line; a flow box wraps them instead of
-    # clipping the last button.
+    # clipping the last button. Two per line, not three: three squeezed
+    # each 181 px button into 112 px of cell and cut the labels off
+    # ("Allow once" read as "Allow…"), which the sweep caught as S4.
     buttons = Gtk.FlowBox()
     buttons.set_selection_mode(Gtk.SelectionMode.NONE)
     buttons.set_halign(Gtk.Align.END)
     buttons.set_hexpand(True)
-    buttons.set_max_children_per_line(3)
+    buttons.set_max_children_per_line(2)
     buttons.set_min_children_per_line(1)
     buttons.set_column_spacing(8)
     buttons.set_row_spacing(8)

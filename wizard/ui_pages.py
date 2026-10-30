@@ -251,9 +251,17 @@ class SetupWizard(Gtk.Box):
         self.append(intro)
 
         self.stack = Gtk.Stack()
-        self.stack.set_vexpand(True)
         self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
-        self.append(self.stack)
+        # The stack scrolls instead of clipping: any step taller than the
+        # window shows a scrollbar, never a cut-off bottom edge. The
+        # scroller must CLAIM the spare height (vexpand) — without it the
+        # box stretches the intro label and leaves the scroller at its
+        # 38px scrollbar minimum, which shows the page through a slit.
+        stack_scroll = Gtk.ScrolledWindow()
+        stack_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        stack_scroll.set_child(self.stack)
+        stack_scroll.set_vexpand(True)
+        self.append(stack_scroll)
         builders = {"welcome": self._build_welcome,
                     "scan": self._build_scan,
                     "preview": self._build_preview,
@@ -439,11 +447,23 @@ class SetupWizard(Gtk.Box):
         box.append(row)
         self._inventory_frame = Gtk.Frame()
         self._inventory_frame.add_css_class("gw-card")
-        self._inventory_frame.set_vexpand(True)
+        # The inventory list scrolls inside a bounded card instead of
+        # stretching to whatever height the window has: an empty scan step
+        # used to show a card several screens tall with nothing in it.
         self._inventory_box = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        self._inventory_frame.set_child(self._inventory_box)
+        inv_scroll = Gtk.ScrolledWindow()
+        inv_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        inv_scroll.set_min_content_height(150)
+        inv_scroll.set_max_content_height(300)
+        inv_scroll.set_propagate_natural_height(True)
+        inv_scroll.set_child(self._inventory_box)
+        self._inventory_frame.set_child(inv_scroll)
         box.append(self._inventory_frame)
+        # The scan page had no navigation row at all: reached without a
+        # scan in flight it was a dead end — two dimmed buttons and no way
+        # back or forward (owner report "no controls to use to run it").
+        box.append(self._step_nav("scan", back=("Back: welcome", "welcome")))
         return box
 
     def _on_start_scan(self, _btn):
@@ -506,13 +526,22 @@ class SetupWizard(Gtk.Box):
         self._table_store = Gtk.ListStore(str, str, str, str, str, str,
                                           bool)
         view = Gtk.TreeView(model=self._table_store, headers_visible=True)
+        # Column widths must fit the 768px page card: fixed 880px of headers
+        # cut the last one at the window edge (bug sweep — "Recomm|").
+        # Control expands into whatever the window offers; data cells
+        # ellipsize, and a horizontal scrollbar still covers extreme text.
         for idx, (title, width) in enumerate(
-                (("Control", 340), ("NIST", 90), ("CIS", 80),
-                 ("Current", 160), ("Recommended", 210))):
+                (("Control", 240), ("NIST", 76), ("CIS", 64),
+                 ("Current", 130), ("Recommended", 150))):
             col = Gtk.TreeViewColumn(
                 title, Gtk.CellRendererText(), text=idx)
             col.set_fixed_width(width)
             col.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
+            if idx == 0:
+                col.set_expand(True)   # absorbs the spare, keeps the rest
+            cell = col.get_cells()[0]
+            cell.set_property("ellipsize", 3)
+            cell.set_property("width-chars", 8)
             view.append_column(col)
         apply_col = Gtk.TreeViewColumn("Apply?")
         toggle = Gtk.CellRendererToggle()
@@ -522,14 +551,19 @@ class SetupWizard(Gtk.Box):
         view.append_column(apply_col)
         table_frame = Gtk.Frame()
         table_frame.add_css_class("gw-card")
-        table_frame.set_vexpand(True)
         table_wrap = Gtk.ScrolledWindow()
         table_wrap.set_policy(Gtk.PolicyType.AUTOMATIC,
                               Gtk.PolicyType.AUTOMATIC)
-        table_wrap.set_vexpand(True)
+        # The table is itself scrollable inside a bounded card: the page
+        # keeps its buttons on screen no matter how many controls the scan
+        # lists (bug sweep S1 — the old vexpand frame ate the window).
+        table_wrap.set_min_content_height(200)
+        table_wrap.set_max_content_height(400)
+        table_wrap.set_propagate_natural_height(True)
         table_wrap.set_child(view)
         table_frame.set_child(table_wrap)
         self._table_view = view
+        self._table_wrap = table_wrap
         box.append(table_frame)
         self._risk_box = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -747,14 +781,21 @@ class SetupWizard(Gtk.Box):
             orientation=Gtk.Orientation.VERTICAL, spacing=2)
         strip_frame = Gtk.Frame()
         strip_frame.add_css_class("gw-card")
-        strip_frame.set_vexpand(True)
         strip_inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                               spacing=2)
         strip_inner.set_margin_top(12)
         strip_inner.set_margin_bottom(12)
         strip_inner.set_margin_start(12)
         strip_inner.set_margin_end(12)
-        strip_frame.set_child(strip_inner)
+        # Bounded like the inventory card: a long result strip scrolls
+        # instead of pushing the buttons below the window edge.
+        strip_scroll = Gtk.ScrolledWindow()
+        strip_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        strip_scroll.set_min_content_height(120)
+        strip_scroll.set_max_content_height(300)
+        strip_scroll.set_propagate_natural_height(True)
+        strip_scroll.set_child(strip_inner)
+        strip_frame.set_child(strip_scroll)
         box.append(strip_frame)
         self._strip_box = strip_inner
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -796,6 +837,17 @@ class SetupWizard(Gtk.Box):
             self._strip_box.append(words)
 
     def _preview_ready(self):
+        # No scan, no preview: the table reads a finished scan. Reaching
+        # this step without one crashed in inventory_lines (None.get) and
+        # left the window stuck mid-flow (bug sweep part D, 2026-10-30).
+        if self._scan is None:
+            self.fill(self._scan_progress,
+                      "Run the scan first — nothing to preview yet. "
+                      "Press Try again to scan now.")
+            if getattr(self, "_retry", None) is not None:
+                self._retry.set_sensitive(True)
+            self._step("scan")
+            return
         self._fill_table()
 
     def _build_finish(self, _step_no):
@@ -934,9 +986,10 @@ class SetupWizardWindow(Gtk.Window):
 
     def __init__(self, parent=None, open_dashboard=None, open_chooser=None):
         super().__init__(title="greywatch: Setup Wizard")
-        # A share of the monitor rather than a fixed 880x760: the wizard
-        # pages are two-column task layouts, and at 880px every one of them
-        # scrolled. ui/metrics.py keeps the same rule as the dashboard.
+        # Task-dialog scale from ui/metrics.py: the pages are short forms
+        # over a fixed reading column, and the stack scrolls when a step
+        # grows taller than the window (bug sweep S1 — the old near-screen
+        # default showed half-empty pages or clipped the bottom edge).
         from ui import metrics
         self.set_default_size(*metrics.wizard_size())
         self.set_resizable(True)

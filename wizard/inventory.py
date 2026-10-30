@@ -124,6 +124,9 @@ def run_scan(runner=None, data_dir=None, net_dir=None) -> dict:
 
 def inventory_lines(scan: dict) -> list[str]:
     out: list[str] = []
+    if not isinstance(scan, dict):
+        return out        # no scan yet: a caller asking for lines of
+                          # nothing gets nothing, never a crash
     packages = scan.get("packages")
     packages = packages if isinstance(packages, dict) else {}
     for name in PACKAGES:

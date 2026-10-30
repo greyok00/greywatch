@@ -56,9 +56,30 @@ def _hint(text):
     l = Gtk.Label(xalign=0)
     l.set_xalign(0)
     l.set_wrap(True)
+    # A wrapped label's natural width is the whole unwrapped sentence;
+    # without a measure cap the longest hint sets the window's width.
+    l.set_max_width_chars(48)
     l.add_css_class("dim")
     l.set_text(text)
     return l
+
+
+def _cap_combo(c, width=440):
+    """Cap a picker so its widest menu row doesn't set the window width.
+
+    A ComboBoxText's natural width is its widest row; the program picker's
+    rows are full "Name · /long/path" strings (~875 px), which forced the
+    setup assistant open at 1081 px (bug sweep S3). Fixed-size ellipsizing
+    cells keep the row list short on screen and readable in full via the
+    rule the user finally chooses."""
+    c.set_size_request(width, -1)
+    for cell in c.get_cells():
+        try:
+            cell.set_fixed_size(width, -1)
+            cell.set_property("ellipsize", 3)   # Pango.EllipsizeMode.END
+        except Exception:
+            continue
+    return c
 
 
 class ToolChooser(Gtk.Dialog):
@@ -202,6 +223,7 @@ class RuleWizard(Gtk.Assistant):
             l = Gtk.Label(xalign=0)
             l.set_xalign(0)
             l.set_wrap(True)
+            l.set_max_width_chars(56)
             l.set_markup(f"<span size='13000' font_family='Inter'>{body}</span>")
             box.append(l)
         if inner:
@@ -254,8 +276,7 @@ class RuleWizard(Gtk.Assistant):
     def _pages_site(self):
         act = _combo([("allow", "TRUST it: allowed automatically"),
                       ("block", "BLOCK it: denied automatically")], 0)
-        site = Gtk.ComboBoxText()
-        site.set_size_request(440, -1)
+        site = _cap_combo(Gtk.ComboBoxText())
         scan = Gtk.Button(label="Scan again")
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.append(site)
@@ -300,8 +321,7 @@ class RuleWizard(Gtk.Assistant):
                        ("allow", "ALLOW this program: it connects freely")], 0)
         # A picker, not a text box: everything installed or running is
         # already known, so there is nothing to type.
-        target = Gtk.ComboBoxText()
-        target.set_size_request(440, -1)
+        target = _cap_combo(Gtk.ComboBoxText())
         scan = Gtk.Button(label="Scan again")
 
         def fill():
@@ -344,10 +364,8 @@ class RuleWizard(Gtk.Assistant):
         act = _combo([("block", "BLOCK: keep them out (safest)"),
                       ("allow", "ALLOW: let them in"),
                       ("limit", "RATE-LIMIT: allow but slow")], 0)
-        who = Gtk.ComboBoxText()
-        who.set_size_request(440, -1)
-        port = Gtk.ComboBoxText()
-        port.set_size_request(440, -1)
+        who = _cap_combo(Gtk.ComboBoxText())
+        port = _cap_combo(Gtk.ComboBoxText())
         scan = Gtk.Button(label="Scan again")
 
         def fill():

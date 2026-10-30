@@ -376,6 +376,9 @@ class MainWindow(Gtk.Window):
         self.panic_btn.set_tooltip_text(
             "Starts what is stopped and turns the app firewall on.")
         self.panic_btn.connect("clicked", self._on_panic)
+        # No selection yet at build time: Pause/Resume/Details open dimmed
+        # until the owner picks a row (see _sync_selection_buttons).
+        self._sync_selection_buttons()
 
         # Chat centre: the assistant takes the big table's old place, and a
         # visible restart affordance covers a failed model wake (a fresh Llm
@@ -514,7 +517,21 @@ class MainWindow(Gtk.Window):
                 return True
             rail_state["width"] = width
             if rail_state["auto"]:
-                rail = metrics.span(width, 0.24, 280, 420)
+                # The rail must never offer the card less than its true
+                # minimum: content min + theme frame padding + 20px gutter
+                # measures ~310px, and a divider even one pixel short makes
+                # GTK re-measure the frame at min-1 on every refresh cycle
+                # ("measuring GtkFrame for width of 309, needs 310").
+                end = pane.get_end_child()
+                try:
+                    # six px slack above the true minimum: GTK's divider
+                    # width varies by theme, so two px can still come up
+                    # one short on the next refresh measure.
+                    floor = end.measure(Gtk.Orientation.HORIZONTAL, -1)[0] \
+                        + 6 if end is not None else 280
+                except Exception:
+                    floor = 316
+                rail = max(metrics.span(width, 0.24, 280, 420), floor)
                 rail_state["setting"] = True
                 pane.set_property("position", max(360, width - rail))
                 rail_state["setting"] = False
@@ -522,6 +539,14 @@ class MainWindow(Gtk.Window):
 
         pane.add_tick_callback(_keep_rail)
         return pane
+
+    def _sync_selection_buttons(self):
+        """The footer's Pause/Resume/Details act on the selection: dim them
+        until a protection is selected, so a click can't end in a
+        "Select a protection first." surprise (bug sweep B5)."""
+        sel = bool(self._selected_tool)
+        for b in (self.pause_btn, self.resume_btn, self.details_btn):
+            b.set_sensitive(sel)
 
     def _list_selected(self, selection):
         model, it = selection.get_selected()
@@ -531,6 +556,7 @@ class MainWindow(Gtk.Window):
         else:
             self.sel_note.set_text(
                 "Select a protection.")
+        self._sync_selection_buttons()
 
     def _restore_list_selection(self):
         sel = self.list_view.get_selection()
@@ -545,6 +571,7 @@ class MainWindow(Gtk.Window):
                 sel.select_iter(self.list_store.get_iter_from_string(str(i)))
                 return
         self._selected_tool = None
+        self._sync_selection_buttons()
 
     def _details_selected(self):
         if self._selected_tool:
@@ -650,6 +677,7 @@ class MainWindow(Gtk.Window):
     def _rail_toggle(self, name):
         """Same click path as the footer buttons, for a rail row."""
         self._selected_tool = name
+        self._sync_selection_buttons()
         if self.rail_state.get(name) == "paused":
             self._resume_selected()
         else:
@@ -662,6 +690,7 @@ class MainWindow(Gtk.Window):
                 self._selected_tool = name
                 self.sel_note.set_text(
                     f"Selected: {friendly_name(name)} · {name}")
+                self._sync_selection_buttons()
 
     def _refresh_rail(self, tools, updated):
         """Paint the rail from the snapshot refresh() already read: one dot
@@ -714,6 +743,7 @@ class MainWindow(Gtk.Window):
         the Settings page button calls."""
         if action == "details":
             self._selected_tool = tool
+            self._sync_selection_buttons()
             self._open_detail(tool)
             return
         if action == "scan":
@@ -726,6 +756,7 @@ class MainWindow(Gtk.Window):
         if action in ("pause", "resume"):
             self._assistant_pending = (action, tool)
             self._selected_tool = tool
+            self._sync_selection_buttons()
             self._pause_selected() if action == "pause" \
                 else self._resume_selected()
             return
@@ -1070,6 +1101,12 @@ class MainWindow(Gtk.Window):
         pause = Gtk.Button(label="Pause")
         pause.add_css_class("gw-mini")
         pause.set_sensitive(bool(tool.get("unit")))
+        # A dimmed Pause next to a green "running" row reads as broken: say
+        # why it is dimmed (this protection has no service to pause) (B3).
+        if not tool.get("unit"):
+            pause.set_tooltip_text(
+                "Nothing to pause — this protection has no service of "
+                "its own")
         pause.connect("clicked", lambda *_b, n=name:
                       self._resume_tool(n) if self.paused.is_paused(n)
                       else self._pause_tool(n))
@@ -1082,6 +1119,7 @@ class MainWindow(Gtk.Window):
 
         def _row_clicked(_g, _n, _x, _y, n=name):
             self._selected_tool = n
+            self._sync_selection_buttons()
             self._open_detail(n)
 
         click.connect("released", _row_clicked)
@@ -2456,8 +2494,9 @@ class MainWindow(Gtk.Window):
         self._v6_check = v6_check
         fw_inner.append(self._settings_row(
             "Filter IPv6", v6_check,
-            "Off by default: IPv6 traffic is not filtered unless you turn "
-            "this on. Takes about ten seconds to apply."))
+            "On by default: IPv6 traffic follows the same rules as IPv4. "
+            "Turning it off lets apps reach the internet over IPv6 "
+            "unfiltered — keep it on unless you have a reason."))
         return self._settings_section(fw_frame)
 
     def _settings_connections(self):
@@ -2773,19 +2812,30 @@ class MainWindow(Gtk.Window):
 
     def _on_fw_toggle(self, _btn):
         was_on = self._fw_is_on()
-        self.fw_btn.set_sensitive(False)
-        self.fw_btn.set_label("Stopping…" if was_on else "Starting…")
-        self.fw_status.set_text(
-            "Waiting for the admin password…" if not was_on else
-            "Stopping the firewall…")
+        # Widget-free before Settings builds: the chat's firewall intent
+        # reaches this handler before any of the Settings pane widgets
+        # exist (task #48 — every touch is now guarded).
+        settings_ready = getattr(self, "fw_btn", None) is not None \
+            and getattr(self, "fw_status", None) is not None
+        if settings_ready:
+            self.fw_btn.set_sensitive(False)
+            self.fw_btn.set_label("Stopping…" if was_on else "Starting…")
+            self.fw_status.set_text(
+                "Waiting for the admin password…" if not was_on else
+                "Stopping the firewall…")
         try:
             (DATA_DIR / "appfw").mkdir(parents=True, exist_ok=True)
             (DATA_DIR / "appfw" / "enable.json").write_text(
                 json.dumps({"enabled": not was_on}) + "\n")
             self._after_toggle("appfw", was_on, 0)
         except OSError as e:
-            self.fw_btn.set_sensitive(True)
-            self.fw_status.set_text(f"could not switch the engine: {e}")
+            if settings_ready:
+                self.fw_btn.set_sensitive(True)
+                self.fw_status.set_text(
+                    f"could not switch the engine: {e}")
+            else:
+                self._assistant_record_outcome(False)
+                self.refresh()
         self._tick_id(self._refresh_fw, 2, seconds=True)
 
     def _on_learning_toggle(self, check):
@@ -3035,10 +3085,17 @@ class MainWindow(Gtk.Window):
         self.updates_note.set_text("\n".join(lines))
 
     def _on_update_now(self, _btn):
-        self.update_btn.set_sensitive(False)
-        self.update_note.set_text(
-            "Downloading the latest security list. This takes about a "
-            "minute…")
+        # Widget-free before Settings builds (task #48): the chat's
+        # update_lists intent reaches this before update_btn/update_note
+        # exist, so the pane widgets are guarded and the outcome still
+        # lands in the assistant card and the audit ledger.
+        updates_ready = getattr(self, "update_btn", None) is not None \
+            and getattr(self, "update_note", None) is not None
+        if updates_ready:
+            self.update_btn.set_sensitive(False)
+            self.update_note.set_text(
+                "Downloading the latest security list. This takes about a "
+                "minute…")
 
         def worker():
             from ui import updates, blocklist
@@ -3053,14 +3110,21 @@ class MainWindow(Gtk.Window):
         if pending and pending[0] == "update_lists":
             self._assistant_pending = None
             audit.record("update_lists", "", rc == 0 and bl_ok)
-        self.update_btn.set_sensitive(True)
+        updates_ready = getattr(self, "update_btn", None) is not None \
+            and getattr(self, "update_note", None) is not None
+        if updates_ready:
+            self.update_btn.set_sensitive(True)
         self._refresh_updates()
         parts = []
         parts.append("security list up to date" if rc == 0
                      else f"security list failed ({msg or 'no answer'})")
         parts.append(f"block list up to date ({bl_count} domains)" if bl_ok
                      else f"block list failed ({bl_msg or 'no answer'})")
-        self.update_note.set_text(" · ".join(parts))
+        if updates_ready:
+            self.update_note.set_text(" · ".join(parts))
+        else:
+            self._assistant_record_outcome(bool(rc == 0 and bl_ok))
+            self.refresh()
         return False
 
     def _on_app_browse(self, _btn):

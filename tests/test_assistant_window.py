@@ -14,6 +14,9 @@ def test_assistant_intent_dispatch_routes_to_toggle_helpers(
     class FakeWin:
         actions = []
 
+        def _sync_selection_buttons(self):
+            pass                      # B5: dim/light the footer trio
+
         def _pause_selected(self):
             FakeWin.actions.append(("pause", self._selected_tool))
 
@@ -45,6 +48,10 @@ def test_assistant_pause_outcome_recorded_once(tmp_path, monkeypatch):
                         lambda action, tool, ok: calls.append((action, tool, ok)))
     class FakeWin:
         fired = []
+
+        def _sync_selection_buttons(self):
+            pass                      # B5: dim/light the footer trio
+
         def _pause_selected(self):
             FakeWin.fired.append("pause")
         def _resume_selected(self):
