@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 
+from assistant import events as _events
 from ui import plain as _plain
 from ui.models import local_clock, status_words
 
@@ -365,13 +366,25 @@ def advise_event(row: dict, extra_steps=None) -> str:
         meaning, risk, scan, steps = hit
         if steps is None:
             steps = _steps_for(tool, scan=scan, details=False)
+    reading = _events.classify(row)
+    if reading and reading["bucket"] == _events.NOISE:
+        # A test fixture needs no decision: the generic quarantine steps
+        # ("delete it or restore it") would invent one.
+        risk = ("nothing — the scanner did its job on a harmless sample, so "
+                "there is no decision here")
+        steps = (("info", "Nothing to do; the test run removes the file when "
+                          "it finishes."),)
     steps = tuple(extra_steps or ()) + tuple(steps or ())
     body, has_cmd = _render_steps(steps)
     head = (f"That line means: {meaning}. "
             f"It came from {name} ({tool}) at "
             f"{local_clock(row.get('ts'))}, severity "
             f"{_plain.severity_word(sev)}.")
-    parts = [head, f"Why it matters: {risk}."]
+    parts = []
+    if reading and reading["bucket"] == _events.NOISE:
+        why = reading["why"]
+        parts.append(f"This line is not a threat — {why[0].lower()}{why[1:]}")
+    parts += [head, f"Why it matters: {risk}."]
     if body:
         parts.append(body)
     parts.append(f"raw: {text}")
@@ -399,7 +412,7 @@ def advise_tool(pack: dict, tool: str) -> str | None:
 
     recent = _recent_for(pack, tool)
     hot = [e for e in recent if str(e.get("severity", "")).upper()
-           in ("HIGH", "CRITICAL")]
+           in ("HIGH", "CRITICAL") and not _events.is_noise(e)]
     down_hit = None
     for e in hot:
         hit = _match(tool, str(e.get("text") or ""))
@@ -433,6 +446,40 @@ def advise_tool(pack: dict, tool: str) -> str | None:
     return "\n\n".join(parts) + _command_note(has_cmd)
 
 
+def _hot_events(pack: dict, hours: int = 24) -> list[dict]:
+    """High/critical lines from the last day, deduplicated by text.
+
+    The published digest is short, so a quarantine from this morning had
+    scrolled out and 'should I worry?' answered no. The pack's history is
+    the whole log; only the last day counts as a live concern.
+    """
+    import datetime as _dt
+
+    rows = list(pack.get("history") or []) + list(pack.get("recent") or [])
+    now = _dt.datetime.now(_dt.timezone.utc)
+    out, seen = [], set()
+    for e in rows:
+        if str(e.get("severity", "")).upper() not in ("HIGH", "CRITICAL"):
+            continue
+        if _events.is_noise(e):
+            continue          # test fixtures and system scripts are not findings
+        key = str(e.get("text", ""))
+        if key in seen:
+            continue
+        try:
+            ts = _dt.datetime.fromisoformat(
+                str(e.get("ts", "")).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=_dt.timezone.utc)
+            if (now - ts).total_seconds() > hours * 3600:
+                continue
+        except (ValueError, TypeError):
+            pass
+        seen.add(key)
+        out.append(e)
+    return out
+
+
 def needs_attention(pack: dict) -> list[tuple[int, str, str]]:
     """Ranked (priority, tool, one-line why). Lower priority sorts first."""
     out = []
@@ -446,7 +493,7 @@ def needs_attention(pack: dict) -> list[tuple[int, str, str]]:
                         "not installed" if t.get("installed") is False
                         else "needs attention"))
     seen = {name for _p, name, _w in out}
-    for e in pack.get("recent") or []:
+    for e in _hot_events(pack):
         tool = str(e.get("tool") or e.get("from_tool") or "")
         sev = str(e.get("severity") or "").upper()
         if sev not in ("HIGH", "CRITICAL") or tool in seen:
@@ -465,24 +512,126 @@ def advise_priorities(pack: dict) -> str:
     items = needs_attention(pack)
     total = len(pack.get("tools") or [])
     green = sum(1 for t in pack.get("tools") or [] if t["state"] == "GREEN")
+    noise = _events.count_noise(list(pack.get("history") or [])
+                                + list(pack.get("recent") or []))
     if not items:
+        tail = (f"\n\n{noise} serious-looking line(s) are also in the log, but "
+                f"a known benign cause explains them (the app's own test "
+                f"fixtures and system scripts), so they are not on the list."
+                if noise else "")
         return (f"Nothing needs a decision right now: {green} of {total} "
                 f"protections are green, and no high-severity event is "
-                f"waiting.\n\nIf you want to be thorough, ask 'explain the "
-                f"newest event' and I will read the last lines out.")
+                f"waiting.{tail}\n\nIf you want to be thorough, ask 'explain "
+                f"the newest event' and I will read the last lines out.")
     n = min(len(items), 5)
     head = ("One thing needs a decision, most important first"
             if n == 1 else f"{n} things need a decision, most important first")
-    lines = [f"{head} ({green} of {total} protections green):"]
+    # "One thing needs a decision (17 of 17 green)" read as a
+    # contradiction. Nothing is broken in that case: the layers are
+    # running, and the item below is an event to decide about.
+    if green == total and total:
+        still = ("One recent event still needs" if n == 1
+                 else f"{n} recent events still need")
+        lines = [f"Nothing is broken — all {total} protections are running. "
+                 f"{still} a decision, most important first:"]
+    else:
+        lines = [f"{head} ({green} of {total} protections green):"]
     for i, (_pri, tool, why) in enumerate(items[:5], 1):
         name = _plain.friendly_name(tool)
         steps = _steps_for(tool, scan=True, details=False)
-        first = next((s for _k, s in steps), None)
-        extra = f" → {first}" if first else ""
+        # Plain words first: the reader may not use a terminal. The
+        # command stays after it, for whoever does.
+        first = next((s for kind, s in steps if kind == "app"), None)
+        if first is None:
+            first = (f"open the app, select {name}, and press Details to "
+                     f"see its current state")
+        cmd = next((s for kind, s in steps if kind == "command"), None)
+        extra = f" → {first}" + (f" (or run: {cmd})" if cmd else "")
         lines.append(f"{i}. {name} ({tool}): {why}.{extra}")
+    if noise:
+        # Without this the owner sees a wall of High rows and a short list,
+        # and has no way to tell the difference. Say what was left out.
+        lines.append(f"I left {noise} serious-looking line(s) off that list: "
+                     "a known benign cause explains them (the app's own test "
+                     "fixtures and system scripts). Ask 'explain the test "
+                     "quarantine' to see one spelled out.")
     lines.append("Ask 'how do I fix <name>' for the full steps on any of "
                  "them.")
     return "\n".join(lines)
+
+
+_BLOCK_RE = re.compile(r"\b(deny|denied|denying|drop|dropped|block|blocked|"
+                       r"blocking|reject|rejected)\b", re.I)
+_ADDR_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
+_BAN_RE = re.compile(r"\bban(ned)?\b", re.I)
+
+
+def advise_attack(pack: dict) -> str:
+    """'Am I under attack?' deserves an evidence-based verdict, not a canned
+    reassurance. Every number here comes from the rows the pack holds, with
+    the known-benign lines already taken out."""
+    seen, rows = set(), []
+    for r in (list(pack.get("history") or [])
+              + list(pack.get("recent") or [])):
+        key = (r.get("ts"), r.get("text"))
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(r)
+    blocks = [r for r in rows if _BLOCK_RE.search(str(r.get("text") or ""))]
+    sources: dict[str, int] = {}
+    for r in blocks:
+        m = _ADDR_RE.search(str(r.get("text") or ""))
+        if m:
+            sources[m.group(1)] = sources.get(m.group(1), 0) + 1
+    top, top_n = (max(sources.items(), key=lambda kv: kv[1])
+                  if sources else ("", 0))
+    hot = _hot_events(pack)
+    down = [t for t in pack.get("tools") or [] if t["state"] == "RED"]
+    tools = pack.get("tools") or []
+    green = sum(1 for t in tools if t["state"] == "GREEN")
+    bans = sum(1 for r in rows
+               if str(r.get("from_tool") or r.get("tool") or "") == "fail2ban"
+               and _BAN_RE.search(str(r.get("text") or "")))
+
+    if hot:
+        verdict = ("Short answer: something needs your attention, but it is "
+                   "not proof of a break-in.")
+    elif down:
+        verdict = (f"Short answer: nothing in the log looks like an attack, "
+                   f"but {len(down)} protection(s) are stopped, so part of "
+                   f"your defence is not running.")
+    else:
+        verdict = ("Short answer: no. Nothing in the log I can read looks "
+                   "like an attack.")
+    parts = [
+        verdict,
+        f"What the log holds: {green} of {len(tools)} protections running, "
+        f"{len(hot)} serious event(s) that no benign cause explains, "
+        f"{len(blocks)} refused connection(s) from {len(sources)} outside "
+        f"address(es), and {bans} login ban(s).",
+    ]
+    if top_n >= 5:
+        parts.append(f"The busiest refused address is {top}, refused {top_n} "
+                     f"times. Repetition from one address is the closest "
+                     f"thing to knocking — and the firewall already said no, "
+                     f"which is the system working.")
+    if hot:
+        newest = hot[0]
+        tool = str(newest.get("tool") or newest.get("from_tool") or "")
+        parts.append(f"The newest serious line is at "
+                     f"{local_clock(newest.get('ts'))} from "
+                     f"{_plain.friendly_name(tool)} ({tool}). Ask 'should I "
+                     f"worry?' and I will rank what to do about it.")
+    elif down:
+        parts.append("Bring the stopped layer back first; while it is down "
+                     "its silence is not evidence of safety.")
+    else:
+        parts.append("There is no sign of a break-in in what I can read: no "
+                     "login attempts from outside, no program started out of "
+                     "a temporary folder, and every layer is running. Ask "
+                     "'show me the warnings' if you want the lines read out.")
+    return "\n\n".join(parts)
 
 
 def advise_state_vs_events(pack: dict) -> str:
@@ -490,10 +639,19 @@ def advise_state_vs_events(pack: dict) -> str:
     events = what happened. Say which one a question is about."""
     tools = pack.get("tools") or []
     green = sum(1 for t in tools if t["state"] == "GREEN")
-    hot = [e for e in (pack.get("recent") or [])
-           if str(e.get("severity", "")).upper() in ("HIGH", "CRITICAL")]
+    hot = _hot_events(pack)
     down = [t for t in tools if t["state"] == "RED"]
-    parts = [f"The state column and the event log answer different questions: "
+    # A question like "should I worry?" deserves the verdict first; the
+    # explanation is the second paragraph, not the whole reply.
+    # Yes/no wording read wrong for "is my computer protected?" — 'no'
+    # there means 'not protected'. Say the state, not a bare yes or no.
+    verdict = ("Short answer: nothing needs your attention right now — every "
+               "protection is running."
+               if not hot and not down else
+               "Short answer: something needs your attention — the list "
+               "below says what.")
+    parts = [verdict,
+             f"The state column and the event log answer different questions: "
              f"the state says whether a layer is running right now, the events "
              f"are its history of what it saw. Today {green} of {len(tools)} "
              f"layers are green, {len(hot)} high-severity event(s) are in the "
@@ -508,5 +666,11 @@ def advise_state_vs_events(pack: dict) -> str:
         parts.append(f"Fix the stopped layer first ({names}) — while it is "
                      f"down its events are history, not fresh findings.")
     else:
-        parts.append("Nothing is stopped and nothing high-severity is waiting.")
+        noise = _events.count_noise(list(pack.get("history") or [])
+                                    + list(pack.get("recent") or []))
+        extra = (f" {noise} serious-looking line(s) are the app's own test "
+                 f"fixtures, which is why the event list looks busier than it "
+                 f"is." if noise else "")
+        parts.append("Nothing is stopped and nothing high-severity is "
+                     "waiting." + extra)
     return "\n\n".join(parts)

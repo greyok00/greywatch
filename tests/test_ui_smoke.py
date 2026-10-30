@@ -752,10 +752,12 @@ def test_settings_exposes_the_firewall_and_learning_controls(win,
     win._refresh_fw()           # fw_note is filled by the live refresh only
     assert win.fw_btn.get_label() in ("Turn on", "Turn off")
     assert "firewall on," in win.fw_note.get_text().lower()
-    assert win.learn_check.get_label().startswith("Learning mode")
+    # The controls are switches now (macOS), so the words live in the row
+    # labels next to them rather than inside the control.
+    assert "Learning mode" in win.learn_title.get_text()
     assert win.learn_for.get_active_id() in ("15", "60", "480", "0")
     assert win.update_btn.get_label() == "Update lists"
-    assert "unknown" in win.fw_block.get_label().lower()
+    assert "unknown" in win.fw_block_title.get_text().lower()
 
 
 def test_learning_toggle_writes_the_real_flag(win):
@@ -936,3 +938,35 @@ def test_assistant_chat_answers_are_selectable():
     lbl = panel._bubble("copy this line")
     assert lbl.get_selectable() is True
 
+
+
+def test_assistant_panel_header_identifies_the_ai_assistant():
+    """The owner asked for it to 'look like an AI assistant': a mascot, a
+    real title, and a sentence saying what it is."""
+    from ui.assistant import AssistantPanel
+    panel = AssistantPanel(registry=[], get_status=lambda: {},
+                           get_recent=lambda: [], get_llm=lambda: None,
+                           on_intent=lambda *a: None)
+
+    def walk(w, out):
+        if isinstance(w, Gtk.Label):
+            out.append(w.get_label() or "")
+        c = w.get_first_child()
+        while c is not None:
+            walk(c, out)
+            c = c.get_next_sibling()
+
+    labels = []
+    walk(panel, labels)
+    blob = "\n".join(labels)
+    assert "GreyWatch Assistant" in blob
+    assert "Local AI assistant" in blob
+    # The sub-line says what it is *and* that it never changes anything
+    # without the confirm box (owner: "more execution", same gate).
+    assert "asks before changing anything" in blob
+    # The header shows the app's own icon art, not a separate assistant
+    # logo (owner: the wolf must be the white one, same as the icon).
+    art = ROOT / "assets" / "logo" / "greywatch-icon-128.png"
+    assert art.exists() and art.stat().st_size > 1000
+    blue = ROOT / "assets" / "logo" / "greywatch-assistant-128.png"
+    assert not blue.exists(), "the blue assistant logo should be gone"

@@ -104,3 +104,13 @@ def test_circle_draw_uses_only_four_arg_rgba():
     assert drew is False, drew          # a GTK4 draw func returns False
     assert rec, "the GTK4 draw func never painted"
     assert all(a == 4 for a in rec), rec
+
+
+def test_assistant_header_styles_are_emitted():
+    """The chat panel's identity block (2026-10-29) needs its own type
+    scale; a missing rule leaves the title looking like body text."""
+    ts = load_themes()
+    css = gtk_css(ts[list(ts)[0]])
+    assert ".gw-assistant-title" in css
+    assert ".gw-assistant-sub" in css
+    assert ".gw-assistant-head" in css

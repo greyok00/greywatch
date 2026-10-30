@@ -19,6 +19,7 @@ except (ValueError, ImportError):        # typelib not installed
 
 import greywatch_daemon as dm
 from decisions_factory import pending_ids, record_answer
+from ui import visuals
 
 
 def _primary_index(opts):
@@ -98,7 +99,7 @@ def _identity_card(spec, dlg):
 
     top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
     icon = Gtk.Image.new_from_icon_name("application-x-executable-symbolic")
-    icon.set_pixel_size(28)
+    icon.set_pixel_size(36)
     icon.add_css_class("gw-idicon")
     text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
     text.set_hexpand(True)
@@ -116,12 +117,18 @@ def _identity_card(spec, dlg):
     card.append(Gtk.Separator())
 
     dest_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-    # A drawn country tile instead of a flag emoji: emoji ignore the theme
-    # and render differently on every machine, and there is no flag icon
-    # set installed. It shows the two-letter code until the lookup answers.
-    flag = Gtk.Label(label="··", xalign=0.5, yalign=0.5)
-    flag.add_css_class("gw-idflag")
-    flag.set_size_request(54, 40)
+    # A drawn picture of the destination, not a flag emoji: the brand's
+    # own mark when the network has a name ("it could show an amazon
+    # logo"), otherwise a map tile pinned on the country (owner
+    # 2026-10-29: "a geoip map of the location by default"). The
+    # placeholder is the unmarked world map while the lookup runs.
+    tile = Gtk.Image()
+    tile.add_css_class("gw-idtile")
+    tile.set_pixel_size(56)          # a pixbuf alone would paint at 16px
+    tile.set_size_request(56, 56)
+    start = visuals.map_tile("", 56)
+    if start is not None:
+        tile.set_from_pixbuf(start)
     dest_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
     dest_box.set_hexpand(True)
     dest = Gtk.Label(label="Looking up this address…", xalign=0, wrap=True)
@@ -129,13 +136,18 @@ def _identity_card(spec, dlg):
     dest_line = Gtk.Label(label=_address_line(facts), xalign=0, wrap=True,
                           selectable=True)
     dest_line.add_css_class("gw-idval")
+    # A selectable label is focusable, and the first focusable widget of
+    # a freshly mapped dialog takes focus — GTK then selects the whole
+    # label, so the address painted as a blue band on first show.
+    dest_line.connect("map", lambda lbl: GLib.idle_add(
+        lambda: lbl.select_region(0, 0) and False))
     dest_sentence = Gtk.Label(label="", xalign=0, wrap=True)
     dest_sentence.add_css_class("gw-idline")
     dest_sentence.set_visible(False)
     dest_box.append(dest)
     dest_box.append(dest_line)
     dest_box.append(dest_sentence)
-    dest_row.append(flag)
+    dest_row.append(tile)
     dest_row.append(dest_box)
     card.append(dest_row)
     grid = Gtk.Grid(column_spacing=18, row_spacing=6)
@@ -148,7 +160,13 @@ def _identity_card(spec, dlg):
 
     state = {"alive": True}
 
-    def _set_icon(name):
+    def _set_icon(ident, title=""):
+        # The program's own desktop icon when the theme has one; otherwise
+        # a drawn tile with the program's initials, so the card always
+        # shows *something* that belongs to the program (owner 2026-10-29:
+        # "it should show the app icon in question at all times or create
+        # one and use the name of the program as well").
+        name = str((ident or {}).get("icon") or "")
         try:
             theme = Gtk.IconTheme.get_for_display(icon.get_display())
             if name and theme.has_icon(name):
@@ -156,7 +174,14 @@ def _identity_card(spec, dlg):
                 return
         except Exception:
             pass
-        icon.set_from_icon_name("application-x-executable-symbolic")
+        made = visuals.program_tile(
+            name, title or "Program", 36,
+            binary=str((ident or {}).get("binary") or ""),
+            package=str((ident or {}).get("package") or ""))
+        if made is not None:
+            icon.set_from_pixbuf(made)
+        else:
+            icon.set_from_icon_name("application-x-executable-symbolic")
 
     def fill(result):
         if not state["alive"]:
@@ -164,14 +189,24 @@ def _identity_card(spec, dlg):
         result = result if isinstance(result, dict) else {}
         p = result.get("program_card") or {}
         h = result.get("host_card") or {}
-        prog.set_text(p.get("title") or facts["app_name"] or "Unknown program")
+        prog_title = (p.get("title") or facts["app_name"]
+                      or "Unknown program")
+        prog.set_text(prog_title)
         prog_line.set_text(p.get("sentence") or "")
         prog_line.set_visible(bool(p.get("sentence")))
-        dest.set_text(h.get("title") or "Unknown server")
+        host = result.get("host") or {}
+        country = str(host.get("country_name") or "")
+        title = h.get("title") or "Unknown server"
+        # Name and place in one line: "Amazon · United States". When the
+        # lookup has neither, the title stands alone.
+        dest.set_text(f"{title} · {country}"
+                      if country and title.lower() != country.lower()
+                      else title)
         dest_sentence.set_text(h.get("sentence") or "")
         dest_sentence.set_visible(bool(h.get("sentence")))
-        code = str((result.get("host") or {}).get("country") or "")
-        flag.set_text(code[:2].upper() or "··")
+        picture = visuals.host_tile(host, 56)
+        if picture is not None:
+            tile.set_from_pixbuf(picture)
         while (child := grid.get_first_child()) is not None:
             grid.remove(child)
         for i, (key, val) in enumerate(h.get("rows") or []):
@@ -184,7 +219,7 @@ def _identity_card(spec, dlg):
         msg = " ".join(x for x in (p.get("warning"), h.get("warning")) if x)
         warn.set_text(msg)
         warn.set_visible(bool(msg))
-        _set_icon(p.get("icon"))
+        _set_icon(p, prog_title)
         return False
 
     def worker():
@@ -194,7 +229,13 @@ def _identity_card(spec, dlg):
                 facts["host"], facts["path"], facts["app_name"])
         except Exception:
             result = {}
-        GLib.idle_add(fill, result)
+        # Default priority, not idle: a window that is busy repainting
+        # (live monitors, timers) always has a higher-priority source
+        # ready, and an idle-priority fill then never runs — the card
+        # sits on "Looking up this address…" for good. Idle priority is
+        # for work that may wait forever; this is the answer the owner is
+        # waiting on.
+        GLib.idle_add(fill, result, priority=GLib.PRIORITY_DEFAULT)
 
     dlg.connect("destroy", lambda *_a: state.__setitem__("alive", False))
     threading.Thread(target=worker, daemon=True).start()

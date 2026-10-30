@@ -9,10 +9,13 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 def test_rail_scroller_drops_the_overlay_scrollbar():
     """The rail ends on its own pause/play buttons; the GTK4 floating
     grey pill painted over them reads as a broken overlay (owner report
-    2026-10-29). Structural pin, in the spirit of the Gtk3-era API ban
-    list checks."""
-    assert "sc.set_overlay_scrolling(False)" in (
-        ROOT / "ui" / "window.py").read_text()
+    2026-10-29). CSS opacity was not enough — the node still existed and
+    still painted — so the vertical policy is EXTERNAL, which never
+    creates a bar at all while the wheel keeps scrolling. Structural pin,
+    in the spirit of the Gtk3-era API ban list checks."""
+    win = (ROOT / "ui" / "window.py").read_text()
+    assert "sc.set_overlay_scrolling(False)" in win
+    assert "Gtk.PolicyType.EXTERNAL" in win
 
 
 def test_rail_scroller_is_hidden_by_css_not_just_layout():
@@ -33,7 +36,8 @@ def test_rail_rows_are_compact_without_touching_global_rows():
     assert 'self.rail_list.add_css_class("gw-rail-rows")' in win
     from ui import themes
     css = themes.gtk_css(themes.load_themes()["obsidian"])
-    assert ".gw-rail-rows row { min-height: 30px" in css
+    assert ".gw-rail-rows row {" in css
+    assert "min-height: 21px" in css
     assert "row, treeview row { min-height: 40px" in css     # tables unchanged
 
 

@@ -120,7 +120,54 @@ class NotifyAlert:
             Notify.init(self.APP)
         return Notify
 
-    def show(self, text: str) -> None:
+    def _tile(self, app: str = "", host: str = ""):
+        """The picture beside the notification text.
+
+        A desktop notification can carry an image, so the same rule as the
+        in-app card applies: the destination's map tile when the local
+        country table knows the address, otherwise the program's own icon
+        or a drawn initial (owner 2026-10-29: "or a geoip map of the
+        location by default... make it more visual"). The country lookup
+        is the offline GeoIP table, never whois, so a notification stays
+        instant.
+        """
+        try:
+            from ui import identity, visuals
+        except Exception:
+            return None
+        code = name = ""
+        try:
+            if host:
+                code, name = identity.geoip_country(host)
+        except Exception:
+            pass
+        try:
+            if code:
+                return visuals.host_tile(
+                    {"country": code, "country_name": name}, 64)
+            title = pathlib.Path(app or "").name
+            if title:
+                return visuals.program_tile("", title, 64, binary=title)
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _attach_image(note, picture) -> None:
+        if picture is None:
+            return
+        # 0.7.2 renamed the property; the older setter stays for distros
+        # that still ship 0.7.0/0.7.1.
+        for name in ("set_image_from_pixbuf", "set_icon_from_pixbuf"):
+            setter = getattr(note, name, None)
+            if setter is not None:
+                try:
+                    setter(picture)
+                    return
+                except Exception:
+                    continue
+
+    def show(self, text: str, app: str = "", host: str = "") -> None:
         try:
             cfg = (json.loads(ALERTS_SETTING_PATH.read_text())
                    if ALERTS_SETTING_PATH.exists() else {})
@@ -129,10 +176,12 @@ class NotifyAlert:
         except (OSError, ValueError):
             pass
         cls = self._cls()
+        picture = self._tile(app, host)
         try:
             if self._n is None:
                 self._n = cls.Notification.new(self.SUMMARY, text)
                 self._n.set_timeout(8000)
+                self._attach_image(self._n, picture)
                 for add in ("add_action",):
                     if hasattr(self._n, add):
                         self._n.add_action(
@@ -141,6 +190,7 @@ class NotifyAlert:
                             "review", "Review", self._on_review)
                 self._n.show()
             else:
+                self._attach_image(self._n, picture)
                 self._n.update(self.SUMMARY, text)
                 self._n.show()
         except Exception:
@@ -159,7 +209,16 @@ class NotifyAlert:
 
     def handle_deny(self, app: str, host: str) -> str:
         text = self.blocked.add_deny(app, host)
-        self.show(text)
+        # Name the country on the first line; the picture below it is the
+        # map of that same place, so the two say the same thing.
+        try:
+            from ui import identity
+            code, name = identity.geoip_country(host)
+        except Exception:
+            name = ""
+        if name:
+            text = text.replace("\n", f"  ·  {name}\n", 1)
+        self.show(text, app=app, host=host)
         return text
 
 

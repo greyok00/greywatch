@@ -52,24 +52,14 @@ def main():
             (doc_dir / f"greywatch-icon-{size}.png").write_bytes(
                 dst.read_bytes())
 
-    # the previous dark disc becomes the named dark variant (docs use)
-    dark_ring = _bbox_of(sheet, (370, 60, 750, 440), 40, 256)
-    d_cx, d_cy = (dark_ring[0] + dark_ring[2]) / 2, (dark_ring[1] + dark_ring[3]) / 2
-    d_r = max(dark_ring[2] - dark_ring[0], dark_ring[3] - dark_ring[1]) / 2 + 1
-    d_s = int(2 * d_r)
-    dark_master = sheet.crop((int(d_cx - d_r), int(d_cy - d_r),
-                              int(d_cx + d_r), int(d_cy + d_r)))
-    d_mask = Image.new("L", (d_s * ss, d_s * ss), 0)
-    ImageDraw.Draw(d_mask).ellipse((0, 0, d_s * ss - 1, d_s * ss - 1), fill=255)
-    dark = dark_master.convert("RGBA")
-    dark.putalpha(d_mask.resize((d_s, d_s), Image.LANCZOS))
-    dark.resize((256, 256), Image.LANCZOS).save(
-        out_dir / "greywatch-icon-dark-256.png")
-    (doc_dir / "greywatch-icon-dark-256.png").write_bytes(
-        (out_dir / "greywatch-icon-dark-256.png").read_bytes())
-
-    # the rounded-card light variant is superseded by the disc default
-    for stale in ("greywatch-icon-light-256.png",):
+    # One mark, everywhere: the white-disc wolf set. The old dark-disc and
+    # wordmark variants were removed 2026-10-30 (owner: "white wolf logo
+    # only for all. remove other greywatch logos except the banner one");
+    # scrub them if an older run of this tool left them behind.
+    for stale in ("greywatch-icon-light-256.png",
+                  "greywatch-icon-dark-256.png",
+                  "greywatch-logo.png", "greywatch-logo-light.png",
+                  "greywatch-logo-icon-dark.png"):
         for d in (out_dir, doc_dir):
             p = d / stale
             if p.exists():

@@ -213,6 +213,25 @@ class SetupWizard(Gtk.Box):
         self._journal_id = None
         self._verify_colors: dict = {}
         self._verify_white: list = []
+        # Prose needs a reading measure. Widening the window to a share of
+        # the screen made every sentence run the full 1250px, so the page is
+        # kept to a column and the spare width becomes symmetric margin —
+        # the same rule as the dashboard's settings page (ui/metrics.py).
+        seen_width = {"w": -1}
+
+        def _fit_column(widget, _clock):
+            width = widget.get_width()
+            if width == seen_width["w"] or width <= 0:
+                return True
+            seen_width["w"] = width
+            from ui import metrics
+            content = metrics.span(width, 0.78, 700, 1020)
+            side = max(34, (width - content) // 2)
+            self.set_margin_start(side)
+            self.set_margin_end(side)
+            return True
+
+        self.add_tick_callback(_fit_column)
 
         self.append(self._heading(
             "Security baseline hardening"))
@@ -915,15 +934,11 @@ class SetupWizardWindow(Gtk.Window):
 
     def __init__(self, parent=None, open_dashboard=None, open_chooser=None):
         super().__init__(title="greywatch: Setup Wizard")
-        from gi.repository import Gdk
-        screen_h = 1000
-        try:
-            mons = Gdk.Display.get_default().get_monitors()
-            if mons is not None and mons.get_n_items() > 0:
-                screen_h = mons.get_item(0).get_geometry().height
-        except Exception:              # noqa: BLE001 - size is cosmetic
-            pass
-        self.set_default_size(880, min(760, max(480, screen_h - 90)))
+        # A share of the monitor rather than a fixed 880x760: the wizard
+        # pages are two-column task layouts, and at 880px every one of them
+        # scrolled. ui/metrics.py keeps the same rule as the dashboard.
+        from ui import metrics
+        self.set_default_size(*metrics.wizard_size())
         self.set_resizable(True)
         if parent is not None:
             self.set_transient_for(parent)

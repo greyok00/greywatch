@@ -6,7 +6,7 @@ import threading
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from assistant.llm import ANSWER_SYSTEM, Llm
+from assistant.llm import ANSWER_SYSTEM, THINK_CLOSE, THINK_OPEN, Llm
 
 
 class FakeModel:
@@ -201,6 +201,34 @@ def test_stream_think_filter_holds_partial_tags_across_tokens():
     out = "".join(f.feed(t) for t in ["<th", "ink>", "secret", "</thi",
                                       "nk>", "H", "i"])
     assert out == "Hi"
+
+
+def test_stream_drops_leading_blank_lines():
+    from assistant.llm import ThinkFilter
+    f = ThinkFilter()
+    out = "".join(f.feed(t) for t in ["\n", "\n", "First line.\n", "Second."])
+    assert out == "First line.\nSecond."
+
+
+def test_stream_drops_blank_lines_after_a_think_block():
+    from assistant.llm import ThinkFilter
+    f = ThinkFilter()
+    out = "".join(f.feed(t) for t in [THINK_OPEN, "why", THINK_CLOSE,
+                                      "\n", "\n", "Answer."])
+    assert out == "Answer."
+
+
+def test_stream_keeps_blank_lines_inside_the_answer():
+    from assistant.llm import ThinkFilter
+    f = ThinkFilter()
+    assert "".join(f.feed(t) for t in ["Hi.\n", "\nNext."]) == "Hi.\n\nNext."
+
+
+def test_stream_of_only_whitespace_flushes_to_nothing():
+    from assistant.llm import ThinkFilter
+    f = ThinkFilter()
+    assert "".join(f.feed(t) for t in ["\n", "  "]) == ""
+    assert f.flush() == ""
 
 
 def test_n_threads_can_be_pinned_for_tests():

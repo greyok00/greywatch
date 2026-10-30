@@ -41,3 +41,4 @@ HELP/*.html
 
 # private review notes (this remote is public)
 .superpowers/
+dist/

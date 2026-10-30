@@ -78,7 +78,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "greywatch"
 version = "$VER"
-description = "One dashboard for every protection on a Linux machine"
+description = "AI-enabled Linux endpoint security suite"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "greywatch contributors" }]

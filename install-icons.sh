@@ -29,7 +29,7 @@ cat > "$APPS/greywatch.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=greywatch
-Comment=One dashboard for every protection on this Linux machine
+Comment=AI-enabled endpoint security for the Linux desktop
 Exec=python3 $GW/ui/app.py
 Icon=greywatch
 Terminal=false
@@ -55,7 +55,7 @@ cat > "$AUTOSTART/greywatch.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=greywatch
-Comment=Endpoint security dashboard (daemon runs as a system service)
+Comment=AI-enabled endpoint security (daemon runs as a system service)
 Exec=python3 $GW/ui/app.py
 Icon=greywatch
 Terminal=false

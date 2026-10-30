@@ -3,25 +3,30 @@ from __future__ import annotations
 import re
 from xml.sax.saxutils import escape as _xml_escape
 
+# Each sentence is the one-line answer to "what is this?" on the Help
+# reference card. Keep them to ~31 characters: that is all one rendered
+# line holds in a two-column card at the 1100px minimum. A sentence that
+# does not fit is ellipsised, and a cut sentence explains nothing; the
+# advice engine also reads these, so plain and true beats long.
 FRIENDLY = {
-    "responderd": ("Auto-responder", "Reacts automatically when something dangerous appears."),
-    "tetragon": ("Program watcher", "Sees every program start, in the kernel."),
-    "yara-watch": ("Malware scanner (live)", "Continuously scans files for malware fingerprints."),
-    "yara-tmp-scan": ("Malware scanner (scheduled)", "Scans the temporary folder for malware every 15 minutes."),
-    "clamav": ("Antivirus", "The classic antivirus engine; runs a full scan once a day."),
-    "fail2ban": ("Intrusion blocker", "Locks out computers that hammer you with failed logins."),
-    "ufw": ("Firewall", "Decides which network connections may pass at all."),
-    "auditd": ("System event log", "The kernel's detailed record of what happened on the system."),
-    "appfw": ("App firewall", "Asks before a program connects to the internet (and enforces your answer)."),
-    "arpwatch": ("WiFi device watcher", "Tells you about every device that appears on your network."),
-    "aide": ("File integrity", "Alerts when system files changed: a tampering tripwire."),
-    "apparmor": ("Program jail", "Confines programs so they can only access what they need."),
-    "lynis": ("Security auditor", "Periodically grades your security and lists improvements."),
-    "rkhunter": ("Rootkit scanner", "Hunts for hidden malware (rootkits) in system internals."),
-    "net-watch": ("Network watcher", "Notes new network connections as they happen."),
-    "cve-updater": ("Update checker", "Fetches the weekly list of known security flaws."),
-    "freshclam": ("Virus definitions", "Keeps the antivirus's malware list current."),
-    "secops-mcp": ("Security helper", "The assistant's security-ops bridge."),
+    "responderd": ("Auto-responder", "Reacts when danger appears."),
+    "tetragon": ("Program watcher", "Sees every program start."),
+    "yara-watch": ("On-access scanner", "Scans files as they open."),
+    "yara-tmp-scan": ("Scheduled scanner", "Scans temp files every 15 min."),
+    "clamav": ("Antivirus", "Full antivirus scan once a day."),
+    "fail2ban": ("Intrusion blocker", "Blocks repeated failed logins."),
+    "ufw": ("Firewall", "Controls network connections."),
+    "auditd": ("System event log", "Records system events."),
+    "appfw": ("App firewall", "Asks before programs go online."),
+    "arpwatch": ("WiFi watcher", "Reports devices on the network."),
+    "aide": ("File integrity", "Alerts on system file changes."),
+    "apparmor": ("Program jail", "Limits each program's access."),
+    "lynis": ("Security auditor", "Grades security, lists fixes."),
+    "rkhunter": ("Rootkit scanner", "Hunts for hidden malware."),
+    "net-watch": ("Network watcher", "Notes new connections."),
+    "cve-updater": ("Update checker", "Fetches known security flaws."),
+    "freshclam": ("Virus definitions", "Keeps the virus list current."),
+    "secops-mcp": ("Security helper", "Assistant security bridge."),
 }
 
 

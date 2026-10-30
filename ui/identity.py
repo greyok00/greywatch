@@ -32,7 +32,7 @@ import time
 
 CACHE_TTL = 7 * 24 * 3600
 EMPTY_TTL = 3600            # a miss is retried after an hour, not a week
-CACHE_VERSION = "v2"        # bump when the shape of an answer changes
+CACHE_VERSION = "v3"        # bump when the shape of an answer changes
 WHOIS_TIMEOUT = 6.0
 PTR_TIMEOUT = 2.5
 
@@ -452,9 +452,15 @@ def owning_package(path: str, timeout: float = 3.0) -> str:
     except (OSError, subprocess.SubprocessError):
         return ""
     for line in out.splitlines():
-        if ":" in line:
-            pkg = line.split(":", 1)[0].strip()
-            return pkg.split(":")[0]
+        if ":" not in line:
+            continue
+        pkg = line.split(":", 1)[0].strip()
+        # dpkg -S prints "diversion by firefox-esr from: /usr/bin/firefox"
+        # before the real answer on a diverted binary; a package name has
+        # no spaces, so those prose lines are skipped.
+        if not pkg or " " in pkg:
+            continue
+        return pkg
     return ""
 
 

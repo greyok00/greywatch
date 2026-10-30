@@ -125,7 +125,8 @@ def test_advice_carries_a_run_it_yourself_note_only_with_commands():
 
 def _pack(tools, recent=()):
     from assistant.packer import build_pack
-    return build_pack({"tools": tools}, list(recent), "help")
+    return build_pack({"tools": tools}, list(recent), "help",
+                      history=[])
 
 
 def test_red_tool_gets_scan_and_registry_commands():
@@ -195,8 +196,36 @@ def test_state_vs_events_explains_healthy_but_noisy():
 
 # ---- hard invariant -------------------------------------------------------
 
+def _advice_source() -> str:
+    # The working tree may carry the compiled .so next to the source, and
+    # the import machinery prefers it — advice.__file__ then names the
+    # extension module. The .py beside it is still the compile input and
+    # the source of truth this invariant guards.
+    path = pathlib.Path(advice.__file__)
+    if path.suffix != ".py":
+        path = path.parent / f"{advice.__name__.rsplit('.', 1)[-1]}.py"
+    if not path.exists():
+        pytest.skip("advice.py source not shipped beside the compiled module")
+    return path.read_text()
+
+
 def test_advice_module_cannot_execute_anything():
-    src = pathlib.Path(advice.__file__).read_text()
+    src = _advice_source()
     for banned in ("import subprocess", "import os", "os.system",
                    "subprocess.", "eval(", "exec(", "popen", "Popen"):
         assert banned not in src, f"advice.py must not contain {banned!r}"
+
+
+def test_all_green_header_does_not_read_as_a_contradiction():
+    """'One thing needs a decision (17 of 17 protections green)' read as
+    nonsense: nothing is broken when every layer is running."""
+    import datetime as _dt
+    ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    pack = _pack({"ufw": {"state": "GREEN", "installed": True},
+                  "responderd": {"state": "GREEN", "installed": True}},
+                 recent=[{"from_tool": "responderd", "severity": "HIGH",
+                          "text": "quarantine: /tmp/x.bin moved to "
+                                  "quarantine, restorable", "ts": ts}])
+    text = advice.advise_priorities(pack)
+    assert "Nothing is broken" in text
+    assert "2 of 2 protections green" not in text

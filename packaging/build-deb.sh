@@ -45,6 +45,11 @@ tar -C "$GW" -cf - \
 # --- docstrings (build-cython.sh), and the .py fallbacks plus the
 # --- entrypoint scripts lose their comments and docstrings here.
 python3 "$GW/packaging/strip-source.py" "$PAYLOAD"
+# --- the compiled release is the product: a module that shipped .so
+# --- does not also ship readable source (owner 2026-10-30). The rule
+# --- is mechanical — a .py with a compiled sibling goes; everything
+# --- run by path survives.
+python3 "$GW/packaging/drop_fallbacks.py" "$PAYLOAD"
 
 # --- systemd units and polkit policy, filled like install.sh fills them:
 # --- code in the root-owned program dir, runtime state in /var/lib/greywatch
@@ -76,7 +81,7 @@ cat > "$STAGE/usr/share/applications/greywatch.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=greywatch
-Comment=One dashboard for every protection on this Linux machine
+Comment=AI-enabled endpoint security for the Linux desktop
 Exec=python3 $PREFIX/ui/app.py
 Icon=greywatch
 Terminal=false
@@ -143,12 +148,14 @@ Depends: python3 (>= 3.12), python3-gi, gir1.2-gtk-4.0, \
 Recommends: ufw, fail2ban, clamav-daemon, clamav-freshclam, yara, \
  rkhunter, lynis, aide-common, arpwatch, apparmor, auditd, nftables, \
  python3-netfilterqueue
-Description: Linux endpoint security for the desktop
+Description: AI-enabled Linux endpoint security suite
  A root daemon watches the machine in real time and writes an
  append-only audit trail; a CLI explains what happened and what the
  machine decided; a GTK 4 dashboard puts scans, the per-program
- application firewall, and reversible hardening under buttons. No
- cloud, no account, no telemetry.
+ application firewall, and reversible hardening under buttons; an
+ embedded assistant answers questions and walks through fixes,
+ built from your own logs by a model running locally. No cloud, no
+ account, no telemetry.
  .
  Removing the package keeps the runtime state in /var/lib/greywatch.
 EOF

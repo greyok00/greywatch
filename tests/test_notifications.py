@@ -94,6 +94,49 @@ def test_critical_square_replaces_itself(tmp_path, monkeypatch):
     assert first.summary == "Security: critical event"
 
 
+def test_blocked_square_carries_a_picture_and_a_place(tmp_path, monkeypatch):
+    """The desktop notification shows where the address is, the way the
+    in-app card does: a map tile for the country, plus its name in the
+    first line."""
+    settings = tmp_path / "greywatch-ui-settings.json"
+    settings.write_text('{"alerts": true}')
+    monkeypatch.setattr(notify_alert, "ALERTS_SETTING_PATH", settings)
+    from ui import identity
+    monkeypatch.setattr(identity, "geoip_country",
+                        lambda host: ("DE", "Germany"))
+
+    class FakeNotification:
+        instance = None
+        def __init__(self, summary=None, body=None):
+            self.summary, self.body = summary, body
+            self.images = []
+            self.actions = []
+            FakeNotification.instance = self
+        @classmethod
+        def new(cls, summary, body):
+            return cls(summary, body)
+        def set_timeout(self, t):
+            pass
+        def update(self, s, b):
+            self.body = b
+        def set_image_from_pixbuf(self, pixbuf):
+            self.images.append((pixbuf.get_width(), pixbuf.get_height()))
+        def add_action(self, *a):
+            self.actions.append(a)
+        def show(self):
+            pass
+
+    class FakeNotify:
+        Notification = FakeNotification
+
+    alert = notify_alert.NotifyAlert(notify_alert.BlockedQueue(tmp_path),
+                                     notifier=FakeNotify)
+    text = alert.handle_deny("/usr/bin/curl", "5.6.7.8")
+    assert "Germany" in text
+    note = FakeNotification.instance
+    assert note.images and note.images[-1] == (64, 64)
+
+
 def test_deny_parse_still_shapes_the_blocked_square():
     assert parse_deny("appfw curl → bad.example:80 deny [n]") == \
         {"app": "curl", "host": "bad.example:80", "action": "deny"}

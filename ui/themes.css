@@ -192,19 +192,24 @@
   /* Surfaces stepped apart 2026-10-29: the owner read the old set as
      "washed out" because bg/panel/line sat only a few units apart, so
      cards, borders and the page dissolved into one field. */
-  --el-bg: #0e0f11; --el-panel: #1a1c20; --el-panel-2: #23262b; --el-panel-3: #2b2e34;
-  --el-line: #3a3d44; --el-line-2: #2a2d33; --el-line-strong: #4d5058;
-  --el-ink: #ece8e0; --el-ink-soft: #b3afa7; --el-mute: #85817a;
+  /* 2026-10-29: graphite values from macOS dark (window #1c1c1e, content
+     #242426, raised #2c2c2e). The old near-black field made every card
+     read as a hole, which is the "not OS-like" the owner kept seeing. */
+  --el-bg: #1c1d1f; --el-panel: #242527; --el-panel-2: #2c2e31; --el-panel-3: #34363a;
+  --el-line: #33353a; --el-line-2: #2a2c2f; --el-line-strong: #4c4f55;
+  --el-ink: #ecebe7; --el-ink-soft: #b4b2ad; --el-mute: #8a8883;
   --el-on-accent: #17150f;
   --el-accent: #b8996b; --el-accent-hover: #c9a97a; --el-accent-soft: rgba(184,153,107,0.15);
   --el-ok: #8fb59a; --el-warn: #c9a55f; --el-fail: #c47b6b;
   --el-info: #93a9b5; --el-live: #8fb59a; --el-teal: #8faaa3;
-  --el-shadow-1: none;
-  --el-shadow-2: none;
+  --el-shadow-1: 0 1px 2px rgba(0,0,0,.35);
+  --el-shadow-2: 0 6px 20px rgba(0,0,0,.35);
   --el-shadow-3: 0 24px 70px rgba(0,0,0,.65);
   --el-overlay: rgba(0,0,0,.72);
   --el-focus-ring: rgba(184,153,107,.55);
-  --el-radius: 0px;
+  /* 2026-10-29 (owner: "still not osx like ... much higher quality"):
+     macOS geometry — soft 10px controls, 12–14px cards, capsule chips. */
+  --el-radius: 10px;
   --el-font-body: 'Inter', 'SF Pro Text', 'Segoe UI Variable', sans-serif;
   --el-font-display: 'Inter', 'SF Pro Display', 'Segoe UI Variable', sans-serif;
   --el-font-mono: 'JetBrains Mono', 'SF Mono', monospace;

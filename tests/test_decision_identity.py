@@ -60,6 +60,21 @@ def _pump(seconds=2.0):
         time.sleep(0.02)
 
 
+def _pump_until(predicate, seconds=10.0):
+    """Pump until the predicate holds. The identity lookup runs on a worker
+    thread and posts back through the main loop, so a fixed 2s pump loses
+    the race when the full suite has the CPU busy (flaky in the 1000-test
+    run, green alone)."""
+    ctx = GLib.main_context_default()
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        ctx.iteration(False)
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return False
+
+
 SPEC = {
     "id": "appfw:chromium:42:5555",
     "eyebrow": "App firewall",
@@ -103,7 +118,9 @@ def test_popup_shows_who_asked_and_who_answers(monkeypatch):
                                 "warning": "", "icon": ""}})
     dlg = decisions._decision_dialog(SPEC, modal=False)
     try:
-        _pump()
+        def has_identity():
+            return "Facebook" in "\n".join(_labels(dlg.get_content_area()))
+        _pump_until(has_identity)
         text = "\n".join(_labels(dlg.get_content_area()))
         assert "Facebook" in text
         assert "Ireland" in text

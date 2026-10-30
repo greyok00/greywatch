@@ -30,15 +30,19 @@ ROUTER_SYSTEM = (
     "Slots: overview (state of all protections) | explain_event (explain a "
     "recent alert) | tool_status (about one named tool) | "
     "intent (the user asks to change or act) — for the intent slot the "
-    'JSON must include "action":"pause|resume|show|status" | summary '
+    'JSON must include "action":"pause|resume|show|status|scan" | summary '
     "(anything else). "
-    "tool must be one of the listed tool names or empty.")
+    "For pause, resume and show, tool must be one of the listed tool "
+    "names. For a scan, reply with "
+    '{"task":"intent","action":"scan","tool":"<scan name>"}; tool must be '
+    'one of the listed scan names, and "scan-all" when none is named.')
 
 ANSWER_SYSTEM = (
     "You are the greywatch assistant. Obey three rules: (1) answer only "
     "from the supplied context pack and say when it lacks the answer; "
-    "(2) propose state changes only as a JSON intent like "
-    '{"task":"intent","action":"<pause|resume|show|status>","tool":"<name>"}'
+    "(2) propose state changes or scans only as a JSON intent like "
+    '{"task":"intent","action":"<pause|resume|show|status|scan>",'
+    '"tool":"<name>"}'
     " — never as shell or instructions; "
     "(3) be brief and plain.")
 
@@ -80,10 +84,25 @@ class ThinkFilter:
     def __init__(self):
         self._state = "start"          # start | inside | pass
         self._buf = ""
+        self._started = False          # first visible character seen
+
+    def _lead(self, text: str) -> str:
+        """Drop blank lines before the answer starts.
+
+        Qwen opens with whitespace — both before and after a thinking
+        block — and those blank lines read as a gap at the top of the
+        bubble.
+        """
+        if self._started:
+            return text
+        text = text.lstrip()
+        if text:
+            self._started = True
+        return text
 
     def feed(self, tok: str) -> str:
         if self._state == "pass":
-            return tok
+            return self._lead(tok)
         self._buf += tok
         if self._state == "start":
             lead = self._buf.lstrip()
@@ -95,21 +114,21 @@ class ThinkFilter:
                 return self.feed("")
             self._state, out = "pass", self._buf
             self._buf = ""
-            return out
+            return self._lead(out)
         # inside
         end = self._buf.find(THINK_CLOSE)
         if end < 0:
             return ""
         rest = self._buf[end + len(THINK_CLOSE):]
         self._state, self._buf = "pass", ""
-        return rest
+        return self._lead(rest)
 
     def flush(self) -> str:
         """End of stream: a bare '<think' prefix that never resolved is
         model noise, not an answer."""
         if self._state == "start":
-            out, self._buf = self._buf, ""
-            return "" if out.lstrip().startswith("<") else out
+            out, self._buf = self._buf.lstrip(), ""
+            return "" if not out or out.startswith("<") else out
         self._buf = ""
         return ""
 

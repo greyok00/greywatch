@@ -7,6 +7,7 @@ router.
 """
 from __future__ import annotations
 
+from assistant import events as _events
 from ui import plain as _plain
 from ui.models import local_clock, status_words
 
@@ -60,8 +61,8 @@ def answer_event(pack: dict, tool_hint: str | None = None) -> str | None:
     if hint is None and len(rows) == 1:
         name, desc = _plain_bits(tool)
         body = (f"The newest event came from {name} ({tool}) at "
-                f"{rows[0]['ts']}, severity {rows[0]['severity']}: "
-                f"{rows[0]['text']}.")
+                f"{local_clock(rows[0]['ts'])}, severity "
+                f"{rows[0]['severity']}: {rows[0]['text']}.")
         if desc:
             # Colon form, not 'is the layer that {desc}': auditd's
             # description is a noun phrase and the splice read as
@@ -70,20 +71,29 @@ def answer_event(pack: dict, tool_hint: str | None = None) -> str | None:
             if str(rows[0].get("severity", "")).upper() in ("INFO", "MEDIUM"):
                 body += "; one denial is usually normal policy working"
             body += "."
-        return body
+        note = _events.note(rows[0])
+        return (note + " " + body) if note else body
     label = _plain.FRIENDLY.get(hint or tool, (tool, ""))[0]
     head = (f"Newest {label} ({hint or tool}) events (local times):"
             if hint else "Newest events (local times):")
     # Each row carries the plain-language meaning AND the raw line: the
     # owner asked to 'explain my logs' and to be able to paste the log.
+    # Repeated lines collapse into one entry with a count — a quarantine
+    # that fired in 90 test runs is one finding, not ninety.
     lines = []
-    for e in rows[:3]:
+    for g in _events.group(rows)[:3]:
+        e = g["row"]
         friendly = _plain.sentence({"from_tool": e.get("tool")
                                     or e.get("from_tool", ""),
                                     "text": e.get("text", "")})
+        reading = g.get("reading")
+        tag = (f"  [{reading['label']} — known benign]"
+               if reading and reading["bucket"] == _events.NOISE else "")
+        repeat = (f"  (×{g['count']}, first {local_clock(g['first'])})"
+                  if g["count"] > 1 else "")
         lines.append(f"- {local_clock(e.get('ts'))} "
                      f"· {_plain.severity_word(e.get('severity'))}: "
-                     f"{friendly}\n  raw: {e.get('text', '')}")
+                     f"{friendly}{tag}{repeat}\n  raw: {e.get('text', '')}")
     return head + "\n" + "\n".join(lines)
 
 
@@ -106,6 +116,9 @@ def answer_detail(row: dict) -> str:
         body += f"\n{name}: {desc[0].lower()}{desc[1:].rstrip('.')}."
     if sev in ("INFO", "MEDIUM", "LOW"):
         body += " A single event like this is usually normal policy working."
+    note = _events.note(row)
+    if note:
+        body = note + "\n" + body
     return body
 
 

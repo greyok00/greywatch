@@ -90,7 +90,7 @@ def test_build_pack_passes_through_installed_and_paused():
 
 
 def build_pack_for_tests():
-    return build_pack(STATUS, EVENTS, "overview")
+    return build_pack(STATUS, EVENTS, "overview", history=[])
 
 def test_build_pack_recent_takes_newest_feed_worthy():
     tail = [{"from_tool": "yara-watch", "severity": "HIGH",

@@ -148,11 +148,11 @@ def test_plain_sentence_auditd_avc_denial_is_named():
 
 
 def test_answer_detail_layer_sentence_is_grammatical():
-    """auditd's description is a noun phrase ('the kernel's detailed
-    record…'), so the old 'is the layer that {desc}' spliced nonsense."""
+    """The detail layer names the tool, then says what it does as a
+    sentence. The old 'is the layer that {desc}' spliced nonsense."""
     row = {"tool": "auditd", "severity": "MEDIUM",
            "text": "AVC apparmor=DENIED operation=open", "ts": None}
     from assistant.templates import answer_detail
     text = answer_detail(row)
     assert "is the layer that" not in text
-    assert "System event log: the kernel's detailed record" in text
+    assert "System event log: records system events" in text

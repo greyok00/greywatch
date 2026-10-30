@@ -65,3 +65,30 @@ def test_route_intent_without_action_keeps_tool_reply():
         "pause ufw",
         ask=lambda p: 'sure! {"task":"intent","tool":"ufw"} thanks')
     assert r[0] == "intent" and r[1] == "ufw"
+
+
+SCANS = "scan-all yara-tmp-scan clamav rkhunter lynis aide"
+
+
+def test_model_scan_slot_is_normalised_to_a_scan_intent():
+    """The live 1.7B answers a scan request with task "scan" and a scan
+    name, not with task "intent"; both must reach the same confirm gate."""
+    from assistant.intents import parse_intent
+    r = router.route("check for spyware",
+                     ask=lambda p: '{"task": "scan", "tool": "clamav"}',
+                     scan_names=SCANS)
+    assert r[0] == "intent"
+    assert parse_intent(r[1])[0].action == "scan"
+    assert parse_intent(r[1])[0].tool == "clamav"
+    # a loose or invented tool falls back to the app's primary button
+    for loose in ('{"task":"scan","tool":"scan"}',
+                  '{"task":"scan","tool":"/bin/rm"}',
+                  '{"task":"intent","action":"scan","tool":"everything"}'):
+        r = router.route("scan", ask=lambda p, t=loose: t, scan_names=SCANS)
+        assert r[0] == "intent", loose
+        assert parse_intent(r[1])[0].tool == "scan-all", loose
+
+
+def test_model_scan_without_a_scan_list_is_refused():
+    r = router.route("scan", ask=lambda p: '{"task":"scan","tool":"clamav"}')
+    assert r[0] == "summary"

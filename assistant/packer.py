@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import math
 import pathlib
+import re
 
 import gwpaths
 from ui.models import recent_rows
@@ -15,6 +16,7 @@ from ui.models import recent_rows
 CHAR_BUDGET = 8000
 SNIPPET_CHARS = 300
 RECENT_MAX = 8
+HISTORY_MAX = 300
 
 _INDEX_CACHE: dict = {}          # one slot: (path, mtime, size) -> parsed chunks
 
@@ -89,8 +91,79 @@ def bm25_top(chunks: list[dict], query: str, k: int = 4,
     return [chunks[i] for _, i in scored[:k]]
 
 
+def load_event_tail(limit: int = HISTORY_MAX) -> list[dict]:
+    """The last `limit` event lines from the on-disk log.
+
+    The daemon's published digest is intentionally short (40 rows), so a
+    follow-up like 'why was that quarantined?' could point at a line the
+    digest had already dropped. The log itself keeps everything; read the
+    tail without loading the whole file.
+    """
+    path = gwpaths.data_dir() / "events.jsonl"
+    out: list[dict] = []
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            window = min(size, 512 * 1024)
+            fh.seek(size - window)
+            chunk = fh.read().decode("utf-8", "replace")
+        lines = [ln for ln in chunk.splitlines() if ln.strip()]
+        if window < size:
+            lines = lines[1:]          # drop the half line at the seam
+        for line in lines[-limit:]:
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(row, dict):
+                out.append(row)
+    except OSError:
+        return []
+    return out
+
+
+_SEARCH_STOP = frozenset((
+    "what", "which", "where", "when", "why", "how", "that", "this", "there",
+    "these", "those", "about", "could", "would", "should", "please", "happen",
+    "happened", "explain", "mean", "means", "understand", "anything",
+    "something", "everything", "today", "yesterday", "tonight", "last"))
+
+
+def search_events(words, limit: int = 6) -> list[dict]:
+    """Whole-log search for the question's own words, newest matches last.
+
+    The digest and the tail both miss old lines on a noisy day; a follow-up
+    ('why was that quarantined?') must still reach the line it points at.
+    A streaming scan of the log costs tens of milliseconds and runs only
+    when a question carries a distinctive word.
+    """
+    needles = [w for w in (words or [])
+               if len(w) >= 5 and w not in _SEARCH_STOP]
+    if not needles:
+        return []
+    path = gwpaths.data_dir() / "events.jsonl"
+    out: list[dict] = []
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                low = line.lower()
+                if not any(n in low for n in needles):
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict):
+                    out.append(row)
+    except OSError:
+        return []
+    return out[-limit:]
+
+
 def build_pack(status: dict, events: list[dict], question: str,
-               registry: list[dict] | None = None) -> dict:
+               registry: list[dict] | None = None,
+               history: list[dict] | None = None) -> dict:
     tools = (status or {}).get("tools", {})
     green = sum(1 for t in tools.values() if t.get("state") == "GREEN")
     total = len(tools)
@@ -113,6 +186,17 @@ def build_pack(status: dict, events: list[dict], question: str,
         if used > CHAR_BUDGET:
             break
         snippets.append(s)
+    # A deeper pool for follow-ups and time-scoped questions; not printed
+    # into the model prompt. The question's own distinctive words pull
+    # matching old lines out of the whole log, then the newest tail.
+    # Callers may pass a pool (tests do) instead of reading the log.
+    if history is None:
+        words = [w for w in re.split(r"[^a-z0-9]+", question.lower()) if w]
+        history = []
+        for row in search_events(words) + load_event_tail():
+            if row not in history:
+                history.append(row)
     return {"status_line":
             f"{green} of {total} protections green, {warn} need attention",
-            "tools": pack_tools, "snippets": snippets, "recent": recent}
+            "tools": pack_tools, "snippets": snippets, "recent": recent,
+            "history": history}

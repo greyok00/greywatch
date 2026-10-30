@@ -19,7 +19,7 @@ _JSON = re.compile(r"\{[^{}]*\}")
 words_only = False
 
 
-def _parse(reply: str, tool_names: str):
+def _parse(reply: str, tool_names: str, scan_names: str = ""):
     m = _JSON.search(reply or "")
     if not m:
         return None
@@ -29,6 +29,23 @@ def _parse(reply: str, tool_names: str):
         return None
     task = data.get("task")
     tool = str(data.get("tool") or "")
+    scans = scan_names.split()
+
+    def scan_intent(key):
+        # Canonical intent: the panel validates the scan key against the
+        # app's real SCAN_MODES before anything runs.
+        return ("intent", "",
+                "scan",
+                json.dumps({"task": "intent", "action": "scan",
+                            "tool": key}))
+
+    # The live 1.7B writes a scan two ways: task "scan", or an intent with
+    # a loose tool ("scan", "all"). Both mean: pick an app scan, default
+    # to scan-all, and never invent a key outside the list.
+    if task == "scan":
+        if not scans:
+            return None
+        return scan_intent(tool if tool in scans else "scan-all")
     if task not in SLOTS:
         return None
     if task == "tool_status" and tool not in tool_names.split():
@@ -37,19 +54,24 @@ def _parse(reply: str, tool_names: str):
     if task == "intent":
         intent, _ = parse_intent(m.group(0))
         action = intent.action if intent else None
+        if action == "scan" and scans and intent.tool not in scans:
+            return scan_intent("scan-all")
+        if action == "scan" and not scans:
+            return None
     return task, tool, action, m.group(0)
 
 
 def route(question: str, ask, tool_names: str = "",
-          tries: int = 2) -> tuple[str, str]:
+          scan_names: str = "", tries: int = 2) -> tuple[str, str]:
     """At most `tries` model calls total; two failures fall to summary."""
     if words_only:
         return "summary", ""
     names = f"Tools: {tool_names}" if tool_names else "Tools: (none listed)"
-    prompt = f"{names}\nquestion: {question}"
+    scans = f"Scans: {scan_names}" if scan_names else "Scans: (none listed)"
+    prompt = f"{names}\n{scans}\nquestion: {question}"
     for _ in range(tries):
         reply = ask(prompt)
-        got = _parse(reply, tool_names)
+        got = _parse(reply, tool_names, scan_names)
         if got:
             slot, tool, action, jtext = got
             if slot == "intent" and action:
