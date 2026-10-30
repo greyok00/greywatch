@@ -1,9 +1,29 @@
 # tests/test_assistant_intents.py
 import pathlib, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from assistant.intents import Intent, INTENTS, describe, parse_intent, validate
+from assistant.intents import (Intent, INTENTS, describe, parse_intent,
+                               theme_kit, validate)
 
 FRIENDLY = {"ufw": ("Firewall", "Blocks unwanted connections.")}
+
+
+def test_theme_intent_accepts_spoken_and_kit_names():
+    for value in ("light", "dark", "swiss", "obsidian",
+                  "light mode", "dark theme"):
+        assert validate(Intent("theme", value=value), set()) is None, value
+    assert theme_kit("light") == "swiss" and theme_kit("swiss") == "swiss"
+    assert theme_kit("light mode") == "swiss"
+    assert theme_kit("dark") == "obsidian" and theme_kit("dark theme") == "obsidian"
+
+
+def test_theme_intent_rejects_unknown_look():
+    reason = validate(Intent("theme", value="blue"), set())
+    assert reason and "blue" in reason and "light" in reason.lower()
+
+
+def test_describe_theme_names_the_label():
+    sentence = describe(Intent("theme", value="light"), FRIENDLY)
+    assert "Light" in sentence and "theme" in sentence.lower()
 
 
 def test_parse_valid_intent():

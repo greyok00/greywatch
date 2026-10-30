@@ -762,6 +762,18 @@ class MainWindow(Gtk.Window):
             if key:
                 self._show(key)
                 audit.record("open_page", value, True)
+            return
+        if action == "theme":
+            from assistant.intents import theme_kit
+            kit = theme_kit(value)      # "light mode" -> the swiss kit
+            if self._theme_store.apply(kit):
+                combo = getattr(self, "theme_combo", None)
+                if combo is not None:
+                    combo.handler_block_by_func(self._on_theme_pick)
+                    combo.set_active_id(kit)   # keep the picker in step
+                    combo.handler_unblock_by_func(self._on_theme_pick)
+                self._tick_id(self._retheme, 0)
+                audit.record("theme", kit, True)
 
     def _assistant_record_outcome(self, ok):
         """One accurate audit line per accepted assistant intent; manual

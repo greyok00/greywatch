@@ -1420,6 +1420,19 @@ def _settings_intent(question: str) -> Intent | None:
         return Intent("firewall", value="on" if wants_on else "off")
     if "learning" in low and (wants_on or wants_off):
         return Intent("learning", value="on" if wants_on else "off")
+    # "change theme to light mode" is a request, not a question about the
+    # theme; the model used to answer it with an intent whose value was
+    # empty and the user saw 'not a page in this app'. Colour named -> the
+    # theme intent; theme named without a colour -> the Settings page,
+    # where the picker lives (owner 2026-10-30).
+    if "theme" in low:
+        colour = re.search(r"\b(light|dark|swiss|obsidian)\b", low)
+        if colour:
+            return Intent("theme", value=colour.group(1).lower())
+        return Intent("open_page", value="settings")
+    mode = re.search(r"\b(light|dark)\s+(?:mode|look|appearance)\b", low)
+    if mode:
+        return Intent("theme", value=mode.group(1).lower())
     if re.search(r"\bupdate\b", low) and re.search(
             r"\b(list|lists|definitions|virus|antivirus|security list|"
             r"block list)\b", low):
@@ -2087,7 +2100,13 @@ if GIOMM_OK:
                 return False
             reason = validate(intent, self._names, _SCANS)
             if reason is not None:
-                holder.set_text(f"I can't do that: {reason}")
+                # An intent with no name in it asks back instead of quoting
+                # the validator's empty string ('' was not a real answer).
+                if intent.action == "open_page" and not intent.value.strip():
+                    holder.set_text("Which page should I open — Security, "
+                                    "Tools, Logs, Settings, or Help?")
+                else:
+                    holder.set_text(f"I can't do that: {reason}")
                 return False
             self._confirm(intent)
             return False

@@ -92,6 +92,51 @@ def test_intent_plan_confirms_without_stream():
     assert texts and "Firewall" in texts[0]
 
 
+def test_theme_intent_runs_the_theme_store(tmp_path, monkeypatch):
+    """The exec switch drives the same ThemeStore/combo/retheme path the
+    Settings picker uses, records one audit line with the kit id, and
+    blocks the combo's own handler while stepping it (no double apply)."""
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    from ui import window as W
+    calls = []
+    monkeypatch.setattr(W.audit, "record",
+                        lambda action, tool, ok: calls.append((action, tool, ok)))
+
+    class FakeStore:
+        applied = []
+
+        def apply(self, kit):
+            self.applied.append(kit)
+            return kit
+
+    class FakeCombo:
+        steps = []
+
+        def handler_block_by_func(self, func):
+            self.steps.append("block")
+
+        def set_active_id(self, kit):
+            self.steps.append("set:" + kit)
+
+        def handler_unblock_by_func(self, func):
+            self.steps.append("unblock")
+
+    # Headless stub: only the attributes the theme branch touches.
+    class FakeWin:
+        _on_theme_pick = staticmethod(lambda *_a: None)   # never fires
+        _retheme = staticmethod(lambda: None)
+
+    win = FakeWin()
+    win._theme_store = store = FakeStore()
+    win.theme_combo = combo = FakeCombo()
+    win._tick_id = lambda func, ms: combo.steps.append("retheme")
+
+    W.MainWindow._assistant_intent(win, "theme", "", "light mode")
+    assert store.applied == ["swiss"]        # spoken name -> the kit id
+    assert combo.steps == ["block", "set:swiss", "unblock", "retheme"]
+    assert calls == [("theme", "swiss", True)]
+
+
 def test_event_plan_remembers_shown_rows_for_followups():
     """The panel must keep the rows of its last event listing so the next
     referential question can point at them."""

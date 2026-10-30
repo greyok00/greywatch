@@ -3,7 +3,7 @@ import datetime as _dt
 import pathlib, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from ui.assistant import _connection_target, plan_turn
-from assistant.intents import Intent, parse_intent
+from assistant.intents import Intent, parse_intent, validate
 
 from tests.test_assistant_packer import build_pack_for_tests
 
@@ -29,6 +29,39 @@ def _pack():
 def test_overview_is_template_not_model():
     out = plan_turn("is everything ok?", _pack(), None, {"ufw"}, FRIENDLY)
     assert out["kind"] == "template" and out["slot"] == "overview"
+
+
+def test_change_theme_to_light_mode_is_a_theme_intent():
+    """The real failing ask (owner 2026-10-30): the request fell through to
+    the model, which returned an intent with an empty value, and the user
+    saw 'not a page in this app'. Theme asks belong to the deterministic
+    settings layer and never reach the model."""
+    out = plan_turn("change theme to light mode", _pack(), None,
+                    {"ufw"}, FRIENDLY)
+    assert out["kind"] == "intent"
+    assert out["intent"].action == "theme"
+    assert out["intent"].value == "light"
+    assert validate(out["intent"], {"ufw"}) is None
+
+
+def test_dark_mode_without_the_word_theme_is_a_theme_intent():
+    out = plan_turn("switch to dark mode", _pack(), None, {"ufw"}, FRIENDLY)
+    assert out["kind"] == "intent" and out["intent"].action == "theme"
+    assert out["intent"].value == "dark"
+
+
+def test_bare_theme_request_opens_settings():
+    out = plan_turn("change the theme", _pack(), None, {"ufw"}, FRIENDLY)
+    assert out["kind"] == "intent" and out["intent"].action == "open_page"
+    assert out["intent"].value == "settings"
+
+
+def test_colour_question_is_not_a_theme_intent():
+    """'why is the light yellow?' reads like a question — it must answer
+    from the pack, not try to switch the view."""
+    out = plan_turn("why is the light yellow?", _pack(), None,
+                    {"ufw"}, FRIENDLY)
+    assert not (out["kind"] == "intent" and out["intent"].action == "theme")
 
 
 def test_pause_the_firewall_is_deterministic_not_model():

@@ -22,6 +22,7 @@ INTENTS = frozenset({
     "pause", "resume", "details", "overview", "scan",
     "enable_all", "firewall", "learning", "update_lists",
     "trust_site", "block_site", "trust_program", "open_page",
+    "theme",
 })
 
 # Page keys the window's stack knows, and the words a person says for them.
@@ -101,6 +102,30 @@ def _site_ok(value: str) -> bool:
         c in text for c in ("/", ":", " ", "@"))
 
 
+def theme_kit(value: str) -> str:
+    """A spoken or internal theme name -> the kit id the theme store uses.
+
+    THEME_CHOICES in ui/themes.py is the single source ({"Dark": "obsidian",
+    "Light": "swiss"}); the bridge accepts either side and normalises to
+    the id, so "change theme to light mode" and a model saying "swiss"
+    both land on the same kit. Filler words like "mode" ("light mode") are
+    dropped first — people say them and models echo them.
+    """
+    from ui.themes import THEME_CHOICES
+    low = re.sub(r"\b(mode|theme|look|appearance)\b", " ", (value or "").lower())
+    low = " ".join(low.split())
+    for label, kit in THEME_CHOICES.items():
+        if low in (kit, label.lower()):
+            return kit
+    return low
+
+
+def _theme_label(kit: str) -> str:
+    from ui.themes import THEME_CHOICES
+    return next((label for label, id_ in THEME_CHOICES.items()
+                 if id_ == kit), kit)
+
+
 def validate(intent: Intent, tool_names: set[str],
              scan_names=()) -> str | None:
     if intent.action not in INTENTS:
@@ -114,6 +139,12 @@ def validate(intent: Intent, tool_names: set[str],
     if intent.action == "open_page":
         if intent.value.lower() not in PAGES:
             return f"'{intent.value}' is not a page in this app"
+        return None
+    if intent.action == "theme":
+        from ui.themes import THEME_CHOICES
+        if theme_kit(intent.value) not in THEME_CHOICES.values():
+            return (f"'{intent.value}' is not a look this app has — say "
+                    "'light' or 'dark'")
         return None
     if intent.action in ("firewall", "learning"):
         if intent.value.lower() not in ("on", "off"):
@@ -156,6 +187,9 @@ def describe(intent: Intent, friendly: dict, scan_titles=None) -> str:
         where = {"tools": "Security", "deep": "Tools", "logs": "Logs",
                  "settings": "Settings", "help": "Help"}
         return f"Open the {where.get(PAGES.get(intent.value.lower(), ''), 'page')} page?"
+    if intent.action == "theme":
+        return (f"Switch the app's look to the "
+                f"{_theme_label(theme_kit(intent.value))} theme?")
     if intent.action == "scan":
         titles = scan_titles or {}
         if intent.tool == "scan-all":
