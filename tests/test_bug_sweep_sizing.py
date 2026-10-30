@@ -117,3 +117,45 @@ def test_selection_buttons_follow_selection():
     fake._selected_tool = "ufw"
     MainWindow._sync_selection_buttons(fake)
     assert seen == [False, False, False, True, True, True]
+
+
+@pytest.fixture
+def main_win(tmp_path, monkeypatch):
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    from ui.window import MainWindow
+    w = MainWindow()
+    w.present()
+    pump(30)
+    yield w
+    w.destroy()
+    pump(5)
+
+
+def test_chat_feed_keeps_a_floor(main_win):
+    """Wave-3 sweep: at the 1028x706 window floor the transcript scroller
+    squeezed to a ~30px slit (one clipped line). A 160px size-request
+    floor keeps a turn readable; the activity table below yields."""
+    panel = main_win.assistant_panel
+    req_w, req_h = panel._stream_scroll.get_size_request()
+    assert req_h == 160
+
+
+def test_rule_wizard_sidebar_fits_the_longest_title():
+    """Wave-3 sweep: Gtk.Assistant's sidebar labels clip hard at the
+    sidebar edge (nothing ellipsizes them), so the default width must
+    cover the longest page title."""
+    from ui.wizard import RuleWizard
+
+    wz = RuleWizard("arpwatch", parent=None)     # longest titles
+    pump(20)
+    w, _h = wz.get_default_size()
+    assert w > 700, f"arpwatch wizard unchanged at {w}px"
+    widest = 0
+    for i in range(wz.get_n_pages()):
+        probe = Gtk.Label(label=wz.get_page(
+            wz.get_nth_page(i)).get_property("title") or "")
+        widest = max(widest, probe.measure(
+            Gtk.Orientation.HORIZONTAL, -1)[1])
+    assert w >= widest + 500, (
+        f"wizard {w}px vs longest title {widest}px — the sidebar clips")
+    wz.destroy()

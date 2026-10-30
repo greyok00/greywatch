@@ -288,10 +288,10 @@ def _advice_pack():
     ], "recent": [
         {"tool": "rkhunter", "severity": "HIGH",
          "text": "Rootkit scanner is down and could not be repaired",
-         "ts": "2026-10-29T13:50:00+00:00"},
-        {"tool": "fail2ban", "severity": "HIGH",
-         "text": "fail2ban banned 203.0.113.9 (sshd)",
-         "ts": "2026-10-29T13:49:00+00:00"},
+         "ts": _today_at(-2)},          # live clock: the priorities rung
+        {"tool": "fail2ban", "severity": "HIGH",   # drops anything older
+         "text": "fail2ban banned 203.0.113.9 (sshd)",   # than 24 hours
+         "ts": _today_at(-2.1)},
     ], "status_line": "2 of 3 protections green, 1 need attention"}
 
 

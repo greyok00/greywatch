@@ -9,7 +9,16 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 from gwpaths import data_dir as _gw_data
 
-CVE_CACHE = _gw_data() / "cve-cache.json"
+
+def cve_cache() -> pathlib.Path:
+    # Resolved per call, not per import: a module constant captured the
+    # data dir the moment the first test's sandboxed GREYWATCH_DATA_DIR
+    # was active, and every later reader inherited that stale path
+    # (bug-sweep wave 3, full-suite ordering).
+    return _gw_data() / "cve-cache.json"
+
+
+CVE_CACHE = cve_cache()   # import-time view, kept for callers that read it
 CLAM_DIR = pathlib.Path("/var/lib/clamav")
 STALE_DAYS = 8            # the CVE list is refreshed weekly
 
@@ -35,7 +44,7 @@ def clamav_definitions() -> dict | None:
 
 def cve_list() -> dict | None:
     try:
-        data = json.loads(CVE_CACHE.read_text())
+        data = json.loads(cve_cache().read_text())
     except (OSError, ValueError):
         return None
     entries = data.get("entries") or []

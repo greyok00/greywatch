@@ -194,6 +194,20 @@ class RuleWizard(Gtk.Assistant):
                    "tetragon": self._pages_tetragon,
                    "yara": self._pages_yara, "arpwatch": self._pages_arpwatch}
         (builder.get(tool) or self._pages_ufw)()
+        # Sidebar room, not a guess: Gtk.Assistant's sidebar labels clip
+        # hard at the sidebar's right edge (nothing in its theme
+        # ellipsizes them — "Which network device?" read as
+        # "Which network d", wave-3 sweep), so the width must fit the
+        # longest page title.
+        widest = 0
+        for i in range(self.get_n_pages()):
+            title = self.get_page(self.get_nth_page(i)) \
+                .get_property("title") or ""
+            probe = Gtk.Label(label=title)
+            widest = max(widest, probe.measure(
+                Gtk.Orientation.HORIZONTAL, -1)[1])
+        if widest:
+            self.set_default_size(max(700, widest + 520), 480)
         self.connect("prepare", self._on_prepare)
         self.connect("apply", self._on_apply)
         self.connect("cancel", lambda a: a.destroy())

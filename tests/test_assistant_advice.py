@@ -1,6 +1,7 @@
 # tests/test_assistant_advice.py
 """The advice engine: every tool playbook, every event class the parsers
 emit, and the hard invariant that advice never executes anything."""
+import datetime
 import pathlib
 import sys
 
@@ -10,6 +11,15 @@ import pytest
 
 from assistant import advice
 from registry import load_registry
+
+
+def _ts():
+    """A live timestamp, not a pinned one: advice's hot-event window is
+    the last 24 hours of real wall time (assistant/advice.py _hot_events),
+    so a fixture stamped with a fixed date silently aged out of the
+    window the day after it was written."""
+    return (datetime.datetime.now(datetime.timezone.utc)
+            - datetime.timedelta(minutes=30)).isoformat()
 
 
 def _tools():
@@ -94,7 +104,7 @@ EVENT_TABLE = [
 @pytest.mark.parametrize("tool,text,phrase", EVENT_TABLE)
 def test_event_classification(tool, text, phrase):
     row = {"tool": tool, "severity": "HIGH", "text": text,
-           "ts": "2026-10-29T13:50:00+00:00"}
+           "ts": _ts()}
     out = advice.advise_event(row)
     assert phrase in out, out
     assert text in out                      # the raw line stays pasteable
@@ -103,7 +113,7 @@ def test_event_classification(tool, text, phrase):
 def test_deny_on_an_engine_armed_line_is_not_a_denial():
     row = {"tool": "appfw", "severity": "MEDIUM",
            "text": "appfw engine armed (headless fallback: deny-once)",
-           "ts": "2026-10-29T13:50:00+00:00"}
+           "ts": _ts()}
     out = advice.advise_event(row)
     assert "blocked a program" not in out
 
@@ -112,12 +122,12 @@ def test_advice_carries_a_run_it_yourself_note_only_with_commands():
     with_cmd = advice.advise_event(
         {"tool": "fail2ban", "severity": "HIGH",
          "text": "fail2ban banned 203.0.113.9 (sshd)",
-         "ts": "2026-10-29T13:50:00+00:00"})
+         "ts": _ts()})
     assert "run yourself" in with_cmd and "sudo tail -n 50" in with_cmd
     no_cmd = advice.advise_event(
         {"tool": "appfw", "severity": "INFO",
          "text": "appfw /usr/bin/curl → 1.2.3.4:443 allow",
-         "ts": "2026-10-29T13:50:00+00:00"})
+         "ts": _ts()})
     assert "run yourself" not in no_cmd
 
 
@@ -150,7 +160,7 @@ def test_state_column_disagreement_with_the_log_is_called_out():
     rootkit scanner logged that it is down."""
     recent = [{"from_tool": "rkhunter", "severity": "HIGH",
                "text": "Rootkit scanner is down and could not be repaired",
-               "ts": "2026-10-29T13:50:00+00:00"}]
+               "ts": _ts()}]
     pack = _pack({"rkhunter": {"state": "GREEN", "installed": True}}, recent)
     out = advice.advise_tool(pack, "rkhunter")
     assert "disagreement" in out
@@ -170,7 +180,7 @@ def test_priorities_rank_a_stopped_layer_above_a_high_event():
          "fail2ban": {"state": "GREEN", "installed": True}},
         [{"from_tool": "fail2ban", "severity": "HIGH",
           "text": "fail2ban banned 203.0.113.9 (sshd)",
-          "ts": "2026-10-29T13:50:00+00:00"}])
+          "ts": _ts()}])
     out = advice.advise_priorities(pack)
     assert out.index("Firewall") < out.index("Intrusion blocker")
     assert "systemctl status ufw.service" in out
@@ -187,7 +197,7 @@ def test_state_vs_events_explains_healthy_but_noisy():
     pack = _pack(
         {"ufw": {"state": "GREEN", "installed": True}},
         [{"from_tool": "ufw", "severity": "HIGH",
-          "text": "UFW BLOCK SRC=203.0.113.5", "ts": "2026-10-29T13:50:00+00:00"}])
+          "text": "UFW BLOCK SRC=203.0.113.5", "ts": _ts()}])
     out = advice.advise_state_vs_events(pack)
     assert "state says whether a layer is running" in out
     assert "1 of 1 layers are green" in out

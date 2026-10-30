@@ -69,6 +69,63 @@ def test_assistant_pause_outcome_recorded_once(tmp_path, monkeypatch):
     assert calls == [("pause", "ufw", False)]
 
 
+def test_learning_confirm_works_before_settings_has_built(tmp_path,
+                                                           monkeypatch):
+    """The learning branch read `self.learn_check`, a switch the Settings
+    builder creates — the first learning confirm from chat before Settings
+    ever opened crashed after the dialog had promised the action (task
+    #48, found by bug-sweep wave 3). Widget-free, it drives the store."""
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    from ui import window as W
+    from ui.settings import LearningStore
+    calls = []
+    monkeypatch.setattr(W.audit, "record",
+                        lambda a, t, ok: calls.append((a, t, ok)))
+
+    class FakeWin:
+        learn_check = None         # deliberately absent — the Settings
+                                   # builder's switch, not yet created
+        refreshed = []
+
+        def _refresh_fw(self):
+            self.refreshed.append(True)
+
+    win = FakeWin()
+    win._learn_store = LearningStore(tmp_path / "learning.json")
+    W.MainWindow._assistant_intent(win, "learning", "", "on")
+    assert win._learn_store.active()
+    assert calls == [("learning", "on", True)]
+    assert win.refreshed == [True]
+    W.MainWindow._assistant_intent(win, "learning", "", "off")
+    assert not win._learn_store.active()
+    assert calls[-1] == ("learning", "off", True)
+
+
+def test_rule_wizard_close_reloads_trust_before_settings_built(tmp_path,
+                                                               monkeypatch):
+    """_reload_trust runs as the rule wizards' destroy hook, which can
+    fire before Settings ever built its `self.trust` alias — the close
+    crashed with AttributeError (wave-3 sweep)."""
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    from ui import window as W
+    from ui.settings import TrustList
+
+    class FakeWin:
+        refreshed = {}
+
+        def _refresh_trust(self):
+            self.refreshed["t"] = True
+
+        def _refresh_apps(self):
+            self.refreshed["a"] = True
+
+    win = FakeWin()
+    win._trust = TrustList(tmp_path / "trust-list.json")
+    win._trust.add("example.com", "allow")
+    W.MainWindow._reload_trust(win)
+    assert win.refreshed == {"t": True, "a": True}
+
+
 def test_intent_plan_confirms_without_stream():
     """kind=intent plans go straight to the confirm gate — no model
     stream, no slop text between the question and the dialog."""

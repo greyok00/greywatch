@@ -777,6 +777,18 @@ class MainWindow(Gtk.Window):
             return
         if action == "learning":
             want_on = value == "on"
+            # Widget-free before Settings builds (task #48): the learning
+            # switch is born with the Settings pane, so the first learning
+            # confirm from chat crashed with AttributeError. The direct
+            # store start/stop is the same thing the switch's handler does.
+            if getattr(self, "learn_check", None) is None:
+                if want_on:
+                    self._learn_store.start(60)
+                else:
+                    self._learn_store.stop()
+                self._refresh_fw()
+                audit.record("learning", value, True)
+                return
             if self.learn_check.get_active() == want_on:
                 audit.record("learning", value, True)
                 return
@@ -3200,7 +3212,12 @@ class MainWindow(Gtk.Window):
         return False
 
     def _reload_trust(self, *_a):
-        self.trust.load()
+        # self.trust is the settings-side reference (swap-injectable); the
+        # boot store covers the window before Settings has ever built — the
+        # wizard-close hook used to read the raw alias and crash with
+        # AttributeError (bug-sweep wave 3, part B harness).
+        store = getattr(self, "trust", None) or self._trust
+        store.load()
         self._refresh_trust()
         self._refresh_apps()
 

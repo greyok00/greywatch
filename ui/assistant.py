@@ -1699,6 +1699,12 @@ if GIOMM_OK:
             sc.connect("notify::width", lambda *_a: GLib.timeout_add(
                 30, self._fit_stream))
             sc.set_vexpand(True)
+            # A floor, not elasticity only: at the window's 1028x706 floor
+            # the page's other children squeezed the transcript to a ~30px
+            # slit — one clipped line, no working scroll (wave-3 sweep).
+            # 160px keeps a turn readable; the Recent-activity table below
+            # yields instead.
+            sc.set_size_request(-1, 160)
             self._stream_scroll = sc
             # Bounds change whenever an answer grows the transcript or the
             # card: re-pin the newest turn after that layout, not only when

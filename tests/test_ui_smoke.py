@@ -724,8 +724,7 @@ def test_updates_panel_shows_real_timestamps(win):
     if updates.clamav_definitions() is None:
         pytest.skip("ClamAV definitions are not installed on this machine")
     assert updates.clamav_definitions() is not None
-    from ui.updates import CVE_CACHE
-    if CVE_CACHE.exists() and updates.cve_list() is None:
+    if updates.cve_cache().exists() and updates.cve_list() is None:
         pytest.skip("cve-cache.json exists but is still root-only; the "
                     "daemon repairs it to 0640 root:grey on next restart")
     assert updates.cve_list() is not None
