@@ -330,3 +330,20 @@ def test_event_plan_remembers_shown_rows_for_followups():
         {"kind": "template", "slot": "explain_event",
          "text": "Newest events (local times): …", "rows": rows}, {})
     assert stub._last_rows == rows and texts
+
+
+def test_the_model_warning_banner_wraps_instead_of_widening_the_column():
+    """The banner is one long sentence. Unwrapped it was the widest thing in
+    the chat column, so at the 1280px default the column overflowed, GTK
+    scrolled the page sideways and the assistant card's left edge was cut
+    off (seen in the 2026-10-30 Light-theme capture)."""
+    from ui.assistant import AssistantPanel
+
+    panel = AssistantPanel(
+        registry=[], get_status=lambda: {"tools": {}},
+        get_recent=lambda: [], get_llm=lambda: None,
+        on_intent=lambda *a: None)
+    panel.note_state(False, "model file missing")
+    assert panel.banner.get_visible()
+    assert panel.banner.get_wrap(), "the banner must wrap, not stretch"
+    assert panel.banner.get_max_width_chars() == 58

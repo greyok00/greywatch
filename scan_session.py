@@ -105,8 +105,17 @@ _RKH_WARN = re.compile(r"Warning:\s*(?P<what>.+)$")
 _LYNIS_TEST = re.compile(r"^\s*Performing test\s+(?P<what>.*)$")
 _LYNIS_WARN = re.compile(r"^\s*Warning\s*[:\[]\s*(?P<what>.+?)\s*\]?\s*$")
 _YARA = re.compile(r"^(?P<rule>[A-Za-z0-9_:+.-]{2,64})\s+(?P<path>/\S.*)$")
-_AIDE_DIFF = re.compile(r"^[dfmn][+\-]{6,}\s*:|^[dfmn]{9}\s|"
+# AIDE prints the change string, then the path: `f+++++++++ : /path` for an
+# entry the database does not know, `f..H...... : /path` for a known file
+# whose attributes or content moved. The string mixes '+', '-' and '.'
+# with letters, so the old '+'/'-'-only pattern never matched a real change.
+_AIDE_DIFF = re.compile(r"^[dfmn][+\-.A-Za-z]{6,}\s*:|^[dfmn]{9}\s|"
                          r"^(?:added|removed|changed):\s")
+# All-plus is "not in the baseline, present now"; all-minus is "in the
+# baseline, gone now". Either way the database predates the file, which is
+# drift to refresh, not an edit to a file the check knows.
+_AIDE_ADDED = re.compile(r"^[fdmn]\+{3,}\s*:")
+_AIDE_REMOVED = re.compile(r"^[fdmn]-{3,}\s*:")
 
 _BLANK = {"counted": False, "current": "", "finding": None}
 
@@ -155,10 +164,35 @@ def parse_progress(tool: str, line: str):
         return dict(_BLANK)
     if tool == "aide":
         stripped = text.strip()
-        if _AIDE_DIFF.match(stripped):
+        if not _AIDE_DIFF.match(stripped):
+            return dict(_BLANK)
+        # A change string of nothing but '+' means the file is there now and
+        # was not in the database; all '-' means it is gone. That is baseline
+        # drift, and a stale database reports it for every file installed
+        # after it was built (owner saw 128 rows of it on 2026-10-30 and read
+        # them as errors). A real change carries a letter flag (`f..H......`,
+        # content or attributes moved), and only that is an integrity
+        # finding. The reader gets a sentence, not AIDE's change string.
+        added = bool(_AIDE_ADDED.match(stripped)) or \
+            stripped.startswith("added:")
+        removed = bool(_AIDE_REMOVED.match(stripped)) or \
+            stripped.startswith("removed:")
+        path = stripped.split(":", 1)[1].strip() if ":" in stripped \
+            else stripped
+        if added:
             return {"counted": True, "current": stripped[:120],
-                    "finding": {"severity": "HIGH", "text": stripped[:300]}}
-        return dict(_BLANK)
+                    "finding": {"severity": "LOW", "routine": True,
+                                "text": f"New since the file-integrity "
+                                        f"baseline: {path}"[:300]}}
+        if removed:
+            return {"counted": True, "current": stripped[:120],
+                    "finding": {"severity": "LOW", "routine": True,
+                                "text": f"Gone since the file-integrity "
+                                        f"baseline: {path}"[:300]}}
+        return {"counted": True, "current": stripped[:120],
+                "finding": {"severity": "HIGH",
+                            "text": f"Changed since the file-integrity "
+                                    f"baseline: {path}"[:300]}}
     if tool == "yara-tmp-scan":
         stripped = text.strip()
         if _YARA.match(stripped):
@@ -187,7 +221,13 @@ def is_routine(tool: str, text: str) -> bool:
     if tool == "lynis":
         return "suggestion" in low or "hardening index" in low
     if tool == "aide":
-        return "/var/cache" in low or "/var/tmp" in low or "/tmp/" in low
+        if "/var/cache" in low or "/var/tmp" in low or "/tmp/" in low:
+            return True
+        # Baseline drift, wherever the file lives: an entry the database
+        # does not know is a refresh task, not an intrusion. The row is
+        # still recorded, and the expander still counts it.
+        return bool(_AIDE_ADDED.match(low) or _AIDE_REMOVED.match(low)
+                    or low.startswith("added:") or low.startswith("removed:"))
     if tool == "yara-tmp-scan":
         return "test-fixture" in low
     return False
@@ -434,7 +474,12 @@ class ScanService:
             self.log(f"consume failed for {key}: {type(e).__name__}")
 
     def _record_finding(self, key: str, finding: dict, when):
-        routine = is_routine(key, finding["text"])
+        # A parser that already knows the row is drift says so, because its
+        # text is a rewritten sentence and the classifier works on the raw
+        # line. Everything else still goes through the shared rules.
+        routine = finding.get("routine")
+        if routine is None:
+            routine = is_routine(key, finding["text"])
         self.children[key]["findings"] += 1
         row = {"scan_id": (self.session or {}).get("scan_id"), "tool": key,
                "ts": when.isoformat(timespec="seconds"),

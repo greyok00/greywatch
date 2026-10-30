@@ -167,18 +167,25 @@
   --el-font-mono: 'JetBrains Mono', 'Courier New', monospace;
 }
 
+/* Swiss — the light theme. Neutral grey paper, quiet slate accent: the
+   same palette the UMGC research library uses for its light reading
+   pages (owner 2026-10-30: "light grey like the umgc library light
+   theme"). Pure white cards on a near-white page read as glare, not as
+   paper, so the page sits at #eff0f2 and the cards at #f8f9fa. */
 [data-theme="swiss"] {
-  --el-bg: #fafafa; --el-panel: #ffffff; --el-panel-2: #f0f0f0; --el-panel-3: #e5e5e5;
-  --el-line: #d4d4d4; --el-line-2: #b0b0b0; --el-line-strong: #202020;
-  --el-ink: #0a0a0a; --el-ink-soft: #404040; --el-mute: #888888;
-  --el-on-accent: #fafafa;
-  --el-accent: #d62828; --el-accent-hover: #e64545; --el-accent-soft: rgba(214,40,40,0.12);
-  --el-ok: #2a7a2a; --el-warn: #c47a00; --el-fail: #d62828;
-  --el-info: #1f5fa8; --el-live: #00b8a9; --el-teal: #1f5fa8;
-  --el-shadow-1: 0 1px 0 rgba(0,0,0,.08);
-  --el-shadow-2: 0 2px 0 rgba(0,0,0,.12);
-  --el-overlay: rgba(0,0,0,.5);
-  --el-focus-ring: rgba(214,40,40,.55);
+  --el-bg: #eff0f2; --el-panel: #f8f9fa; --el-panel-2: #e6e8ea;
+  --el-panel-3: #dfe2e5;
+  --el-line: #cfd3d7; --el-line-2: #dbdee1; --el-line-strong: #aeb4ba;
+  --el-ink: #131517; --el-ink-soft: #4b5157; --el-mute: #7a8086;
+  --el-on-accent: #ffffff;
+  --el-accent: #4d565e; --el-accent-hover: #3d444b;
+  --el-accent-soft: rgba(77,86,94,0.10);
+  --el-ok: #2a7a2a; --el-warn: #c47a00; --el-fail: #b5322d;
+  --el-info: #1f5fa8; --el-live: #1f8f86; --el-teal: #1f5fa8;
+  --el-shadow-1: 0 1px 2px rgba(19,21,23,.08);
+  --el-shadow-2: 0 2px 10px rgba(19,21,23,.10);
+  --el-overlay: rgba(19,21,23,.45);
+  --el-focus-ring: rgba(77,86,94,.45);
   --el-font-body: 'Inter', 'Helvetica Neue', sans-serif;
   --el-font-display: 'Helvetica Neue', 'Inter', sans-serif;
 }

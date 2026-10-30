@@ -273,10 +273,14 @@ class ScanView(Gtk.Box):
         real = [f for f in findings if not f.get("routine")]
         routine = [f for f in findings if f.get("routine")]
         if not real:
-            quiet = Gtk.Label(label="Nothing to report yet.", xalign=0)
+            # Routine notices are not silence: the owner read a page of
+            # folded baseline drift under "Nothing to report yet" as either
+            # a contradiction or a hidden error (2026-10-30).
+            said = ("Nothing needs attention." if routine
+                    else "Nothing to report yet.")
+            quiet = Gtk.Label(label=said, xalign=0)
             quiet.set_xalign(0)
-            quiet.set_markup(f"<span color='{MUTED}'>Nothing to report "
-                             f"yet.</span>")
+            quiet.set_markup(f"<span color='{MUTED}'>{said}</span>")
             self.findings_box.append(quiet)
         for f in real:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -304,8 +308,16 @@ class ScanView(Gtk.Box):
             row.set_ellipsize(Pango.EllipsizeMode.END)
             row.set_tooltip_text(str(f.get("text", "")))
             self.routine_body.append(row)
+        count = len(routine)
         self.routine_expander.set_label(
-            f"{len(routine)} routine notice{'s' if len(routine) != 1 else ''}")
+            f"{count} routine notice{'s' if count != 1 else ''} "
+            f"— expected, not errors")
+        # The label is the only thing the owner sees while the list is
+        # folded, so it has to say why these rows are here at all.
+        self.routine_expander.set_tooltip_text(
+            "Background noise the app recognises: baseline drift, package "
+            "debris, and tool suggestions. Nothing to act on. Open to read "
+            "the exact files.")
         self.routine_expander.set_visible(bool(routine))
 
     def _paint_history(self):

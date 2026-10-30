@@ -59,8 +59,26 @@ def test_lynis_tests_count_and_warnings_are_medium():
 
 
 def test_aide_differences_and_yara_matches_are_findings():
+    # An entry the database does not know (all '+') is baseline drift, not an
+    # edit to a known file — a stale database reported 128 of these at once
+    # on 2026-10-30 and the owner read them as errors. The reader gets a
+    # sentence, never AIDE's change string.
     p = S.parse_progress("aide", "d+++++++++++++++++++++++: /etc/passwd")
+    assert p["finding"]["severity"] == "LOW"
+    assert p["finding"]["routine"] is True
+    assert p["finding"]["text"] == \
+        "New since the file-integrity baseline: /etc/passwd"
+    p = S.parse_progress("aide", "f-----------: /etc/gone.conf")
+    assert p["finding"]["severity"] == "LOW"
+    assert p["finding"]["routine"] is True
+    assert p["finding"]["text"] == \
+        "Gone since the file-integrity baseline: /etc/gone.conf"
+    # A change flag on a known file is what the check exists to catch.
+    p = S.parse_progress("aide", "f..H.......... : /etc/passwd")
     assert p["finding"]["severity"] == "HIGH"
+    assert p["finding"].get("routine") is None
+    assert p["finding"]["text"] == \
+        "Changed since the file-integrity baseline: /etc/passwd"
     p = S.parse_progress("yara-tmp-scan", "Eicar-Sig /tmp/eicar.txt")
     assert p["finding"]["severity"] == "HIGH"
     assert p["finding"]["text"] == "Eicar-Sig /tmp/eicar.txt"
@@ -74,8 +92,12 @@ def test_triage_folds_known_noise_and_defaults_to_real():
     assert S.is_routine("lynis", "Suggestion: install auditd") is True
     assert S.is_routine("lynis", "Warning: Found old kernel") is False
     assert S.is_routine("aide", "d+++: /var/cache/apparmor/x") is True
-    assert S.is_routine(
-        "aide", "d+++: /etc/ssh/sshd_config") is False
+    # Baseline drift folds wherever it is; a real change to a known file
+    # does not.
+    assert S.is_routine("aide", "d+++: /etc/ssh/sshd_config") is True
+    assert S.is_routine("aide", "f..H.....: /etc/ssh/sshd_config") is False
+    assert S.is_routine("aide", "added: /etc/new.conf") is True
+    assert S.is_routine("aide", "changed: /etc/passwd") is False
     assert S.is_routine("clamav", "Infected file: /tmp/x") is False
     assert S.is_routine("weird-tool", "something nobody classified") is False
 
@@ -190,6 +212,28 @@ def test_a_single_scan_writes_live_findings_and_summary(tmp_path):
     summary = json.loads((tmp_path / "scans" /
                           "20261030T074500-a1b2.json").read_text())
     assert summary["scanners"]["clamav"]["exit_code"] == 1
+
+
+def test_aide_baseline_drift_is_recorded_but_folded_as_routine(tmp_path):
+    (tmp_path / "security-hardening").mkdir()
+    (tmp_path / "scan-request.json").write_text(json.dumps(
+        {"id": "20261030T074500-a1c1", "key": "aide"}))
+    svc, _calls = _service(tmp_path, [([
+        "d+++++++++++++++++++++++: /boot/efi/EFI/new.efi",
+        "f..H.......... : /etc/passwd"], 7)])
+    svc._missing.discard("aide")
+    _run(svc)
+    rows = [json.loads(line) for line in
+            (tmp_path / "scan-findings.jsonl").read_text().splitlines()]
+    drift = [r for r in rows if "New since" in r["text"]]
+    change = [r for r in rows if "Changed since" in r["text"]]
+    assert len(drift) == 1 and drift[0]["routine"] is True
+    assert drift[0]["severity"] == "LOW"
+    assert len(change) == 1 and change[0]["routine"] is False
+    assert change[0]["severity"] == "HIGH"
+    live = json.loads((tmp_path / "scan-live.json").read_text())
+    assert live["real_findings"] == 1
+    assert live["routine_findings"] == 1
 
 
 def test_scan_all_starts_every_scanner_and_marks_a_missing_one(tmp_path):

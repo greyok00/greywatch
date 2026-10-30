@@ -1434,18 +1434,38 @@ def _scan_answer(question: str, pack: dict) -> str | None:
     return None
 
 
+_SCAN_NOUN = re.compile(r"\bscans?\b|\bscanning\b|\bsweep\b", re.I)
+# A bare noun is still a request: "full scan", "quick scan", "antivirus
+# scan", "i want to scan", "let's scan". The owner reported the assistant
+# would not scan, and these fell through to the event rung and answered
+# "No events have been recorded yet." Any lead-in is allowed, but the whole
+# phrase has to be the request — "the scan is running" and "did it scan?"
+# are statements and questions, not orders.
+_BARE_SCAN = re.compile(
+    r"^\s*(?:(?:please|pls|hey)\s+)?"
+    r"(?:(?:i\s+(?:want|need|would\s+like)\s+to|let'?s|go\s+ahead\s+and)\s+)?"
+    r"(?:(?:run|start|do|perform|launch|begin|kick\s+off)\s+)?"
+    r"(?:a|an|the)?\s*"
+    r"(?:(?:full|quick|fast|deep|complete|whole|entire|new)\s+)?"
+    r"(?:virus|antivirus|anti-virus|malware|rootkit|rootkits|security|"
+    r"system|temp|temporary)?\s*"
+    r"(?:scan|sweep)\s*(?:again|now|please)?\s*[.!]?\s*$", re.I)
+
+
 def _scan_intent(question: str) -> Intent | None:
     """A plainly phrased scan request -> the app's own scan button. The
     question must start with the verb ('scan for rootkits', 'run a quick
-    scan'), so 'the scan finished?' and 'did it scan?' stay questions."""
+    scan') or be nothing but the request itself ('full scan'), so 'the scan
+    finished?' and 'did it scan?' stay questions."""
     low = (question or "").strip().lower()
-    if not (_SCAN_VERB.search(low) or _SCAN_CHECK.search(low)):
+    if not (_SCAN_VERB.search(low) or _SCAN_CHECK.search(low)
+            or (_SCAN_NOUN.search(low) and _BARE_SCAN.match(low))):
         return None
     if _NOT_A_REQUEST.match(low):
         # 'do' is both an imperative ("do a quick scan") and an auxiliary
         # ("do the scans run daily?"); only the imperative form acts.
         if low.endswith("?") or not re.match(
-                r"^\s*do\s+(?:a|an|the)\b[^.?!]*\b(?:scan|sweep|audit)\b",
+                r"^\s*do\s+(?:a|an|the)\b[^.?]*\b(?:scan|sweep|audit)\b",
                 low):
             return None
     return Intent("scan", _scan_key(low))
@@ -1663,6 +1683,13 @@ if GIOMM_OK:
             self._last_tool = None
             self.append(self._build_header())
             self.banner = Gtk.Label(xalign=0)
+            # The banner is one long sentence. Without wrapping it became
+            # the widest thing in the chat column: at the 1280px default the
+            # column could not shrink to fit, so GTK scrolled the page
+            # horizontally and the assistant card's left edge was cut off
+            # (seen in the 2026-10-30 Light-theme capture).
+            self.banner.set_wrap(True)
+            self.banner.set_max_width_chars(58)
             self.banner.add_css_class("gw-banner")
             self.append(self.banner)
             # Chat transcript takes the vertical space; the suggestion chips
@@ -2262,8 +2289,12 @@ if GIOMM_OK:
             body.set_xalign(0)
             body.set_wrap(True)
             body.set_max_width_chars(60)
-            extra = ("\nSome scans ask for your password before they start."
-                     if intent.action == "scan" else "")
+            # Scans run in the root background service, which the app asks
+            # for by writing one request file — there is no password prompt
+            # any more, so the old "Some scans ask for your password" line
+            # promised a step that never comes (2026-10-30).
+            extra = ("\nThe scan runs in the background service; there is "
+                     "no password to enter." if intent.action == "scan" else "")
             body.set_text(
                 "Confirm and the app does this with its own normal controls — "
                 "the same buttons you would click yourself. Cancel leaves "

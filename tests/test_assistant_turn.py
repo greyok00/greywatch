@@ -22,6 +22,19 @@ def _today_at(hours):
     return (midnight + _dt.timedelta(hours=hours)).isoformat()
 
 
+def _hours_ago(hours):
+    """A timestamp *hours* before right now (UTC).
+
+    The advice engine keeps only the last 24 hours of high-severity events.
+    A midnight-relative anchor is not good enough for that window: at
+    22:00 UTC, "midnight today minus two hours" is already 24 hours old and
+    the row silently drops out (the suite failed only after 22:00 on
+    2026-10-30).
+    """
+    now = _dt.datetime.now(_dt.timezone.utc)
+    return (now - _dt.timedelta(hours=hours)).isoformat()
+
+
 def _pack():
     return build_pack_for_tests()
 
@@ -288,10 +301,10 @@ def _advice_pack():
     ], "recent": [
         {"tool": "rkhunter", "severity": "HIGH",
          "text": "Rootkit scanner is down and could not be repaired",
-         "ts": _today_at(-2)},          # live clock: the priorities rung
+         "ts": _hours_ago(2)},          # live clock: the priorities rung
         {"tool": "fail2ban", "severity": "HIGH",   # drops anything older
          "text": "fail2ban banned 203.0.113.9 (sshd)",   # than 24 hours
-         "ts": _today_at(-2.1)},
+         "ts": _hours_ago(2.1)},
     ], "status_line": "2 of 3 protections green, 1 need attention"}
 
 
@@ -995,3 +1008,34 @@ def test_advice_offers_the_one_action_the_app_can_take():
     tool["paused"] = True
     out = plan_turn("how do I fix lynis?", pack, None, {"lynis"}, friendly)
     assert out["suggest"] == Intent("resume", "lynis")
+
+
+def test_a_bare_scan_phrase_is_still_a_request():
+    """Owner 2026-10-30: "it wont let me scan from the AI". "Full scan" and
+    "quick scan" name no verb, so they fell through to the event rung and
+    answered "No events have been recorded yet." — a request answered as a
+    statement. The whole phrase has to be the request, though; see the
+    negatives below."""
+    asks = {
+        "full scan": "scan-all",
+        "quick scan": "yara-tmp-scan",
+        "antivirus scan": "clamav",
+        "virus scan": "clamav",
+        "i want to scan": "scan-all",
+        "let's scan": "scan-all",
+    }
+    for text, key in asks.items():
+        out = plan_turn(text, _pack(), None, set(), FRIENDLY)
+        assert out["kind"] == "intent", text
+        assert out["intent"] == Intent("scan", key), text
+
+
+def test_scan_statements_and_questions_never_reach_the_confirm_gate():
+    """'The scan is running' and 'did it scan?' mention a scan without asking
+    the app to start one; acting on them would open a confirm box the owner
+    did not ask for."""
+    for text in ("did it scan?", "the scan finished?", "is it scanning now?",
+                 "the scan is running", "how do I scan for rootkits?",
+                 "when did the last scan run?", "do the scans run daily?"):
+        out = plan_turn(text, _pack(), None, set(), FRIENDLY)
+        assert out.get("intent") is None, text

@@ -114,3 +114,17 @@ def test_assistant_header_styles_are_emitted():
     assert ".gw-assistant-title" in css
     assert ".gw-assistant-sub" in css
     assert ".gw-assistant-head" in css
+
+
+def test_light_theme_is_the_library_grey_paper():
+    """Owner 2026-10-30: "change the light theme to be a light grey like the
+    umgc library light theme". The Light pick is `swiss`, and it must carry
+    the UMGC research library's neutral grey paper — not white cards on a
+    white page — so the app and the library read as the same family."""
+    assert T.THEME_CHOICES["Light"] == "swiss"
+    sw = load_themes()["swiss"]
+    assert sw["--el-bg"] == "#eff0f2"
+    assert sw["--el-panel"] == "#f8f9fa"
+    assert sw["--el-line"] == "#cfd3d7"
+    assert sw["--el-ink"] == "#131517"
+    assert sw["--el-accent"] == "#4d565e"
