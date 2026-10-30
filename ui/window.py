@@ -2609,56 +2609,15 @@ class MainWindow(Gtk.Window):
         return self._settings_section(up_frame)
 
     def _settings_sites(self):
+        from ui.sitesview import SitesView
         trust_frame, trust_inner = self._settings_card(
-            "Trusted websites",
-            "Allowed without asking, or blocked without asking. Subdomains "
-            "are included.")
-        entry_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.trust_combo = Gtk.ComboBoxText.new_with_entry()
-        for choice in discover.site_choices():
-            self.trust_combo.append(
-                choice["host"], f"{choice['host']} · {choice['why']}")
-        self.trust_entry = self.trust_combo.get_child()
-        self.trust_entry.set_placeholder_text("Site name")
-        self.trust_entry.connect("activate", self._on_trust_add, "allow")
-        self.trust_combo.set_hexpand(True)
-        entry_row.append(self.trust_combo)
-        for label, verdict in (("Trust always", "allow"),
-                               ("Block always", "block")):
-            b = Gtk.Button(label=label)
-            b.add_css_class("gw-cta")
-            b.connect("clicked", self._on_trust_add, verdict)
-            entry_row.append(b)
-        trust_inner.append(entry_row)
-        self.trust_note = Gtk.Label(xalign=0)
-        self.trust_note.set_xalign(0)
-        self.trust_note.set_wrap(True)
-        trust_inner.append(self.trust_note)
-        self.trust_store = Gtk.ListStore(str, str)
-        self.trust_view = Gtk.TreeView(model=self.trust_store)
-        for i, title in enumerate(("policy", "site")):
-            cell = Gtk.CellRendererText()
-            col = Gtk.TreeViewColumn(title, cell, text=i)
-            if i == 1:
-                col.set_expand(True)
-            self.trust_view.append_column(col)
-        self.trust_view.connect("cursor-changed", self._trust_selected)
-        # A floor, not a fixed height: at the 720px minimum the 260px table
-        # ran past the card's bottom edge and the last row was sliced. The
-        # table now takes the room the card has and scrolls inside itself.
-        self.trust_view.set_size_request(-1, 120)
-        trust_scroll = self._wrap(self.trust_view)
-        trust_scroll.set_size_request(-1, 120)
-        trust_scroll.set_vexpand(True)
-        # A reserved scrollbar, not a floating overlay: when the list is
-        # longer than the card the owner should see at a glance that there
-        # is more to read.
-        trust_scroll.set_overlay_scrolling(False)
-        trust_inner.append(trust_scroll)
-        del_b = Gtk.Button(label="Remove site")
-        del_b.set_halign(Gtk.Align.START)
-        del_b.connect("clicked", self._on_trust_remove)
-        trust_inner.append(del_b)
+            "Websites",
+            "Click a site to select it, then trust it, block it, or remove "
+            "it from both lists. Subdomains are included. Names come from "
+            "the network; an address with no public name says so.")
+        self.sites_view = SitesView(lambda: self.trust, self.data_dir)
+        self.sites_view.reload()
+        trust_inner.append(self.sites_view)
         section = self._settings_section(trust_frame)
         section.set_valign(Gtk.Align.FILL)
         trust_frame.set_vexpand(True)
@@ -2715,24 +2674,12 @@ class MainWindow(Gtk.Window):
         return section
 
     def _refresh_trust(self):
-        store = getattr(self, "trust_store", None)
-        if store is None:
+        view = getattr(self, "sites_view", None)
+        if view is None:
             return      # Settings has not built its widgets yet; the page
-                        # refills both lists from the trust list when it
-                        # opens. The exec path runs before that build, and
-                        # crashed here after the add had already landed
-                        # (no audit line, owner 2026-10-30).
-        self.trust_store.clear()
-        empty = True
-        # Sentence case: the policy column read as an API constant.
-        for verdict, entries in (("Allowed", sorted(self.trust.allow)),
-                                 ("Blocked", sorted(self.trust.block))):
-            for e in entries:
-                self.trust_store.append([verdict, e])
-                empty = False
-        if empty:
-            self.trust_store.append(["", "Nothing trusted or blocked yet. "
-                                         "Add a site above."])
+                        # reloads the list when it opens. The exec path runs
+                        # before that build and must not crash here.
+        view.reload()
 
     def _refresh_apps(self):
         store = getattr(self, "app_store", None)
@@ -2744,43 +2691,6 @@ class MainWindow(Gtk.Window):
                                    "trust appear here."])
         for e in sorted(self.trust.apps_allow):
             self.app_store.append([e])
-
-    def _trust_selected(self, view):
-        path, _col = view.get_cursor()
-        verdict = self.trust_store[path[0]][0] if path else ""
-        self._trust_sel = (self.trust_store[path[0]][1]
-                           if path and verdict in ("Allowed", "Blocked")
-                           else None)
-
-    def _on_trust_add(self, _btn, verdict):
-        text = (self.trust_combo.get_active_id()
-                or self.trust_entry.get_text()).strip()
-        if not text:
-            self.trust_note.set_text(
-                "Pick a site from the list first.")
-            return
-        if not self.trust.add(text, verdict):
-            self.trust_note.set_text(
-                "That address was not accepted. Use a plain site name like "
-                "example.com.")
-            return
-        self._refresh_trust()
-        self.trust_combo.set_active(-1)
-        self.trust_entry.set_text("")
-        self.trust_note.set_text(
-            f"Added: {text} is now "
-            f"{'always allowed' if verdict == 'allow' else 'always blocked'}.")
-
-    def _on_trust_remove(self, _btn):
-        name = getattr(self, "_trust_sel", None)
-        if name:
-            self.trust.remove(name)
-            self._refresh_trust()
-            self._trust_sel = None
-            self.trust_note.set_text(f"Removed {name}.")
-        else:
-            self.trust_note.set_text(
-                "Select a site in the list first, then remove it.")
 
     def _app_selected(self, view):
         path, _col = view.get_cursor()

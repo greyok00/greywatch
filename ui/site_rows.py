@@ -110,9 +110,12 @@ def filter_rows(rows, query: str) -> list[SiteRow]:
             or q in r.program.lower()]
 
 
-def display_line(row: SiteRow) -> str:
+def short_name(row: SiteRow) -> str:
+    """Just the identity: the domain name when known, else the entry."""
     if row.name and row.name != row.entry and row.address:
-        head = f"{row.name} ({row.address})"
-    else:
-        head = row.entry
-    return f"{head} — {row.description}"
+        return f"{row.name} ({row.address})"
+    return row.entry
+
+
+def display_line(row: SiteRow) -> str:
+    return f"{short_name(row)} — {row.description}"

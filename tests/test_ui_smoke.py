@@ -330,24 +330,23 @@ def test_wizard_done_page_keeps_the_window_width():
     w.destroy()
 
 
-def test_empty_or_invalid_trust_input_explains_itself(win):
-    before = set(win.trust.allow), set(win.trust.block)
-    win.trust_entry.set_text("")
-    win._on_trust_add(None, "allow")
-    assert "pick a site" in win.trust_note.get_text().lower()
-    win.trust_entry.set_text("http://not-a-host/path")
-    win._on_trust_add(None, "allow")
-    assert "not accepted" in win.trust_note.get_text().lower()
-    assert (win.trust.allow, win.trust.block) == before
+def test_sites_list_explains_the_selection_rule(win):
+    win._show("settings")
+    view = win.sites_view
+    view.select(-1)
+    assert view.act("allow") == "Select a site in the list first."
+    assert not view.trust_btn.get_sensitive()
     win.app_entry.set_text("")
     win._on_app_add(None, None)
     assert "pick" in win.app_note.get_text().lower()
-    win._trust_sel = None
-    win._on_trust_remove(None)
-    assert "select" in win.trust_note.get_text().lower()
+    win._app_sel = None
+    win._on_app_remove(None)
+    assert "select" in win.app_note.get_text().lower()
 
 
 def test_removing_a_site_says_which_site(win):
+    from ui.site_rows import SiteRow
+
     class FakeTrust:
         def __init__(self):
             self.allow = {"regression-test.example"}
@@ -357,19 +356,28 @@ def test_removing_a_site_says_which_site(win):
         def remove(self, name):
             self.allow.discard(name)
             self.block.discard(name)
+            return True
 
         def remove_app(self, name):
             self.apps_allow.discard(name)
+            return True
 
     old = win.trust
     win.trust = FakeTrust()
+    win._show("settings")
     try:
-        win._refresh_trust()
-        win.trust_view.set_cursor(0)        # a real row click moves the cursor
+        view = win.sites_view
+        view.paint([SiteRow(entry="regression-test.example",
+                            name="regression-test.example", address="",
+                            description="unrecognized service — "
+                                        "treat with care",
+                            program="", port=None, last_seen="", count=0,
+                            verdict="allow")])
         pump(5)
-        win._on_trust_remove(None)
-        assert "regression-test.example" in win.trust_note.get_text()
-        assert "None" not in win.trust_note.get_text()
+        view.select(0)
+        text = view.act("remove")
+        assert "regression-test.example" in text
+        assert "None" not in text
         assert not win.trust.allow
 
         win._refresh_apps()
@@ -405,6 +413,8 @@ def test_status_words_are_honest():
 
 
 def test_wizard_trust_change_reaches_settings(win):
+    from ui.site_rows import build_rows
+
     class Loader:
         allow, block, apps_allow = {"late.example"}, set(), set()
         loaded = False
@@ -419,8 +429,10 @@ def test_wizard_trust_change_reaches_settings(win):
     try:
         win._reload_trust()
         assert loader.loaded
-        assert win.trust_store[0][1] == "late.example"
-        assert win.trust_store[0][0] == "Allowed"
+        win.sites_view.paint(build_rows(win.trust, [], [], []))
+        rows = win.sites_view.rows
+        assert any(r.entry == "late.example" and r.verdict == "allow"
+                   for r in rows)
     finally:
         win.trust = old
         win._reload_trust()
@@ -431,25 +443,22 @@ def test_empty_trust_lists_explain_themselves(win):
         allow, block, apps_allow = set(), set(), set()
 
         def remove(self, name):
-            pass
+            return True
 
         def remove_app(self, name):
-            pass
+            return True
 
     old = win.trust
     win.trust = EmptyTrust()
+    win._show("settings")
     try:
         win._refresh_trust()
         win._refresh_apps()
-        assert len(win.trust_store) == 1
-        assert "Nothing" in win.trust_store[0][1]
+        assert "Nothing discovered yet" in win.sites_view.empty.get_text()
         assert len(win.app_store) == 1
         assert "Nothing" in win.app_store[0][0]
-
-        win.trust_view.set_cursor(0)
         win.app_view.set_cursor(0)
         pump(5)
-        assert win._trust_sel is None
         assert win._app_sel is None
     finally:
         win.trust = old
@@ -805,14 +814,15 @@ def test_learning_toggle_writes_the_real_flag(win):
             tmp.unlink(missing_ok=True)
 
 
-def test_site_trust_box_offers_real_sites(win):
-    from ui import discover
-    win._show("settings")       # lazy views: the trust box builds on first show
-    ids = [row[1] for row in win.trust_combo.get_model()]
-    assert ids, "no sites detected for the trust list"
-    for row in discover.site_choices():
-        assert row["host"] in ids
-    assert win.trust_entry.get_placeholder_text()
+def test_sites_list_shows_discovered_sites(win):
+    from ui.site_rows import build_rows
+    win._show("settings")
+    rows = build_rows(win.trust, [], ["updates.ubuntu.com"], [])
+    win.sites_view.paint(rows)
+    pump(5)
+    row = next(i for i in range(win.sites_view.visible_count())
+               if "updates.ubuntu.com" in win.sites_view.row_text(i))
+    assert "software updates" in win.sites_view.row_text(row)
 
 
 def test_detail_config_pages_are_click_only(win):
