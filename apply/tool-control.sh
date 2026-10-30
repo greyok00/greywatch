@@ -22,10 +22,20 @@ if [ $# -eq 1 ] && [ "$1" = "scan-all" ]; then
   # temp folders. All are started concurrently and log to their usual files;
   # the dashboard picks the results up as each one finishes. Each scanner is
   # independent and idempotent, so there is nothing to batch or sequence.
+  GW_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
   GH="${GW_USER_HOME:-$(dirname "$GW_DIR")}"
   mkdir -p "$GH/security-hardening" 2>&1
   rc=0
-  systemctl start yara-tmp-scan.service 2>/dev/null || rc=1
+  # yara-tmp-scan is a USER unit (timer + service in the user's session);
+  # plain `systemctl start` targets the system bus where it does not exist
+  # and made every scan-all run exit 1. Root reaches the user manager via
+  # the machine-qualified form, with a runuser fallback.
+  GW_USER_NAME="${GW_USER:-grey}"
+  systemctl --user --machine="${GW_USER_NAME}@.host" start yara-tmp-scan.service 2>/dev/null \
+    || runuser -u "$GW_USER_NAME" -- env \
+         XDG_RUNTIME_DIR="/run/user/$(id -u "$GW_USER_NAME")" \
+         systemctl --user start yara-tmp-scan.service 2>/dev/null \
+    || rc=1
   systemctl start aide-check.service 2>/dev/null || rc=1
   /usr/bin/clamscan -r --infected \
           --log="$GH/security-hardening/clam-scan.log" \

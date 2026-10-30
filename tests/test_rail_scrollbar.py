@@ -38,7 +38,8 @@ def test_rail_rows_are_compact_without_touching_global_rows():
     css = themes.gtk_css(themes.load_themes()["obsidian"])
     assert ".gw-rail-rows row {" in css
     assert "min-height: 21px" in css
-    assert "row, treeview row { min-height: 40px" in css     # tables unchanged
+    assert "row, treeview row { min-height: 38px" in css     # tables unchanged
+    assert "row, treeview row { min-height: 38px; padding: 5px 10px; }" in css
 
 
 def test_scrollbar_trough_is_transparent_everywhere():

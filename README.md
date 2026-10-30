@@ -163,13 +163,13 @@ Uninstall reverses the install but deliberately keeps your history:
 **2. Debian package from the Releases page:**
 
 ```bash
-sudo apt install ./greywatch_0.1.2_amd64.deb
+sudo apt install ./greywatch_0.1.3_amd64.deb
 ```
 
 **3. Python wheel from the Releases page:**
 
 ```bash
-pip install https://github.com/greyok00/greywatch/releases/download/v0.1.2/greywatch-0.1.2-py3-none-any.whl
+pip install https://github.com/greyok00/greywatch/releases/download/v0.1.3/greywatch-0.1.3-py3-none-any.whl
 gw --version
 ```
 
