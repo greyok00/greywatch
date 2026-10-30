@@ -273,6 +273,18 @@ class MainWindow(Gtk.Window):
         self.stack.add_named(widget, key)
         self._views[key] = widget
 
+    @staticmethod
+    def _page_box(spacing=None):
+        """Every top-level page uses this inset so the app reads as one."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                      spacing=metrics.PAGE_SPACING if spacing is None
+                      else spacing)
+        box.set_margin_top(metrics.PAGE_TOP)
+        box.set_margin_bottom(metrics.PAGE_BOTTOM)
+        box.set_margin_start(metrics.PAGE_X)
+        box.set_margin_end(metrics.PAGE_X)
+        return box
+
     def _ensure_view(self, key):
         if key not in self._views:
             self._add_view(key, self._builders[key]())
@@ -285,8 +297,10 @@ class MainWindow(Gtk.Window):
         pane.set_vexpand(True)
         pane.set_hexpand(True)
         st = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        st.set_margin_top(26); st.set_margin_start(30); st.set_margin_end(26)
-        st.set_margin_bottom(18)
+        st.set_margin_top(metrics.PAGE_TOP)
+        st.set_margin_start(metrics.PAGE_X)
+        st.set_margin_end(metrics.PAGE_X)
+        st.set_margin_bottom(metrics.PAGE_BOTTOM)
 
         # Page header, macOS-style: a quiet eyebrow, one large verdict, and
         # the tally underneath. Two labels on one line (the old layout) made
@@ -891,8 +905,10 @@ class MainWindow(Gtk.Window):
         window without scrolling.
         """
         tools = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        tools.set_margin_top(16); tools.set_margin_start(34); tools.set_margin_end(34)
-        tools.set_margin_bottom(12)
+        tools.set_margin_top(metrics.PAGE_TOP)
+        tools.set_margin_start(metrics.PAGE_X)
+        tools.set_margin_end(metrics.PAGE_X)
+        tools.set_margin_bottom(metrics.PAGE_BOTTOM)
         tools.append(self._h1("Your protections"))
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
@@ -957,10 +973,10 @@ class MainWindow(Gtk.Window):
     def _scan_page(self):
         """Everything the daemon is scanning, as it happens."""
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        box.set_margin_top(16)
-        box.set_margin_start(34)
-        box.set_margin_end(34)
-        box.set_margin_bottom(12)
+        box.set_margin_top(metrics.PAGE_TOP)
+        box.set_margin_start(metrics.PAGE_X)
+        box.set_margin_end(metrics.PAGE_X)
+        box.set_margin_bottom(metrics.PAGE_BOTTOM)
         box.append(self._h1("Scans"))
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
@@ -1613,7 +1629,9 @@ class MainWindow(Gtk.Window):
 
     def _logs_view(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        box.set_margin_top(26); box.set_margin_start(30); box.set_margin_end(30)
+        box.set_margin_top(metrics.PAGE_TOP)
+        box.set_margin_start(metrics.PAGE_X)
+        box.set_margin_end(metrics.PAGE_X)
         box.append(self._h1("Full logs: every tool, raw"))
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.logs_pick = Gtk.ComboBoxText()
@@ -1741,8 +1759,10 @@ class MainWindow(Gtk.Window):
         page.set_vexpand(True)
 
         head = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        head.set_margin_top(22); head.set_margin_start(34)
-        head.set_margin_end(34); head.set_margin_bottom(14)
+        head.set_margin_top(metrics.PAGE_TOP)
+        head.set_margin_start(metrics.PAGE_X)
+        head.set_margin_end(metrics.PAGE_X)
+        head.set_margin_bottom(14)
         head.append(self._h1("Help"))
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
@@ -1762,12 +1782,13 @@ class MainWindow(Gtk.Window):
         index.set_size_request(190, -1)
         index.set_valign(Gtk.Align.START)
         index.set_margin_start(20); index.set_margin_end(12)
-        index.set_margin_bottom(20)
+        index.set_margin_bottom(metrics.PAGE_BOTTOM)
         stack = Gtk.Stack()
         stack.set_transition_type(Gtk.StackTransitionType.NONE)
         stack.set_hexpand(True); stack.set_vexpand(True)
-        stack.set_margin_start(12); stack.set_margin_end(30)
-        stack.set_margin_bottom(18)
+        stack.set_margin_start(12)
+        stack.set_margin_end(metrics.PAGE_X)
+        stack.set_margin_bottom(metrics.PAGE_BOTTOM)
 
         self._help_stack = stack
         self._help_index = index
@@ -2283,8 +2304,10 @@ class MainWindow(Gtk.Window):
         page.set_vexpand(True)
 
         head = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        head.set_margin_top(22); head.set_margin_start(34)
-        head.set_margin_end(34); head.set_margin_bottom(14)
+        head.set_margin_top(metrics.PAGE_TOP)
+        head.set_margin_start(metrics.PAGE_X)
+        head.set_margin_end(metrics.PAGE_X)
+        head.set_margin_bottom(14)
         head.append(self._h1("Settings"))
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
@@ -2305,13 +2328,14 @@ class MainWindow(Gtk.Window):
         index.set_size_request(190, -1)
         index.set_valign(Gtk.Align.START)
         index.set_margin_start(20); index.set_margin_end(12)
-        index.set_margin_bottom(20)
+        index.set_margin_bottom(metrics.PAGE_BOTTOM)
 
         stack = Gtk.Stack()
         stack.set_transition_type(Gtk.StackTransitionType.NONE)
         stack.set_hexpand(True); stack.set_vexpand(True)
-        stack.set_margin_start(12); stack.set_margin_end(30)
-        stack.set_margin_bottom(18)
+        stack.set_margin_start(12)
+        stack.set_margin_end(metrics.PAGE_X)
+        stack.set_margin_bottom(metrics.PAGE_BOTTOM)
 
         self._settings_stack = stack
         self._settings_index = index

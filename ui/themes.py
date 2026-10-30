@@ -131,12 +131,12 @@ def gtk_css(tokens: dict) -> str:
     return f"""
 /* READABILITY (owner: it's cramped/hurts to look at): bigger type + air */
 * {{ font-size: 15px; letter-spacing: 0.1px; }}
-row, treeview row {{ min-height: 40px; padding: 6px 10px; }}
-button {{ padding: 7px 14px; font-size: 14px; letter-spacing: 0.2px; }}
-entry, searchentry {{ padding: 8px 12px; font-size: 14px; }}
+row, treeview row {{ min-height: 38px; padding: 5px 10px; }}
+button {{ padding: 8px 16px; font-size: 14px; letter-spacing: 0.2px; }}
+entry, searchentry {{ padding: 9px 13px; font-size: 14px; }}
 notebook tab {{ padding: 11px 24px; font-size: 14px; }}
 label {{ padding: 3px 0; }}
-.gw-card {{ padding: 12px; }}
+.gw-card {{ padding: 16px; }}
 
 /* window + every child follows the theme — the grey that would not change
    was GTK's default row/base colors; ALL of them are set here. */
@@ -458,7 +458,7 @@ switch:checked slider {{ background-color: #ffffff; }}
 /* --- cards ---------------------------------------------------------- */
 .gw-card {{
   background-color: {panel}; border: 1px solid {hair};
-  border-radius: 14px; padding: 18px;
+  border-radius: 14px; padding: 16px;
   box-shadow: 0 1px 0 {card_hi} inset, {shadow};
 }}
 .gw-card box {{ background-color: {panel}; }}
@@ -505,7 +505,7 @@ button.gw-mini {{
 button {{
   background-image: none; background-color: {panel2}; color: {ink};
   border: 1px solid {hair2}; border-radius: 8px;
-  padding: 5px 14px; min-height: 30px; font-size: 13px; font-weight: 500;
+  padding: 8px 16px; min-height: 34px; font-size: 13.5px; font-weight: 500;
   box-shadow: none;
 }}
 button:hover {{ background-color: {hover}; }}
@@ -551,7 +551,7 @@ button.gw-chip:hover, .gw-chips button:hover {{
 
 entry, searchentry {{
   background-color: {panel2}; color: {ink};
-  border: 1px solid {hair2}; border-radius: 10px; padding: 8px 12px;
+  border: 1px solid {hair2}; border-radius: 10px; padding: 9px 13px;
   font-size: 14px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.20);
 }}
 entry:focus, entry:focus-within, searchentry:focus-within {{

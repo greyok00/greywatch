@@ -16,16 +16,24 @@ from __future__ import annotations
 # that a line of text still reads left to right.
 COLUMN_FRACTION = 0.74
 COLUMN_MAX = 1500
-COLUMN_MIN = 680
+COLUMN_MIN = 720
 
-# The main window opens at three quarters of the monitor and never smaller
-# than a laptop can show.
-WINDOW_FRACTION_W = 0.76
-WINDOW_FRACTION_H = 0.84
-WINDOW_MIN_W = 1100
-WINDOW_MIN_H = 720
-WINDOW_MAX_W = 2200
-WINDOW_MAX_H = 1450
+# The main window opens at four fifths of the monitor and never smaller
+# than a laptop can show. The floor rose with the padded layout: at 1100
+# the three-column Settings page had no room left for its detail pane.
+WINDOW_FRACTION_W = 0.80
+WINDOW_FRACTION_H = 0.86
+WINDOW_MIN_W = 1140
+WINDOW_MIN_H = 760
+WINDOW_MAX_W = 2400
+WINDOW_MAX_H = 1600
+
+# One page inset for every top-level page. The old values drifted between
+# 26/30/34 px, which read as three different apps rather than one window.
+PAGE_X = 30
+PAGE_TOP = 24
+PAGE_BOTTOM = 18
+PAGE_SPACING = 12
 
 
 def span(available: int, fraction: float, minimum: int, maximum: int) -> int:
