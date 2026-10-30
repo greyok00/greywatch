@@ -94,8 +94,11 @@ def commands_for(key, home, ui_user) -> list[list[str]]:
     return [one] if one else []
 
 
-_CLAM = re.compile(r"^(?P<path>.+?): (?P<verdict>OK|FOUND|Empty file|"
-                   r"Symbolic link)$")
+# clamscan prints "path: OK", "path: Empty file", "path: Symbolic link" and,
+# on a hit, "path: <Signature-Name> FOUND". The signature name is part of the
+# verdict, so a plain (OK|FOUND) alternation missed every infected file.
+_CLAM = re.compile(r"^(?P<path>.+?): (?P<verdict>OK|Empty file|"
+                   r"Symbolic link|FOUND|.+? FOUND)$")
 _RKH_CHECK = re.compile(r"^\[?[0-9:]{0,8}\]?\s*Checking\s+(?P<what>.*?)"
                         r"(?:\.\.\.|\s*\])?\s*$")
 _RKH_WARN = re.compile(r"Warning:\s*(?P<what>.+)$")
@@ -122,8 +125,12 @@ def parse_progress(tool: str, line: str):
         if not m:
             return dict(_BLANK)
         path, verdict = m.group("path"), m.group("verdict")
-        finding = ({"severity": "HIGH", "text": f"Infected file: {path}"}
-                   if verdict == "FOUND" else None)
+        finding = None
+        if verdict.endswith("FOUND"):
+            sig = verdict[:-len("FOUND")].strip()
+            finding = {"severity": "HIGH",
+                       "text": f"Infected file: {path}"
+                               + (f" ({sig})" if sig else "")}
         return {"counted": True, "current": path, "finding": finding}
     if tool == "rkhunter":
         m = _RKH_CHECK.match(text)
@@ -384,7 +391,9 @@ class ScanService:
         handle = child.get("handle")
         if handle is None or child["state"] != "running":
             return
-        when = _dt.datetime.now()
+        # Local time with an offset: the finding row sorts with its
+        # neighbours and the clock matches what the scanner printed.
+        when = _dt.datetime.now().astimezone()
         for line in handle.lines():
             child["last_line"] = line.strip()[:200]
             prog = parse_progress(key, line)

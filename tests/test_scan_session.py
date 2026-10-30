@@ -28,6 +28,13 @@ def test_clamav_lines_count_files_and_report_infections():
     p = S.parse_progress("clamav", "/tmp/eicar.txt: FOUND")
     assert p["finding"]["severity"] == "HIGH"
     assert "eicar.txt" in p["finding"]["text"]
+    # clamscan names the signature on a hit: "path: Eicar-Signature FOUND".
+    # The plain (OK|FOUND) form missed every infected file in a live run.
+    p = S.parse_progress("clamav",
+                         "/tmp/eicar.txt: Eicar-Signature FOUND")
+    assert p["counted"] is True
+    assert p["finding"]["text"] == \
+        "Infected file: /tmp/eicar.txt (Eicar-Signature)"
     assert S.parse_progress("clamav", "   ") is None
 
 
@@ -175,7 +182,11 @@ def test_a_single_scan_writes_live_findings_and_summary(tmp_path):
     assert live["real_findings"] == 1
     assert calls and "clamscan" in calls[0][0]
     findings = (tmp_path / "scan-findings.jsonl").read_text().splitlines()
-    assert json.loads(findings[0])["routine"] is False
+    row = json.loads(findings[0])
+    assert row["routine"] is False
+    # A timestamp with an offset: a naive local time sorted against the
+    # UTC stamps everywhere else and read an hour or five out.
+    assert dt.datetime.fromisoformat(row["ts"]).tzinfo is not None
     summary = json.loads((tmp_path / "scans" /
                           "20261030T074500-a1b2.json").read_text())
     assert summary["scanners"]["clamav"]["exit_code"] == 1
