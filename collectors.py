@@ -139,6 +139,7 @@ class FileTailer:
         self._pos = 0
         self._buffer = b""
         self._stop = threading.Event()
+        self._paused = threading.Event()   # a scan session owns the output
         self._thread = None
         self._lock = threading.Lock()
         self._trace = []        # bounded diagnostic ring (last 60 ops)
@@ -159,6 +160,28 @@ class FileTailer:
         self._thread = threading.Thread(target=self._run, name=f"tail:{self.tool}",
                                         daemon=True)
         self._thread.start()
+
+    def pause(self):
+        """Stop delivering lines while a scan session reads the same output.
+
+        The thread keeps running, so the supervisor never mistakes a pause
+        for a crash and restarts a second tailer. Bytes written while paused
+        are skipped, not replayed, so nothing reaches events.jsonl twice.
+        """
+        self._paused.set()
+
+    def resume(self):
+        self._paused.clear()
+
+    def _skip_to_end(self):
+        try:
+            if self._fh is None:
+                return
+            self._pos = self._fh.seek(0, 2)
+            self._buffer = b""
+            self._seed_anchors()
+        except OSError:
+            pass
 
     def stop(self):
         self._stop.set()
@@ -244,6 +267,9 @@ class FileTailer:
             self._fh = None
 
     def _read_available(self):
+        if self._paused.is_set():
+            self._skip_to_end()      # a scan session already fed these lines
+            return
         if self._fh is None:
             try:
                 self._open()

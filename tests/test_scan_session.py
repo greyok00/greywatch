@@ -293,3 +293,38 @@ def test_a_timeout_is_reported_as_failed(tmp_path):
     live = json.loads((tmp_path / "scan-live.json").read_text())
     assert live["scanners"]["aide"]["state"] == "failed"
     assert "timed out" in live["scanners"]["aide"]["detail"]
+
+
+def test_daemon_builds_a_scan_service_over_its_own_data_dir(tmp_path):
+    import greywatch_daemon as D
+    daemon = D.Daemon(tmp_path)
+    daemon.ui_gid = None
+    assert getattr(daemon, "scans", "missing") is None
+    svc = daemon.make_scan_service()
+    assert svc.dir == tmp_path
+    assert svc.consume == daemon.consume
+    assert svc.ui_user == D.UI_USER
+    assert str(svc.home).startswith("/")
+
+
+def test_a_paused_file_tailer_skips_lines_written_during_a_scan(tmp_path):
+    from collectors import FileTailer
+    log = tmp_path / "rkhunter.log"
+    log.write_text("old line\n")
+    seen = []
+    t = FileTailer(log, "rkhunter",
+                   lambda _tool, line: seen.append(line), start_at_end=True)
+    t.start()
+    try:
+        t.pause()
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write("during the scan\n")
+        t._read_available()          # paused: must not deliver
+        t.resume()
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write("after the scan\n")
+        t._read_available()
+    finally:
+        t.stop()
+    assert not any("during" in line for line in seen)
+    assert any("after" in line for line in seen)

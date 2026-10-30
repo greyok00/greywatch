@@ -158,6 +158,10 @@ class Daemon:
                                   "(headless fallback, NOT user-approved)")
         self.healer = None       # built in run_forever (needs log/alert)
         self._notice_at = {}     # generic notice dedupe table
+        # Scans belong to the daemon: it spawns them, parses their output
+        # and writes the live/findings/summary files the GUI reads. The GUI
+        # holds no scan state, so a GUI crash loses nothing.
+        self.scans = None        # built when run_forever starts
 
     def _share_with_ui(self, path) -> None:
         """Let the desktop GUI read an existing root-owned file.
@@ -748,6 +752,38 @@ class Daemon:
 
     KERNEL_LANE = {"journal:kern": "-k -f -o cat"}
 
+    def _arm_scans(self, live) -> None:
+        """Build the scan service and hand it the log tailers it must mute."""
+        by_tool = {}
+        for t in live:
+            if isinstance(t, FileTailer) and getattr(t, "tool", None):
+                by_tool.setdefault(t.tool, []).append(t)
+        try:
+            svc = self.make_scan_service()
+
+            def pause(tool):
+                for t in by_tool.get(tool, []):
+                    t.pause()        # thread stays up: no supervisor restart
+
+            def resume(tool):
+                for t in by_tool.get(tool, []):
+                    t.resume()
+
+            svc.set_tailer_hooks(pause, resume)
+            svc.recover_interrupted()
+            self.scans = svc
+        except Exception as e:
+            self.scans = None
+            self.count_failure("scan", "init", e)
+
+    def make_scan_service(self):
+        """The scan owner for this data dir, wired to this daemon's sink."""
+        from scan_session import ScanService
+        return ScanService(
+            self.data_dir, consume=self.consume, gid=self.ui_gid,
+            ui_user=UI_USER, home=os.path.expanduser(f"~{UI_USER}"),
+            log=lambda m: print(f"greywatch scan: {m}", flush=True))
+
     def make_collector_args(self, tool_name: str, path):
         for t in self.registry:
             if t["name"] == tool_name and str(path).startswith("journal"):
@@ -815,6 +851,7 @@ class Daemon:
                 and t._thread.is_alive(), latched_target=False)
         threading.Thread(target=self._watchdog_ping_loop, args=(stop,),
                          daemon=True, name="watchdog-ping").start()
+        self._arm_scans(live)
         status_at = time.monotonic() + unit_interval
         trim_at = time.monotonic() + trim_interval
         heartbeat_at = time.monotonic() + 900      # every tool: 15-min check-in
@@ -831,6 +868,11 @@ class Daemon:
                         self.consume(tool, line)
                 self.flush_outbox()
                 self.flush_malformed()
+                if self.scans is not None:
+                    try:
+                        self.scans.tick()
+                    except Exception as e:
+                        self.count_failure("scan", "tick", e)
                 self.supervisor.check_all()
                 now = time.monotonic()
                 if now >= status_at:
