@@ -80,10 +80,12 @@ network.
   (AIDE, AppArmor, arpwatch, ClamAV, fail2ban, UFW, YARA, Lynis,
   rkhunter, and more): dashboards, parsers, and log/journal tailers
   across all of them, plus what each is missing.
-* **One-click full scan.** The dashboard's "Scan everything" button
-  launches every on-demand scanner at once — ClamAV deep scan,
-  rkhunter, Lynis, AIDE, and a YARA sweep of temp folders — through a
-  single polkit authorization, not one password per tool.
+* **One-click full scan, no password.** "Scan everything" asks the
+  background service (already running as root) to run ClamAV, rkhunter,
+  Lynis, AIDE and a YARA sweep of temp folders. Each scanner reports its
+  own progress and findings as they arrive, so scanning is visible rather
+  than a spinner. The window only writes one request file naming one of
+  six fixed scans — it never asks for, holds or needs your password.
 * **Self-contained software.** The application itself is pure Python
   and installs its own program tree, hardened systemd units, polkit
   policy, icons, and launcher during setup — it does not lean on a

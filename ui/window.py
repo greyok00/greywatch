@@ -22,6 +22,8 @@ from ui.plain import (sentence as plain_sentence, friendly_name, what_is,
 from ui.themes import (ThemeStore, dark_default, load_setting,
                        THEME_CHOICES)
 from ui.cards import SCAN_MODES, quiet_note
+from ui.scanview import NAMES as SCAN_NAMES
+from ui.scanview import ScanView, card_text, read_live
 from ui.assistant import AssistantPanel
 from ui.toolicons import icon_name as tool_icon
 from ui.settings import (TrustList, PausedStore, LearningStore,
@@ -74,7 +76,11 @@ class MainWindow(Gtk.Window):
         self._recent_seen = None
         self._chat_state = None
         self._chat_snapshot = None
-        self._scan_watch = None
+        # Scans are the daemon's job: this app writes one request file and
+        # renders what comes back. No process handle, no polling, nothing
+        # to lose if the window closes mid-scan.
+        self.data_dir = pathlib.Path(DATA_DIR)
+        self._scan_live = None
         self._detail_dialog = None
         self._chooser = None
         self._wizard_win = None
@@ -91,7 +97,6 @@ class MainWindow(Gtk.Window):
         self._learn_sel = None
         self._learn_guard = False
         self._fw_mode_guard = False
-        self._scan_runner = self._run_scan
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.set_child(outer)
@@ -117,6 +122,11 @@ class MainWindow(Gtk.Window):
         self._glib_ids = []
         self._glib_ids.append(
             GLib.timeout_add_seconds(5, self._periodic_refresh))
+        # The Scans page redraws once a second while it is visible: the
+        # daemon rewrites scan-live.json at 1 Hz, so anything faster would
+        # repaint identical text.
+        self._glib_ids.append(
+            GLib.timeout_add_seconds(1, self._scan_tick))
         self.connect("destroy", self._kill_timers)
 
     def _tick_id(self, fn, ms=200, seconds=False):
@@ -189,6 +199,7 @@ class MainWindow(Gtk.Window):
         for key, icon, label in (
                 ("tools", "security-high-symbolic", "Security"),
                 ("deep", "applications-system-symbolic", "Tools"),
+                ("scans", "system-run-symbolic", "Scans"),
                 ("logs", "document-open-recent-symbolic", "Logs"),
                 ("settings", "preferences-system-symbolic", "Settings"),
                 ("help", "help-about-symbolic", "Help")):
@@ -252,7 +263,8 @@ class MainWindow(Gtk.Window):
         # "harden" is deliberately absent: baseline hardening is a task in
         # the Wizard hub, not a top-level page duplicating the wizard.
         self._builders = {"tools": self._security_view,
-                          "deep": self._tools_view, "logs": self._logs_view,
+                          "deep": self._tools_view,
+                          "scans": self._scan_page, "logs": self._logs_view,
                           "help": self._help_view,
                           "settings": self._settings_view}
         self._add_view("tools", self._builders["tools"]())
@@ -942,6 +954,35 @@ class MainWindow(Gtk.Window):
         tools.append(fill)
         return tools
 
+    def _scan_page(self):
+        """Everything the daemon is scanning, as it happens."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_margin_top(16)
+        box.set_margin_start(34)
+        box.set_margin_end(34)
+        box.set_margin_bottom(12)
+        box.append(self._h1("Scans"))
+        intro = Gtk.Label(xalign=0)
+        intro.set_xalign(0)
+        intro.set_wrap(True)
+        intro.set_markup(
+            f"<span size='13000' font_family='Inter' color='{pc_muted()}'>"
+            "The background service runs every scan, so closing this window "
+            "cannot lose one. Progress and findings appear here as they "
+            "land.</span>")
+        box.append(intro)
+        self.scanview = ScanView(self.data_dir)
+        self.scanview.set_vexpand(True)
+        box.append(self.scanview)
+        return box
+
+    def _scan_tick(self):
+        """Redraw the Scans page while it is the visible page."""
+        view = self._views.get("scans")
+        if view is not None and self.stack.get_visible_child_name() == "scans":
+            self.scanview.refresh()
+        return True
+
     def _baseline_card(self):
         """The baseline pass lives in the wizard, so this is the doorway.
 
@@ -1144,126 +1185,57 @@ class MainWindow(Gtk.Window):
         frame._pause_btn = pause
         return frame
 
-    def _run_scan(self, mode: dict):
-        if mode.get("scope") == "user":
-            rc = subprocess.run(["systemctl", "--user", "start",
-                                 mode["unit"]], capture_output=True,
-                                text=True, timeout=20).returncode
-            return rc, ("started" if rc == 0
-                        else f"could not start (rc {rc})")
-        from wiz import common
-        helper = mode.get("helper", "scan-now")
-        if helper == "tool-control":
-            # scan-all: one polkit call starts every scanner at once
-            rc = common.run_helper("tool-control", ["scan-all"])
-        else:
-            rc = common.run_helper(helper, [mode["key"]])
-        return rc, ("started" if rc == 0
-                    else "needs your password, or the scan helper failed")
+    def _request_scan(self, mode) -> tuple[bool, str]:
+        """Ask the daemon to scan by writing one validated key.
+
+        No password, no helper, no command text: the daemon honours only
+        the six fixed keys (owner decision 2026-10-30). The request is
+        written to a temporary file and renamed, so the daemon never sees
+        half a document.
+        """
+        key = mode.get("key")
+        if key not in {m["key"] for m in SCAN_MODES}:
+            return False, "unknown scan"
+        doc = {"id": time.strftime("%Y%m%dT%H%M%S") + "-" + os.urandom(2).hex(),
+               "key": key,
+               "requested_at": _dt.datetime.now(
+                   _dt.timezone.utc).isoformat(timespec="seconds")}
+        target = self.data_dir / "scan-request.json"
+        tmp = self.data_dir / "scan-request.new"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps(doc))
+            os.replace(tmp, target)
+        except OSError as e:
+            return False, str(e)
+        return True, key
 
     def _start_scan(self, _btn, mode):
-        self._ensure_view("deep")        # the strip + ring live here
-        self._show("deep")
-        self.circle.start(mode["title"])
-        self.scan_status.set_markup(
-            f"<span size='13000' font_family='Inter'>"
-            f"{escape(mode['title'])}: starting…</span>")
-
-        def worker():
-            try:
-                rc, msg = self._scan_runner(mode)
-            except Exception as e:                   # never kill the UI
-                rc, msg = -1, str(e)
-            GLib.idle_add(self._scan_done, mode, rc, msg)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _scan_done(self, mode, rc, msg):
-        # A scan the assistant started gets one audit line with its real
-        # outcome; a scan started from the card has no pending marker.
+        ok, msg = self._request_scan(mode)
         pending = getattr(self, "_assistant_pending", None)
-        if pending and pending == ("scan", mode.get("key")):
+        if pending == ("scan", mode.get("key")):
             self._assistant_pending = None
-            audit.record("scan", mode.get("key", ""), rc == 0)
-        if rc == 0:
-            self.circle.text = mode["title"]
-            if mode.get("key") == "scan-all":
-                # five scanners start at once; each finishes independently
-                self.circle.stop()
-                self.scan_status.set_markup(
-                    "<span size='13000' font_family='Inter'>"
-                    "All scanners launched. Each card updates as its "
-                    "scan finishes.</span>")
-                return False
+        audit.record("scan", mode.get("key", ""), ok)
+        if hasattr(self, "circle"):
+            self.circle.start(mode["title"]) if ok else self.circle.stop()
+        if hasattr(self, "scan_status"):
             self.scan_status.set_markup(
                 f"<span size='13000' font_family='Inter'>"
-                f"{escape(mode['title'])} started. The card updates when "
-                f"it finishes.</span>")
-            if mode.get("scope") == "user" and mode.get("unit"):
-                self._scan_watch = [mode, 0]
-                self._tick_id(self._poll_scan, 2, seconds=True)
-            elif mode.get("proc"):
-                self._scan_watch = [mode, 0]
-                self._tick_id(self._poll_process, 2, seconds=True)
-            elif mode.get("unit"):
-                self._scan_watch = [mode, 0]
-                self._tick_id(self._poll_scan, 2, seconds=True)
-            else:
-                self.circle.stop()
-        else:
-            self.circle.stop("idle")
-            self.scan_status.set_markup(
-                f"<span size='13000' font_family='Inter'>"
-                f"{escape(mode['title'])}: {escape(msg)}.</span>")
-        return False
-
-    def _poll_scan(self):
-        if not self._scan_watch:
-            return False
-        mode, ticks = self._scan_watch
-        self._scan_watch[1] += 1
-        cmd = (["systemctl", "--user"] if mode.get("scope") == "user"
-               else ["systemctl"]) + ["is-active", mode["unit"]]
-        try:
-            out = subprocess.run(cmd, capture_output=True, text=True,
-                                 timeout=8).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            out = ""
-        if out == "active" and ticks < 2400:
-            return True
-        self._finish_scan_watch(mode)
-        return False
-
-    def _poll_process(self):
-        if not self._scan_watch:
-            return False
-        mode, ticks = self._scan_watch
-        self._scan_watch[1] += 1
-        try:
-            out = subprocess.run(["pgrep", "-x", mode["proc"]],
-                                 capture_output=True, text=True,
-                                 timeout=6).returncode
-        except (OSError, subprocess.SubprocessError):
-            out = 1
-        if out == 0 and ticks < 7200:
-            return True
-        self._finish_scan_watch(mode)
-        return False
-
-    def _finish_scan_watch(self, mode):
-        self.circle.done()
-        self.scan_status.set_markup(
-            f"<span size='13000' font_family='Inter'>"
-            f"{escape(mode['title'])} finished. See the card and the "
-            f"Logs screen.</span>")
-        self._scan_watch = None
+                f"{escape(mode['title'])}: "
+                f"{'asked for — progress is on the Scans page' if ok else 'not started: ' + escape(msg)}"
+                f"</span>")
+        if not ok:
+            return
+        self._ensure_view("scans")
+        self._show("scans")
 
     def _open_scan_for(self, _btn, tool_name):
         key = "yara-tmp-scan" if tool_name == "yara-watch" else tool_name
         mode = next((m for m in SCAN_MODES if m["key"] == key), None)
-        self._show("deep")
         if mode:
             self._start_scan(None, mode)
+        else:
+            self._show("scans")
 
     def _pause_selected(self):
         if self._selected_tool:
@@ -3342,6 +3314,7 @@ class MainWindow(Gtk.Window):
             events = []
         if not events:                    # the event store is root-only (0600)
             events = snap.get("recent") or []   # → the daemon's public digest
+        self._scan_live = read_live(self.data_dir)
         # The assistant facts source: the very snapshots refresh() already
         # loaded — _get_status/_get_recent hand these over, no new reads.
         self._status_snapshot = snap
@@ -3488,6 +3461,14 @@ class MainWindow(Gtk.Window):
                         detail += f" · {age}"
                 else:
                     detail = quiet_note(name, None)
+                # The row's sub-line says what the scan is doing right now,
+                # then what the last one found; the state sentence above it
+                # still describes the service, not the scan.
+                scanned = card_text(name, self._scan_live)
+                if scanned:
+                    head = (f"<span size='11000' font_family='Inter' "
+                            f"color='{state_color}'>● "
+                            f"{escape(scanned)}</span>")
                 frame._sub.set_markup(head)
                 frame.set_tooltip_text(
                     f"{friendly_name(name)} — {what_is(name)}"
@@ -3501,8 +3482,52 @@ class MainWindow(Gtk.Window):
             pass
         if self._views.get("logs") and self.stack.get_visible_child_name() == "logs":
             self._refresh_logs()
+        if hasattr(self, "scan_status"):
+            self._scan_status_line()
         self._refresh_fw()
         self._refresh_updates()
+
+    def _scan_status_line(self):
+        """The Tools strip says what the daemon is scanning right now.
+
+        The same label carries pause/resume and panic messages, so this only
+        takes the line over when the scan itself changes state; a message a
+        person's action just wrote is left alone until then.
+        """
+        live = self._scan_live
+        state = (live or {}).get("state")
+        prior = getattr(self, "_scan_status_state", None)
+        self._scan_status_state = state
+        if state is None:
+            return
+        rows = (live or {}).get("scanners") or {}
+        finds = int((live or {}).get("real_findings") or 0)
+        if state == "running":
+            running = [SCAN_NAMES.get(k, k) for k, v in rows.items()
+                       if (v or {}).get("state") == "running"]
+            msg = ("Scanning: " + ", ".join(running)) if running \
+                else "Finishing the scan…"
+            if finds:
+                msg += f" · {finds} finding{'s' if finds != 1 else ''}"
+            msg += ". Details on the Scans page."
+        elif state == "done":
+            msg = ("Last scan finished"
+                   + (f" · {finds} finding{'s' if finds != 1 else ''}"
+                      if finds else " · clean")
+                   + ". Details on the Scans page.")
+        elif state in ("failed", "interrupted"):
+            msg = f"Last scan {state}. Details on the Scans page."
+        else:
+            return
+        owned = self.scan_status.get_text() == getattr(
+            self, "_scan_status_text", None)
+        if not owned and prior == state:
+            return            # keep a pause/panic message that just landed
+        self._scan_status_text = msg
+        self.scan_status.set_markup(
+            f"<span size='13000' font_family='Inter'>{escape(msg)}</span>")
+        if state != "running" and hasattr(self, "circle"):
+            self.circle.stop()
 
     def _open_setup_wizard(self):
         from wizard.ui_pages import SetupWizardWindow

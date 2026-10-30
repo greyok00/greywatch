@@ -1,7 +1,9 @@
 import os
 import sys
+import json
 import pathlib
-import time
+import shutil
+import tempfile
 
 import pytest
 
@@ -66,7 +68,7 @@ def test_unknown_view_key_cannot_grey_the_app(win):
 
 
 def test_every_rail_button_switches(win):
-    for key in ("tools", "deep", "settings", "logs", "help"):
+    for key in ("tools", "scans", "deep", "settings", "logs", "help"):
         win._rail_pick(None, key)
         pump(5)
         assert win.stack.get_visible_child_name() == key
@@ -76,26 +78,53 @@ def test_file_watchers_are_wired(win):
     assert len(getattr(win, "_monitors", [])) >= 2
 
 
-def test_scan_buttons_use_the_real_action(win):
+def test_scan_buttons_write_a_request_the_daemon_picks_up(win):
+    # The GUI asks, the root daemon runs. Nothing is spawned here and no
+    # password is ever requested; one JSON file names one of six keys.
     from ui.cards import SCAN_MODES
-    win._scan_runner = lambda mode: (0, "started")
-    for mode in SCAN_MODES:
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="gw-scan-test-"))
+    old = win.data_dir
+    win.data_dir = tmp
+    try:
+        for mode in SCAN_MODES:
+            ok, key = win._request_scan(mode)
+            assert ok, key
+            doc = json.loads((tmp / "scan-request.json").read_text())
+            assert doc["key"] == mode["key"]
+            assert doc["id"][:8].isdigit() and len(doc["id"]) == 20
+    finally:
+        win.data_dir = old
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_scan_button_opens_the_scans_page(win):
+    from ui.cards import SCAN_MODES
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="gw-scan-test-"))
+    old = win.data_dir
+    win.data_dir = tmp
+    try:
+        mode = next(m for m in SCAN_MODES if m["key"] == "yara-tmp-scan")
         win._start_scan(None, mode)
-        for _ in range(100):
-            pump(2)
-            time.sleep(0.01)
-            if "started" in win.scan_status.get_text():
-                break
-    txt = win.scan_status.get_text()
-    assert "scan_lines" not in txt
-    assert "started" in txt
+        pump(10)
+        assert win.stack.get_visible_child_name() == "scans"
+        assert "Scans" in win.scan_status.get_text() or \
+            "asked" in win.scan_status.get_text()
+    finally:
+        win.data_dir = old
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_card_scan_switches_to_tools_not_grey(win):
-    win._scan_runner = lambda mode: (0, "started")
-    win._open_scan_for(None, "yara-watch")
-    pump(10)
-    assert win.stack.get_visible_child_name() == "deep"
+def test_card_scan_maps_yara_watch_to_the_quick_scan(win):
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="gw-scan-test-"))
+    old = win.data_dir
+    win.data_dir = tmp
+    try:
+        win._open_scan_for(None, "yara-watch")
+        doc = json.loads((tmp / "scan-request.json").read_text())
+        assert doc["key"] == "yara-tmp-scan"
+    finally:
+        win.data_dir = old
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def test_wizard_chooser_has_working_cancel(win):

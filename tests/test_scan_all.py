@@ -1,10 +1,12 @@
-"""scan-all: one polkit call launches every on-demand scanner at once.
+"""scan-all: every on-demand scanner from one request, no password.
 
-The "Scan everything" button routes through tool-control.sh scan-all (a
-single root helper invocation), NOT through per-scanner pkexec calls —
-that was the root cause of the ten back-to-back password prompts. These
-tests pin the wiring: the SCAN_MODES entry, the UI runner routing, the
-shell helper's scan-all branch, and the polkit allowlist action."""
+The "Scan everything" button now writes one request file; the root daemon
+spawns ClamAV, rkhunter, Lynis, AIDE and YARA itself. That replaced the old
+per-scanner pkexec calls (ten back-to-back password prompts) and then the
+single tool-control.sh scan-all helper the GUI used to run. These tests pin
+the SCAN_MODES entry, the fact that the GUI no longer escalates for scans,
+the daemon's command table, and the shell helper's scan-all branch (still
+usable from a terminal)."""
 import pathlib
 import subprocess
 
@@ -37,19 +39,30 @@ def _source(obj) -> str:
         return py.read_text(encoding="utf-8")
 
 
-def test_ui_runner_calls_tool_control_scan_all():
+def test_the_gui_no_longer_escalates_to_run_scans():
+    # The window may ask for a scan; it must never spawn one itself. No
+    # password, no helper invocation, no polling loop left behind.
     from ui import window
-    src = _source(window.MainWindow._run_scan)
-    assert 'common.run_helper("tool-control", ["scan-all"])' in src
+    src = (ROOT / "ui" / "window.py").read_text(encoding="utf-8")
+    assert "run_helper(\"tool-control\", [\"scan-all\"])" not in src
+    for gone in ("_run_scan", "_poll_scan", "_poll_process", "_scan_done",
+                 "_finish_scan_watch"):
+        assert not hasattr(window.MainWindow, gone), gone
 
 
-def test_window_scan_done_reports_all_scanners_launched():
-    # scan-all has no single unit/proc to poll — it must not enter a
-    # watch loop; it reports and stops
-    from ui import window
-    src = _source(window.MainWindow._scan_done)
-    assert '"scan-all"' in src
-    assert "All scanners launched" in src
+def test_scan_all_runs_the_same_five_scanners():
+    from scan_session import SCAN_ALL, commands_for
+    assert SCAN_ALL == ("clamav", "rkhunter", "lynis", "aide",
+                        "yara-tmp-scan")
+    binaries = {k: commands_for(k, "/home/grey", "grey")[0][0]
+                for k in SCAN_ALL}
+    assert [c[0] for c in commands_for("scan-all", "/home/grey", "grey")] \
+        == list(binaries.values())
+    assert binaries["clamav"] == "/usr/bin/clamscan"
+    assert binaries["rkhunter"] == "/usr/bin/rkhunter"
+    assert binaries["lynis"] == "/usr/sbin/lynis"
+    assert binaries["aide"] == "/usr/bin/aide"
+    assert binaries["yara-tmp-scan"] == "/usr/sbin/runuser"
 
 
 def test_tool_control_scan_all_branch_runs_every_scanner():
