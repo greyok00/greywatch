@@ -1430,9 +1430,16 @@ def _settings_intent(question: str) -> Intent | None:
         if colour:
             return Intent("theme", value=colour.group(1).lower())
         return Intent("open_page", value="settings")
-    mode = re.search(r"\b(light|dark)\s+(?:mode|look|appearance)\b", low)
-    if mode:
-        return Intent("theme", value=mode.group(1).lower())
+    look = re.search(r"\b(light|dark)\b", low)
+    if look:
+        # Every request-shaped sentence whose ask is the look itself —
+        # 'switch to dark', 'make it light again', 'turn off dark mode'
+        # (the owner's dark request fell past the theme-word patterns and
+        # the model answered with boilerplate, 2026-10-30). OFF + dark
+        # means go light.
+        value = "light" if (wants_off and look.group(1) == "dark") \
+            else look.group(1)
+        return Intent("theme", value=value)
     if re.search(r"\bupdate\b", low) and re.search(
             r"\b(list|lists|definitions|virus|antivirus|security list|"
             r"block list)\b", low):
@@ -1499,7 +1506,9 @@ def _pack_prompt(pack: dict, question: str) -> str:
                  "dashboard. Green = the protection is running normally. "
                  "Yellow = it needs attention (usually not installed or not "
                  "working). Red = it is not running. The event list is "
-                 "history; the colours are the present.")
+                 "history; the colours are the present. The app look is "
+                 "light or dark and changes when asked ('change the theme "
+                 "to light mode', or the Settings page).")
     lines.append("Answer for someone who is not technical: plain words, no "
                  "commands unless the question asks for one.")
     # The instruction sits ABOVE the question and the question is last:
@@ -1668,7 +1677,7 @@ if GIOMM_OK:
             # above already explains what the assistant is.
             intro = self._bubble(
                 "Hi — ask me about a protection, a log line, or anything "
-                "you see here.")
+                "you see here.", intro=True)
             intro.add_css_class("gw-assistant-intro")
 
         def _build_header(self):
@@ -1732,7 +1741,7 @@ if GIOMM_OK:
             self.entry.set_text(b.get_label())
             self._send()
 
-        def _bubble(self, text, mine: bool = False):
+        def _bubble(self, text, mine: bool = False, intro: bool = False):
             # A bubble is a padded surface behind selectable text, aligned
             # to the speaker: assistant left on panel, you right on accent
             # tint. The label is returned so callers keep the selectable
@@ -1746,6 +1755,17 @@ if GIOMM_OK:
             # chat (asked for when the rkhunter answer couldn't be pasted).
             lbl.set_selectable(True)
             lbl.set_text(text)
+            # Keep the transcript for handover: a theme switch rebuilds the
+            # page this panel lives in (rebuilding the panel with it), and
+            # the conversation must survive the look change (owner saw the
+            # whole chat vanish, 2026-10-30). The pair updates in place as
+            # the label's text does — a placeholder becomes its answer.
+            if not hasattr(self, "_transcript"):
+                self._transcript = []
+            pair = [str(text), bool(mine), bool(intro)]
+            self._transcript.append(pair)
+            lbl.connect("notify::label",
+                        lambda *_a: pair.__setitem__(0, lbl.get_text() or ""))
             # Both the base shape and the speaker variant: "mine" only
             # overrides the fill, so it must still carry the padding,
             # radius and border from .gw-bubble (without it the user's own
@@ -1776,6 +1796,31 @@ if GIOMM_OK:
                 30, self._fit_stream))
             GLib.timeout_add(30, self._fit_stream)
             return lbl
+
+        def snapshot_transcript(self):
+            """The handover for a look change: this panel is rebuilt with
+            its page, and the conversation must carry to the next one.
+            Text-only — offer buttons and evidence strips are transient —
+            and the placeholder ("…") of an in-flight answer is dropped."""
+            rows = [(str(p[0]), bool(p[1]))
+                    for p in getattr(self, "_transcript", [])
+                    if len(p) > 2 and not p[2] and p[0].strip()
+                    and p[0] != "…"]
+            if not rows:
+                return None
+            return {"rows": rows,
+                    "last_rows": list(self._last_rows or []),
+                    "last_tool": self._last_tool}
+
+        def restore_transcript(self, snap):
+            """Rehydrate a snapshot_transcript() handover: text bubbles in
+            order, then the anchors follow-ups resolve against ('how do I
+            fix that?')."""
+            for text, mine in snap.get("rows", []):
+                self._bubble(text, mine=mine)
+            self._last_rows = list(snap.get("last_rows") or [])
+            if snap.get("last_tool"):
+                self._last_tool = snap["last_tool"]
 
         def _offer(self, intent):
             """The one-click shortcut under an advice answer.

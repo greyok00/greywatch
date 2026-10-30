@@ -137,6 +137,81 @@ def test_theme_intent_runs_the_theme_store(tmp_path, monkeypatch):
     assert calls == [("theme", "swiss", True)]
 
 
+def test_retheme_snapshots_the_chat_and_reopens_the_feed(tmp_path,
+                                                         monkeypatch):
+    """_retheme is the only path both symptoms came from (owner 2026-10-30):
+    the chat must be handed to the rebuilt panel, and the fresh activity
+    store must not depend on the seen-guard or it stays empty."""
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    from ui import window as W
+
+    class FakePanel:
+        def snapshot_transcript(self):
+            return {"rows": [("change theme to light mode", True)]}
+
+    class FakeStack:
+        def get_visible_child_name(self):
+            return "tools"
+
+        def remove(self, *_a):
+            pass
+
+    class FakeWin:
+        stack = FakeStack()
+        assistant_panel = FakePanel()
+        rebuilt = {}
+        views = {}
+        shown = []
+
+        def _show(self, key):
+            self.shown.append(key)
+            self._views = {}
+
+        def refresh(self):
+            self.refreshed = True
+
+    win = FakeWin()
+    win._views = {"logs": object(), "tools": object()}
+    win._recent_seen = [1, 2, 3]
+    W.MainWindow._retheme(win)
+    assert win._chat_snapshot is not None
+    assert "change theme to light mode" in win._chat_snapshot["rows"][0]
+    assert win._recent_seen is None      # refresh() must refill the feed
+    assert win.shown == ["tools"]
+    assert win.refreshed
+
+
+def test_chat_transcript_survives_a_retheme_rebuild():
+    """The rebuilt panel must inherit the conversation and the anchors."""
+    from ui.assistant import AssistantPanel
+
+    def make():
+        return AssistantPanel(
+            registry=[], get_status=lambda: {"tools": {}},
+            get_recent=lambda: [], get_llm=lambda: None,
+            on_intent=lambda *a: None)
+
+    panel = make()
+    panel._bubble("change theme to light mode", mine=True)
+    panel._bubble("Switch the app's look to the Light theme?")
+    row = {"tool": "appfw", "severity": "MEDIUM", "text": "deny x",
+           "ts": "2026-10-30T09:00:00+00:00"}
+    panel._last_rows = [row]
+    panel._last_tool = "appfw"
+    snap = panel.snapshot_transcript()
+    assert snap and snap["rows"] == [
+        ("change theme to light mode", True),
+        ("Switch the app's look to the Light theme?", False)]
+    assert snap["last_rows"] == [row] and snap["last_tool"] == "appfw"
+
+    fresh = make()
+    n_before = len(list(fresh.stream.observe_children()))  # intro only
+    fresh.restore_transcript(snap)
+    grown = list(fresh.stream.observe_children())
+    assert len(grown) == n_before + 2
+    assert fresh._last_rows == [row] and fresh._last_tool == "appfw"
+
+
 def test_event_plan_remembers_shown_rows_for_followups():
     """The panel must keep the rows of its last event listing so the next
     referential question can point at them."""

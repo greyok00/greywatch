@@ -50,6 +50,19 @@ def test_dark_mode_without_the_word_theme_is_a_theme_intent():
     assert out["intent"].value == "dark"
 
 
+def test_look_phrasings_all_route_to_the_theme_intent():
+    """The owner's dark request fell past the tight theme/mode patterns and
+    the model answered with boilerplate ('The context pack does not
+    provide…') — a request whose ask is the look routes to the theme."""
+    for low, want in (("change it to dark", "dark"),
+                      ("make it light again", "light"),
+                      ("go back to dark", "dark"),
+                      ("turn off dark mode", "light")):
+        out = plan_turn(low, _pack(), None, {"ufw"}, FRIENDLY)
+        assert out["kind"] == "intent" and out["intent"].action == "theme"
+        assert out["intent"].value == want, low
+
+
 def test_bare_theme_request_opens_settings():
     out = plan_turn("change the theme", _pack(), None, {"ufw"}, FRIENDLY)
     assert out["kind"] == "intent" and out["intent"].action == "open_page"

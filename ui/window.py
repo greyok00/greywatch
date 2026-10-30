@@ -72,6 +72,8 @@ class MainWindow(Gtk.Window):
         self._events = []
         self._merge_pending = False
         self._recent_seen = None
+        self._chat_state = None
+        self._chat_snapshot = None
         self._scan_watch = None
         self._detail_dialog = None
         self._chooser = None
@@ -397,6 +399,19 @@ class MainWindow(Gtk.Window):
         # inside the 720px minimum window without forcing a page scroll.
         self.assistant_panel.set_size_request(-1, 280)
         st.append(self.assistant_panel)
+        # A theme switch rebuilds this page — and the panel with it. Hand
+        # back the conversation and the anchors the previous panel carried,
+        # then re-apply the model state to the banner (owner watched the
+        # whole chat vanish after 'change theme to light mode', 2026-10-30).
+        snap = getattr(self, "_chat_snapshot", None)
+        if snap:
+            self.assistant_panel.restore_transcript(snap)
+            self._chat_snapshot = None
+        if getattr(self, "_chat_state", None) is not None:
+            ok, err = self._chat_state
+            self.assistant_panel.note_state(ok, err)
+            if getattr(self, "chat_retry", None) is not None:
+                self.chat_retry.set_visible(not ok)
 
         st.append(self._h2("Recent activity"))
         # [tool icon name, severity dot, time, sentence]
@@ -801,6 +816,7 @@ class MainWindow(Gtk.Window):
             lambda ok, err: GLib.idle_add(self._on_llm_ready, ok, err))
 
     def _on_llm_ready(self, ok, err):
+        self._chat_state = (ok, err)
         self.assistant_panel.note_state(ok, err)
         if getattr(self, "chat_retry", None) is not None:
             self.chat_retry.set_visible(not ok)
@@ -3090,6 +3106,15 @@ class MainWindow(Gtk.Window):
 
     def _retheme(self):
         visible = self.stack.get_visible_child_name()
+        panel = getattr(self, "assistant_panel", None)
+        if panel is not None:
+            # The rebuild recreates every page, including the one that owns
+            # the chat; the conversation crosses to the next panel.
+            self._chat_snapshot = panel.snapshot_transcript()
+        # The security view builds a fresh activity store; a rebuild must
+        # not depend on the seen-guard to fill it again (the feed went
+        # blank after a theme switch, 2026-10-30).
+        self._recent_seen = None
         for key, widget in list(self._views.items()):
             self.stack.remove(widget)
             del self._views[key]
