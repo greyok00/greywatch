@@ -116,15 +116,75 @@ def test_assistant_header_styles_are_emitted():
     assert ".gw-assistant-head" in css
 
 
-def test_light_theme_is_the_library_grey_paper():
-    """Owner 2026-10-30: "change the light theme to be a light grey like the
-    umgc library light theme". The Light pick is `swiss`, and it must carry
-    the UMGC research library's neutral grey paper — not white cards on a
-    white page — so the app and the library read as the same family."""
+def test_light_theme_is_cream_paper_with_the_brass_mark():
+    """Owner 2026-10-30: "make the light ui creme". The Light pick is
+    `swiss`, and it must read as cream paper stock — warm, never white —
+    carrying the same aged-brass accent as the dark theme so both modes
+    are one instrument. The earlier neutral grey (the UMGC library paper)
+    was superseded by this request."""
     assert T.THEME_CHOICES["Light"] == "swiss"
     sw = load_themes()["swiss"]
-    assert sw["--el-bg"] == "#eff0f2"
-    assert sw["--el-panel"] == "#f8f9fa"
-    assert sw["--el-line"] == "#cfd3d7"
-    assert sw["--el-ink"] == "#131517"
-    assert sw["--el-accent"] == "#4d565e"
+    assert sw["--el-bg"] == "#efe8d9"
+    assert sw["--el-panel"] == "#faf5ea"
+    assert sw["--el-line"] == "#d3c9b4"
+    assert sw["--el-ink"] == "#201b13"
+    assert sw["--el-accent"] == "#6b5230"
+    # Cream means a warm cast: red > green > blue on the page field.
+    h = sw["--el-bg"].lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    assert r > g > b, sw["--el-bg"]
+
+
+def _lum(hexc):
+    h = hexc.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+    def pick(c):
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    return 0.2126 * pick(r) + 0.7152 * pick(g) + 0.0722 * pick(b)
+
+
+def _ratio(a, b):
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def test_both_themes_meet_contrast_floor():
+    themes = load_themes()
+    for name in ("obsidian", "swiss"):
+        t = themes[name]
+        assert _ratio(t["--el-ink"], t["--el-panel"]) >= 10.0, name
+        assert _ratio(t["--el-ink-soft"], t["--el-panel"]) >= 4.5, name
+        assert not t["--el-panel"].lower().startswith("#fff"), name
+
+
+def test_the_pair_shares_geometry_and_type():
+    themes = load_themes()
+    assert themes["obsidian"]["--el-radius"] == "10px"
+    assert themes["swiss"]["--el-radius"] == "10px"
+    for name in ("obsidian", "swiss"):
+        assert "Inter" in themes[name]["--el-font-body"]
+
+
+def test_generated_css_has_no_card_shadow_and_uses_the_scale():
+    css = gtk_css(load_themes()["obsidian"])
+    assert ".gw-card" in css
+    card_rule = css.split(".gw-card", 1)[1].split("}", 1)[0]
+    assert "box-shadow" not in card_rule
+    assert "font-size: 13px" in css
+    assert "font-size: 28px" in css
+
+
+def test_contrast_helper_is_exposed():
+    from ui.themes import contrast
+    assert contrast("#000000", "#ffffff") > 20
+    assert 1.0 <= contrast("#777777", "#777777") <= 1.01
+
+
+def test_cards_and_scrollbars_follow_the_no_slab_rule():
+    css = gtk_css(load_themes()["obsidian"])
+    # No card anywhere casts a shadow: elevation belongs to modals only.
+    for block in css.split(".gw-card"):
+        rule = block.split("}", 1)[0]
+        assert "box-shadow: none" in rule or "box-shadow" not in rule
+    assert "scrollbar trough { background: transparent;" in css

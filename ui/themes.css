@@ -167,55 +167,51 @@
   --el-font-mono: 'JetBrains Mono', 'Courier New', monospace;
 }
 
-/* Swiss — the light theme. Neutral grey paper, quiet slate accent: the
-   same palette the UMGC research library uses for its light reading
-   pages (owner 2026-10-30: "light grey like the umgc library light
-   theme"). Pure white cards on a near-white page read as glare, not as
-   paper, so the page sits at #eff0f2 and the cards at #f8f9fa. */
+/* Swiss — the light theme: cream paper stock, warm charcoal ink, and the
+   same aged-brass mark the dark theme uses, so both modes read as one
+   instrument (owner 2026-10-30: "make the light ui creme").
+   Deliberately NOT the cream-plus-terracotta-plus-serif look: the type
+   stays Inter, the accent is a dark stamp-ink bronze rather than a bright
+   warm orange, and cards are lighter cream, never pure white — a white
+   card on cream reads as glare rather than as paper. */
 [data-theme="swiss"] {
-  --el-bg: #eff0f2; --el-panel: #f8f9fa; --el-panel-2: #e6e8ea;
-  --el-panel-3: #dfe2e5;
-  --el-line: #cfd3d7; --el-line-2: #dbdee1; --el-line-strong: #aeb4ba;
-  --el-ink: #131517; --el-ink-soft: #4b5157; --el-mute: #7a8086;
-  --el-on-accent: #ffffff;
-  --el-accent: #4d565e; --el-accent-hover: #3d444b;
-  --el-accent-soft: rgba(77,86,94,0.10);
-  --el-ok: #2a7a2a; --el-warn: #c47a00; --el-fail: #b5322d;
-  --el-info: #1f5fa8; --el-live: #1f8f86; --el-teal: #1f5fa8;
-  --el-shadow-1: 0 1px 2px rgba(19,21,23,.08);
-  --el-shadow-2: 0 2px 10px rgba(19,21,23,.10);
-  --el-overlay: rgba(19,21,23,.45);
-  --el-focus-ring: rgba(77,86,94,.45);
-  --el-font-body: 'Inter', 'Helvetica Neue', sans-serif;
-  --el-font-display: 'Helvetica Neue', 'Inter', sans-serif;
+  --el-bg: #efe8d9; --el-panel: #faf5ea; --el-panel-2: #e8e0cf;
+  --el-panel-3: #ded5c1;
+  --el-line: #d3c9b4; --el-line-2: #e4dcc9; --el-line-strong: #b1a68c;
+  --el-ink: #201b13; --el-ink-soft: #574f3f; --el-mute: #716857;
+  --el-on-accent: #fbf7ee;
+  --el-accent: #6b5230; --el-accent-hover: #594327;
+  --el-accent-soft: rgba(107,82,48,0.12);
+  --el-ok: #2f6a3c; --el-warn: #8a5a00; --el-fail: #9d2f26;
+  --el-info: #2b5a6d; --el-live: #17695f; --el-teal: #17695f;
+  --el-shadow-1: 0 1px 2px rgba(32,27,19,.08);
+  --el-shadow-2: 0 2px 10px rgba(32,27,19,.10);
+  --el-overlay: rgba(32,27,19,.45);
+  --el-focus-ring: rgba(107,82,48,.45);
+  --el-radius: 10px;
+  --el-font-body: 'Inter', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --el-font-display: 'Inter', 'SF Pro Display', 'Helvetica Neue', sans-serif;
+  --el-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 }
 
-/* Obsidian — sharp-edged dark (macOS type/space × Windows 11 structure).
-   Owner pick 2026-10-27: "sharp edges dark theme, stylish and elegant". */
+/* Obsidian — the dark theme: warm graphite field, one brass accent, and
+   status inks kept muted so they read as instrument lamps, not alarms
+   (owner 2026-10-27: no bright blue, no fire-engine red). */
 [data-theme="obsidian"] {
-  /* Graphite + sand (owner 2026-10-27: no bright blue, no fire-engine red).
-     Warm neutral surfaces, one muted brass accent, status colours drawn from
-     stone/sage/clay instead of signal-light primaries. */
-  /* Surfaces stepped apart 2026-10-29: the owner read the old set as
-     "washed out" because bg/panel/line sat only a few units apart, so
-     cards, borders and the page dissolved into one field. */
-  /* 2026-10-29: graphite values from macOS dark (window #1c1c1e, content
-     #242426, raised #2c2c2e). The old near-black field made every card
-     read as a hole, which is the "not OS-like" the owner kept seeing. */
-  --el-bg: #1c1d1f; --el-panel: #242527; --el-panel-2: #2c2e31; --el-panel-3: #34363a;
-  --el-line: #33353a; --el-line-2: #2a2c2f; --el-line-strong: #4c4f55;
-  --el-ink: #ecebe7; --el-ink-soft: #b4b2ad; --el-mute: #8a8883;
-  --el-on-accent: #17150f;
-  --el-accent: #b8996b; --el-accent-hover: #c9a97a; --el-accent-soft: rgba(184,153,107,0.15);
-  --el-ok: #8fb59a; --el-warn: #c9a55f; --el-fail: #c47b6b;
-  --el-info: #93a9b5; --el-live: #8fb59a; --el-teal: #8faaa3;
+  --el-bg: #17181a; --el-panel: #1f2124; --el-panel-2: #27292d;
+  --el-panel-3: #303338;
+  --el-line: #3a3d43; --el-line-2: #2d2f33; --el-line-strong: #55595f;
+  --el-ink: #f0eee9; --el-ink-soft: #b7b3ab; --el-mute: #8f8b83;
+  --el-on-accent: #1d1a14;
+  --el-accent: #c2a273; --el-accent-hover: #d0b184;
+  --el-accent-soft: rgba(194,162,115,0.15);
+  --el-ok: #9cc3a4; --el-warn: #d4b06a; --el-fail: #d08272;
+  --el-info: #9db3c0; --el-live: #9cc3a4; --el-teal: #9db9b0;
   --el-shadow-1: 0 1px 2px rgba(0,0,0,.35);
   --el-shadow-2: 0 6px 20px rgba(0,0,0,.35);
   --el-shadow-3: 0 24px 70px rgba(0,0,0,.65);
   --el-overlay: rgba(0,0,0,.72);
-  --el-focus-ring: rgba(184,153,107,.55);
-  /* 2026-10-29 (owner: "still not osx like ... much higher quality"):
-     macOS geometry — soft 10px controls, 12–14px cards, capsule chips. */
+  --el-focus-ring: rgba(194,162,115,.55);
   --el-radius: 10px;
   --el-font-body: 'Inter', 'SF Pro Text', 'Segoe UI Variable', sans-serif;
   --el-font-display: 'Inter', 'SF Pro Display', 'Segoe UI Variable', sans-serif;

@@ -38,6 +38,25 @@ def dark_default(names: list) -> str:
 CURRENT = dict()          # the applied theme's tokens; canvas widgets (the
 
 
+def contrast(a: str, b: str) -> float:
+    """WCAG contrast ratio between two #rgb/#rrggbb colours."""
+    def lum(hexc: str) -> float:
+        h = hexc.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        try:
+            r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+        except (ValueError, TypeError):
+            return 0.5
+
+        def pick(c):
+            return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+        return 0.2126 * pick(r) + 0.7152 * pick(g) + 0.0722 * pick(b)
+
+    la, lb = sorted((lum(a), lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
 def gtk_css(tokens: dict) -> str:
     def tok(name, fallback):
         return tokens.get(name, fallback)
@@ -113,12 +132,8 @@ def gtk_css(tokens: dict) -> str:
     # macOS puts the sidebar a touch BELOW the content tone in dark mode
     # (window #1c1c1e over content #242426), and a touch above in light.
     sidebar = _toward(bg, 0, 0.035) if dark else _toward(bg, 0, 0.03)
-    card_hi = "rgba(255,255,255,0.045)" if dark else "rgba(255,255,255,0.75)"
     # Zebra tint for long tables: faint enough to read as texture, not bands.
     stripe = "rgba(255,255,255,0.022)" if dark else "rgba(0,0,0,0.022)"
-    shadow = ("0 1px 2px rgba(0,0,0,0.35), 0 10px 30px rgba(0,0,0,0.16)"
-              if dark else
-              "0 1px 2px rgba(0,0,0,0.05), 0 10px 30px rgba(0,0,0,0.06)")
     accent_hover = tok("--el-accent-hover", accent)
 
     CURRENT.clear()
@@ -379,11 +394,11 @@ button:focus {{ outline: 2px solid {focus}; outline-offset: 1px; }}
 scrollbar {{ background: transparent; border: none; }}
 scrollbar trough {{ background: transparent; border: none; box-shadow: none; }}
 scrollbar slider {{
-  background-color: alpha({ink_soft}, 0.22); border: none;
+  background-color: alpha({line_strong}, 0.85); border: none;
   border-radius: 3px; min-width: 5px; min-height: 28px; margin: 3px;
 }}
-scrollbar slider:hover {{ background-color: alpha({ink_soft}, 0.42); }}
-scrollbar slider:active {{ background-color: alpha({ink}, 0.55); }}
+scrollbar slider:hover {{ background-color: alpha({ink_soft}, 0.85); }}
+scrollbar slider:active {{ background-color: alpha({ink}, 0.75); }}
 /* The tool rail is the one scroller that ends on its own pause/play
    buttons, so its bar is hidden outright (wheel scrolling still works)
    rather than painted across them. */
@@ -418,8 +433,10 @@ window, dialog {{ background-color: {bg}; }}
   border-radius: 999px; padding: 4px 12px; font-size: 12px;
   font-weight: 600; letter-spacing: 0.1px; color: {ink_soft};
 }}
+/* One type scale for both themes: 11 tag lines, 13 body, 15 card head,
+   20 section head, 28 page title. */
 .gw-headline {{
-  font-size: 27px; font-weight: 700; letter-spacing: -0.7px; color: {ink};
+  font-size: 28px; font-weight: 700; letter-spacing: -0.7px; color: {ink};
 }}
 .gw-h2 {{
   font-size: 15px; font-weight: 650; letter-spacing: -0.1px; color: {ink};
@@ -459,10 +476,11 @@ switch:checked slider {{ background-color: #ffffff; }}
 }}
 
 /* --- cards ---------------------------------------------------------- */
+/* No card casts a shadow (2026-10-30 design pass): hierarchy comes from
+   type size and whitespace; elevation belongs to modals alone. */
 .gw-card {{
-  background-color: {panel}; border: 1px solid {hair};
-  border-radius: 14px; padding: 16px;
-  box-shadow: 0 1px 0 {card_hi} inset, {shadow};
+  background-color: {panel}; border: 1px solid {line};
+  border-radius: {radius}; padding: 16px; box-shadow: none;
 }}
 .gw-card box {{ background-color: {panel}; }}
 .gw-card button box {{ background-color: transparent; }}
@@ -477,9 +495,8 @@ frame.gw-card, frame.gw-card > box {{ background-color: {panel}; }}
    The frame keeps the card surface and radius but no inner padding — the
    row's own box owns its margins, so the row stays 34px tall. */
 frame.gw-prow {{
-  background-color: {panel}; border: 1px solid {hair};
-  border-radius: 10px; padding: 0;
-  box-shadow: 0 1px 0 {card_hi} inset;
+  background-color: {panel}; border: 1px solid {line};
+  border-radius: {radius}; padding: 0; box-shadow: none;
 }}
 frame.gw-prow > box, .gw-prow box {{ background-color: {panel}; }}
 .gw-prow button box {{ background-color: transparent; }}
@@ -492,10 +509,7 @@ frame.gw-prow > box, .gw-prow box {{ background-color: {panel}; }}
 frame.gw-prow.red {{ border-left: 3px solid {fail}; }}
 frame.gw-prow.warn {{ border-left: 3px solid {warn}; }}
 frame.gw-prow.ok {{ border-left: 3px solid {ok}; }}
-frame.gw-prow:hover {{
-  border-color: {hair2};
-  box-shadow: 0 1px 0 {card_hi} inset, 0 6px 18px rgba(0,0,0,0.12);
-}}
+frame.gw-prow:hover {{ border-color: {hair2}; }}
 .gw-scanline {{ font-size: 12px; color: {ink_soft}; }}
 /* Scan state on the row edge: working now, waiting, finished, needs a
    look. The bar beside it moves; the stripe tells the page at a glance. */
@@ -689,9 +703,8 @@ treeview header button:hover {{ background-color: transparent; color: {ink}; }}
 
 /* --- assistant chat ------------------------------------------------- */
 .gw-chat {{
-  background-color: {panel}; border: 1px solid {line2};
-  border-radius: 14px; padding: 12px 16px 12px;
-  box-shadow: 0 1px 0 {card_hi} inset, {shadow};
+  background-color: {panel}; border: 1px solid {line_strong};
+  border-radius: {radius}; padding: 12px 16px 12px; box-shadow: none;
 }}
 /* The assistant should be identifiable at a glance, not just by its text:
    the header sits on its own strip under a hairline, and the card carries

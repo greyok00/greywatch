@@ -315,13 +315,10 @@ class MainWindow(Gtk.Window):
         st.set_margin_end(metrics.PAGE_X)
         st.set_margin_bottom(metrics.PAGE_BOTTOM)
 
-        # Page header, macOS-style: a quiet eyebrow, one large verdict, and
-        # the tally underneath. Two labels on one line (the old layout) made
-        # the verdict and the count read as the same rank.
+        # Page header: one large verdict, and the tally underneath. The
+        # tracked all-caps eyebrow above it repeated the rail's own label and
+        # was decoration, not navigation (design pass 2026-10-30).
         top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        eyebrow = Gtk.Label(label="Overview", xalign=0)
-        eyebrow.add_css_class("gw-eyebrow")
-        top.append(eyebrow)
         self.status_words = Gtk.Label(xalign=0)
         self.status_words.set_xalign(0)
         self.status_words.add_css_class("gw-headline")
