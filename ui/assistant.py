@@ -1825,8 +1825,36 @@ if GIOMM_OK:
             sub.add_css_class("gw-assistant-sub")
             words.append(title)
             words.append(sub)
+            words.set_hexpand(True)
             head.append(words)
+            # One click copies the whole conversation. Selecting text inside
+            # a bubble is still possible, but a person reading a long
+            # answer wants the thread in the clipboard, not one paragraph
+            # at a time (owner 2026-10-30).
+            copy = Gtk.Button(label="Copy chat")
+            copy.add_css_class("gw-mini")
+            copy.set_valign(Gtk.Align.START)
+            copy.set_tooltip_text(
+                "Copy every message in this conversation as plain text")
+            copy.connect("clicked", self._copy_chat)
+            head.append(copy)
             return head
+
+        def _copy_chat(self, btn):
+            lines = []
+            for text, mine, _intro in getattr(self, "_transcript", []):
+                lines.append(f"{'You' if mine else 'GreyWatch'}: {text}")
+            body = "\n\n".join(lines).strip()
+            if not body:
+                return
+            try:
+                from gi.repository import Gdk
+                Gdk.Display.get_default().get_clipboard().set(body)
+                btn.set_label("Copied")
+                GLib.timeout_add_seconds(
+                    2, lambda: btn.set_label("Copy chat") and False)
+            except Exception:
+                btn.set_label("Copy failed")
 
         def note_state(self, ok: bool, err: str) -> None:
             # "Assistant ready." in monospace read like debug output, and a
@@ -2134,8 +2162,15 @@ if GIOMM_OK:
             adj.set_value(bottom - page + 4)
             return False
 
-        def ask(self, question: str):
-            """Ask a question from outside the composer (a finding row)."""
+        def ask(self, question: str, finding: dict | None = None):
+            """Ask a question from outside the composer (a finding row).
+
+            `finding` pins the answer to that exact row: the advice engine
+            explains this line, rather than the router guessing a tool from
+            the question's words.
+            """
+            if finding:
+                self._pinned_finding = dict(finding)
             self.entry.set_text(question)
             self._send()
 
@@ -2148,15 +2183,22 @@ if GIOMM_OK:
             self._turn_seq = getattr(self, "_turn_seq", 0) + 1
             seq = self._turn_seq
             holder = self._bubble("…")
+            pinned, self._pinned_finding = \
+                getattr(self, "_pinned_finding", None), None
 
             def work():
                 try:
                     pack = build_pack(self._get_status(), self._get_recent(),
                                       question)
-                    plan = plan_turn(question, pack, self._get_llm(),
-                                     self._names, self._friendly,
-                                     anchor=self._last_rows,
-                                     last_tool=self._last_tool)
+                    if pinned:
+                        plan = {"kind": "template", "slot": "advice",
+                                "tool": pinned.get("tool"),
+                                "text": advice.advise_event(pinned)}
+                    else:
+                        plan = plan_turn(question, pack, self._get_llm(),
+                                         self._names, self._friendly,
+                                         anchor=self._last_rows,
+                                         last_tool=self._last_tool)
                 except Exception as err:               # never eat the question
                     GLib.idle_add(self._plan_error, seq, holder, str(err))
                     return

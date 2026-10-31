@@ -359,7 +359,7 @@ def advise_event(row: dict, extra_steps=None) -> str:
     if hit is None:
         meaning = _plain.sentence({"from_tool": tool, "text": text})
         risk = ("the tool recorded it; check the row's detail if it repeats"
-                if sev in ("INFO", "MEDIUM") else
+                if sev in ("INFO", "MEDIUM", "LOW") else
                 "this is high severity — review it before assuming it is fine")
         steps = _steps_for(tool, details=True)
     else:
