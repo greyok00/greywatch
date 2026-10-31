@@ -19,14 +19,16 @@ Everything stays on your computer: no cloud, no account, no telemetry.
 
 ## Install
 
-greywatch targets Debian 12+, Ubuntu 24.04+ and Linux Mint 22+. It needs GTK4,
-PyGObject and systemd, which those releases already ship.
+The release `.deb` and tarball are compiled for Python 3.12, the version
+Ubuntu 24.04 LTS and Linux Mint 22 ship, along with the GTK4, PyGObject and
+systemd they need. On a Debian-based release with a different Python, build
+from a checkout (below) or use the wheel.
 
-Download `greywatch_0.1.6_amd64.deb` from the
+Download `greywatch_0.1.7_amd64.deb` from the
 [releases page](https://github.com/greyok00/greywatch/releases), then install it:
 
 ```bash
-sudo apt install ./greywatch_0.1.6_amd64.deb
+sudo apt install ./greywatch_0.1.7_amd64.deb
 ```
 
 The package installs under `/opt/greywatch`, enables `greywatch.service`, binds
@@ -42,7 +44,7 @@ To upgrade, install the newer `.deb` the same way. To remove it,
 Each release includes a checksum file, so you can verify the download first:
 
 ```bash
-sha256sum -c greywatch_0.1.6_amd64.deb.sha256
+sha256sum -c greywatch_0.1.7_amd64.deb.sha256
 ```
 
 If you would rather build from a checkout, this route installs under
@@ -61,7 +63,7 @@ python3 cli.py status
 The wheel is for the command line only:
 
 ```bash
-pip install https://github.com/greyok00/greywatch/releases/download/v0.1.6/greywatch-0.1.6-py3-none-any.whl
+pip install https://github.com/greyok00/greywatch/releases/download/v0.1.7/greywatch-0.1.7-py3-none-any.whl
 gw --version
 gw status
 ```
@@ -237,7 +239,7 @@ uses `/usr/lib/greywatch`. Keep one. Check what the service runs with
 ## Build and test
 
 ```bash
-python3 -m pytest tests/ -q     # 1185 passing, 1 skipped
+python3 -m pytest tests/ -q     # 1186 passing, 1 skipped
 ruff check .
 ./build-cython.sh               # compile the modules (150)
 packaging/build-deb.sh

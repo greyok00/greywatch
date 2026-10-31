@@ -1,3 +1,4 @@
+import os
 import pathlib
 import shutil
 import subprocess
@@ -37,6 +38,23 @@ def test_deb_packages_the_program():
         contents = subprocess.run(["dpkg-deb", "--contents", str(deb)],
                                   capture_output=True, text=True,
                                   check=True).stdout
+        # A module that ships .so dropped its .py, so the package only runs
+        # on the Python minor it was compiled for; Depends must say so or
+        # apt installs a tree that cannot import (Debian 12's 3.11, or 3.13).
+        abis = {line.split(".cpython-")[1].split("-")[0]
+                for line in contents.splitlines() if ".cpython-" in line}
+        deps = next(line for line in map(str.strip, info.stdout.splitlines())
+                    if line.startswith("Depends:"))
+        if abis:
+            assert len(abis) == 1, abis
+            abi = abis.pop()
+            minor = int(abi[1:])
+            assert f"python3 (>= {abi[0]}.{minor})" in deps, deps
+            assert f"python3 (<< {abi[0]}.{minor + 1})" in deps, deps
+            # no readable fallback survives beside the compiled module
+            assert "opt/greywatch/ui/window.py" not in contents
+        else:
+            assert "python3 (>= 3.12)" in deps, deps
         for required in ("opt/greywatch/greywatch_daemon.py",
                          "opt/greywatch/cli.py",
                          "etc/systemd/system/greywatch.service",
@@ -73,3 +91,26 @@ def test_deb_packages_the_program():
         version = subprocess.run(["python3", str(cli), "--version"],
                                  capture_output=True, text=True, check=True)
         assert version.stdout.startswith(f"greywatch {VER} (pyproject.toml)")
+
+def test_the_installer_refuses_modules_from_another_python(tmp_path):
+    """A tree whose .so were built elsewhere must not be deployed silently."""
+    tree = tmp_path / "tree"
+    (tree / "ui").mkdir(parents=True)
+    mod = tree / "ui" / "window.cpython-399-x86_64-linux-gnu.so"
+    mod.write_bytes(b"")
+    src = (ROOT / "install.sh").read_text()
+    start = src.index("_check_abi() {")
+    fn = src[start:src.index("\n}\n", start) + 3]
+    probe = tmp_path / "probe.sh"
+    probe.write_text(fn + '\n_check_abi "$1"\n')
+    env = {**os.environ, "GREYWATCH_PYTHON": shutil.which("python3") or "python3"}
+    got = subprocess.run(["bash", str(probe), str(tree)],
+                         capture_output=True, text=True, env=env)
+    assert got.returncode == 2
+    assert "compiled for Python 3.99" in got.stderr
+    assert "wheel" in got.stderr
+    # A source checkout (no .so) passes the same check.
+    mod.unlink()
+    ok = subprocess.run(["bash", str(probe), str(tree)],
+                        capture_output=True, text=True, env=env)
+    assert ok.returncode == 0 and not ok.stderr

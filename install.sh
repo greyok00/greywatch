@@ -77,8 +77,29 @@ fi
 subst() { sed -e "s|__GW_LIB__|$LIB|g" -e "s|__GW_DATA__|$DATA|g" \
               -e "s|__GW_UI_USER__|$UI_USER|g" "$1"; }
 
+_check_abi() { # $1 = program tree about to be deployed
+    # A compiled module is ABI-tagged and its .py fallback was dropped, so
+    # this tree only runs on that exact Python minor. Refuse now with the
+    # reason; the alternative is an ImportError after the daemon restart.
+    local abis want py
+    abis="$(find "$1" -name '*.so' -printf '%f\n' 2>/dev/null |
+            sed -n 's/.*\.cpython-\([0-9]\)\([0-9][0-9]*\)[^0-9].*/\1.\2/p' |
+            sort -u | tr '\n' ' ')"
+    [ -z "${abis// /}" ] && return 0     # a source checkout: nothing compiled
+    py="${GREYWATCH_PYTHON:-/usr/bin/python3}"    # what the unit will run
+    want="$("$py" -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || true)"
+    case " $abis " in
+        *" $want "*) return 0 ;;
+    esac
+    echo "ERROR: this tree is compiled for Python $abis, but /usr/bin/python3 is ${want:-unknown}." >&2
+    echo "       Build from a checkout on this machine (./build-cython.sh) or install" >&2
+    echo "       the wheel, which carries readable Python for any 3.12 or newer." >&2
+    exit 2
+}
+
 _copy_program() { # $1 = destination program tree (code, root-owned)
     local dest="$1"
+    _check_abi "$GW"
     [ -d "$dest" ] && rm -rf "$dest"
     mkdir -p "$dest"
     tar -C "$GW" -cf - \

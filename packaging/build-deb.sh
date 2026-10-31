@@ -9,9 +9,9 @@
 # (substituted exactly the way install.sh does, with __GW_LIB__ pointing
 # at /opt/greywatch), the system-wide icons and launcher, and a postinst
 # that enables-and-starts the daemon. The compiled .so modules ride along
-# when present (built by ./build-cython.sh); every module also ships its
-# .py, so any Python version >= 3.12 can run the package even where the
-# compiled copy does not match the interpreter.
+# when present (built by ./build-cython.sh); a module that ships .so drops
+# its .py, so the package runs on the Python minor it was compiled for and
+# Depends says exactly which.
 #
 # No root required: the package is built and owned with dpkg-deb's
 # --root-owner-group, then verified with dpkg-deb --info/--contents.
@@ -53,6 +53,21 @@ python3 "$GW/packaging/strip-source.py" "$PAYLOAD"
 # --- is mechanical — a .py with a compiled sibling goes; everything
 # --- run by path survives.
 python3 "$GW/packaging/drop_fallbacks.py" "$PAYLOAD"
+
+# --- the compiled modules are ABI-tagged (cpython-312-…): a package that
+# --- ships them runs on that exact Python minor, and only on it. Say so
+# --- in Depends so apt refuses an install that could not start (a 3.11
+# --- Debian 12, or a 3.13 box), instead of leaving the user with a tree
+# --- that has no .py to fall back to.
+PY_DEP="python3 (>= 3.12)"
+SO_ABIS="$(find "$PAYLOAD" -name '*.so' -printf '%f\n' 2>/dev/null |
+           sed -n 's/.*\.cpython-\([0-9]\)\([0-9][0-9]*\)[^0-9].*/\1.\2/p' |
+           sort -V)"
+if [ -n "$SO_ABIS" ]; then
+    lo="$(printf '%s\n' "$SO_ABIS" | head -1)"
+    hi="$(printf '%s\n' "$SO_ABIS" | tail -1)"
+    PY_DEP="python3 (>= $lo), python3 (<< ${hi%.*}.$(( ${hi##*.} + 1 )))"
+fi
 
 # --- systemd units and polkit policy, filled like install.sh fills them:
 # --- code in the root-owned program dir, runtime state in /var/lib/greywatch
@@ -146,7 +161,7 @@ Architecture: amd64
 Maintainer: $MAINTAINER
 Section: utils
 Priority: optional
-Depends: python3 (>= 3.12), python3-gi, gir1.2-gtk-4.0, \
+Depends: $PY_DEP, python3-gi, gir1.2-gtk-4.0, \
  gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, polkitd, systemd
 Recommends: ufw, fail2ban, clamav-daemon, clamav-freshclam, yara, \
  rkhunter, lynis, aide-common, arpwatch, apparmor, auditd, nftables, \

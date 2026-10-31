@@ -14,7 +14,10 @@ permissions:
 
 jobs:
   bundle:
-    runs-on: ubuntu-latest
+    # Pinned on purpose: the .deb and tarball ship compiled modules tagged
+    # for this image's Python (3.12 on 24.04). Moving the label moves the
+    # package's ABI, and the README names Ubuntu 24.04 / Mint 22.
+    runs-on: ubuntu-24.04
     env:
       ARTIFACT: greywatch-${{ github.ref_name }}-linux-x86_64.tar.gz
     permissions:
