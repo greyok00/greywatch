@@ -468,11 +468,21 @@ class Daemon:
         self._ask_policy_label = (f"ask the dashboard popup; "
                                   f"{self._ask_policy} when it is closed "
                                   f"(headless fallback)")
+        from appfw.askgate import AskGate
+        from appfw.config import load as cfg_load
+        cfg = cfg_load(self.data_dir)
+        self._ask_timeout = float(cfg.get("ask_timeout_sec", 30) or 30)
+        # One prompt per destination per window: a random address that
+        # opens many connections must not bombard the owner with dialogs.
+        self._ask_gate = AskGate(
+            self._ask_policy, timeout=self._ask_timeout,
+            window=float(cfg.get("ask_repeat_window_sec", 300) or 300),
+            ask=self._appfw_ask_user)
         from ui.settings import TrustList
         from ui.blocklist import BlockList
         eng = Engine(self.data_dir, on_event=self._appfw_event,
                      trust_list=TrustList(), blocklist=BlockList(),
-                     ask=self._appfw_ask_user)
+                     ask=self._ask_gate.ask)
         if not eng.start():
             self.appfw_engine = None
             return False
@@ -661,7 +671,8 @@ class Daemon:
                 os.chmod(req, 0o644)
             except OSError:
                 pass
-            deadline = time.monotonic() + self.ASK_TIMEOUT_S
+            deadline = time.monotonic() + getattr(
+                self, "_ask_timeout", self.ASK_TIMEOUT_S)
             while time.monotonic() < deadline:
                 if ans.exists():
                     doc = json.loads(ans.read_text())

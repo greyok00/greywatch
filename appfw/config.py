@@ -29,6 +29,12 @@ DEFAULTS = {
     ],
     "nfqueue_num": 111,
     "nfqueue_copy_range": 256,
+    # How long a prompt may sit unanswered before the engine takes the
+    # configured headless verdict, and how long one destination's answer
+    # suppresses further prompts (ports change per connection; a random
+    # address must not be able to bombard the owner).
+    "ask_timeout_sec": 30,
+    "ask_repeat_window_sec": 300,
     "reconcile_interval_sec": 2,
     "heartbeat_interval_sec": 5,
 }
@@ -62,6 +68,21 @@ def mtime(data_dir) -> float:
         return config_path(data_dir).stat().st_mtime
     except OSError:
         return 0.0
+
+
+def mode_of(cfg: dict) -> str:
+    """The one name the UI, the daemon and the engine all use.
+
+    learning  — everything is decided and logged, nothing is enforced.
+    standard  — rules are enforced, unanswered prompts fail open.
+    whitelist — only explicitly approved traffic; unanswered prompts fail
+                closed, with the engine's safety valve as the way back.
+    """
+    if cfg.get("learning_mode"):
+        return "learning"
+    if cfg.get("strict_mode") and not cfg.get("fail_open", True):
+        return "whitelist"
+    return "standard"
 
 
 def build_ruleset(cfg: dict) -> str:

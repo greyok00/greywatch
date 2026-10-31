@@ -74,6 +74,8 @@ class Engine:
         self._log_suppressed = 0
         self._backlog_fails = 0            # watchdog measurement failures
         self._last_backlog = None          # last measured verdict backlog
+        self._whitelist_suspended = False
+        self._whitelist_down_since = 0.0
 
     SIOCOUTQ = 0x5411
 
@@ -354,11 +356,54 @@ class Engine:
             self.state = "running"
         return ok
 
+    def _suspend_whitelist(self) -> None:
+        if self._whitelist_suspended:
+            return
+        safe = dict(config.load(self.data_dir), fail_open=True)
+        script = config.build_ruleset(safe)
+        self._remove_nft()
+        try:
+            subprocess.run(["nft", "-f", "-"], input=script,
+                           capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        self._whitelist_suspended = True
+        self.state = "suspended (whitelist safety valve)"
+        history.record(self.data_dir, "suspend",
+                       reason="worker unavailable 5 s — traffic restored "
+                              "fail-open")
+        self.on_event("appfw: whitelist suspended for safety — traffic "
+                      "is fail-open until the worker returns")
+
+    def _resume_whitelist(self) -> None:
+        self._whitelist_suspended = False
+        self._whitelist_down_since = 0.0
+        self._rearm("whitelist worker healthy again")
+        history.record(self.data_dir, "resume", reason="worker healthy")
+        self.on_event("appfw: whitelist re-armed — traffic is fail-closed "
+                      "again")
+
     def _watchdog_step(self) -> bool:
         """Keep the table armed. Never disarm on trouble: the nftables
         queue already carries 'flags bypass' in standard mode, so a sick
         worker degrades to per-packet bypass instead of an open network.
         Returns False only when the engine itself could not stay armed."""
+        cfg = config.load(self.data_dir)
+        whitelist = bool(cfg.get("strict_mode")) and not cfg.get(
+            "fail_open", True)
+        if whitelist and self._worker_healthy():
+            if self._whitelist_suspended:
+                self._resume_whitelist()
+        elif whitelist and not self._whitelist_suspended:
+            # Fail-closed arms are the one place where a dead worker is a
+            # total outage: every new connection would sit in the queue
+            # until its bypass window, so the valve restores traffic
+            # fail-open until the worker is back. The owner's config is
+            # never rewritten — this is a runtime state, not a setting.
+            if self._whitelist_down_since == 0.0:
+                self._whitelist_down_since = time.monotonic()
+            elif time.monotonic() - self._whitelist_down_since >= 5.0:
+                self._suspend_whitelist()
         if not self.table_present():
             self.on_event("appfw watchdog: table was removed — reinstalling")
             self._rearm("table was removed externally")
