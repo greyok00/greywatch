@@ -152,7 +152,7 @@ def test_detail_and_advisory_descriptors_load(tmp_path):
         {"id": "clam", "group": "malware", "what": "ClamAV",
          "severity": "INFO", "advisory": True, "probe": "false",
          "advisory_action": {"kind": "install", "package": "clamav"}},
-        {"id": "doc", "group": "docs", "what": "MAC",
+        {"id": "doc", "group": "docs", "what": "macOS",
          "severity": "INFO", "advisory": True, "probe": "true",
          "advisory_action": {"kind": "manual",
                              "command": "grep -r apparmor /etc"}},
