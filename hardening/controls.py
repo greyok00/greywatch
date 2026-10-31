@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from dataclasses import dataclass, field
 
 _REQUIRED = ("id", "group", "what", "severity")
 _LIST_KEYS = ("nist", "cis")
 
 KNOWN_CONTROL_ACTIONS = frozenset({"install-prompt"})
+
+# Advisory descriptors: the only shapes the Harden page can act on. The
+# wizard's older string `action` field is separate and stays untouched.
+KNOWN_ACTION_KINDS = frozenset({"updates", "install", "manual"})
+_PKG_RE = re.compile(r"^[a-z0-9.+-]+$")
 
 
 @dataclass
@@ -31,6 +37,8 @@ class Control:
     persist: bool = False
     condition: str = "always"
     action: str | None = None
+    detail: str = ""
+    advisory_action: dict | None = None
 
 
 def _norm_default(value):
@@ -49,6 +57,36 @@ def _norm_action(value):
         return None
     normed = value.strip().lower()
     return normed if normed in KNOWN_CONTROL_ACTIONS else None
+
+
+def _norm_detail(value) -> str:
+    """Read-only display command for the card's 'current' line. Refuses
+    privilege verbs outright: a controls-file mistake must not become an
+    escalation path, and the detector's runner would refuse it anyway."""
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text or any(w in text.split() for w in
+                       ("sudo", "su", "doas", "pkexec")):
+        return ""
+    return text
+
+
+def _norm_advisory_action(value):
+    if not isinstance(value, dict):
+        return None
+    kind = str(value.get("kind") or "").strip().lower()
+    if kind not in KNOWN_ACTION_KINDS:
+        return None
+    if kind == "updates":
+        return {"kind": "updates"}
+    if kind == "install":
+        pkg = value.get("package")
+        return ({"kind": "install", "package": pkg}
+                if isinstance(pkg, str) and _PKG_RE.match(pkg) else None)
+    cmd = value.get("command")
+    return ({"kind": "manual", "command": cmd.strip()}
+            if isinstance(cmd, str) and cmd.strip() else None)
 
 
 def _norm_condition(value):
@@ -146,5 +184,8 @@ def load_controls(base_dir: pathlib.Path) -> list[Control]:
             persist=bool(e.get("persist", False)),
             condition=_norm_condition(e.get("condition")),
             action=(_norm_action(e.get("action"))),
+            detail=_norm_detail(e.get("detail", "")),
+            advisory_action=_norm_advisory_action(
+                e.get("advisory_action")),
         ))
     return out

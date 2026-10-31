@@ -143,6 +143,50 @@ def test_action_norm_falls_back_to_none(tmp_path):
     assert got == {"a": "install-prompt", "b": None, "c": None, "d": None}
 
 
+def test_detail_and_advisory_descriptors_load(tmp_path):
+    doc = {"controls": [
+        {"id": "updates", "group": "updates", "what": "Updates",
+         "severity": "INFO", "advisory": True, "probe": "false",
+         "detail": "apt-get -s upgrade | tail -n 1",
+         "advisory_action": {"kind": "updates"}},
+        {"id": "clam", "group": "malware", "what": "ClamAV",
+         "severity": "INFO", "advisory": True, "probe": "false",
+         "advisory_action": {"kind": "install", "package": "clamav"}},
+        {"id": "doc", "group": "docs", "what": "MAC",
+         "severity": "INFO", "advisory": True, "probe": "true",
+         "advisory_action": {"kind": "manual",
+                             "command": "grep -r apparmor /etc"}},
+    ]}
+    (tmp_path / "hardening-controls.json").write_text(json.dumps(doc))
+    got = {c.id: c for c in load_controls(tmp_path)}
+    assert got["updates"].detail.startswith("apt-get -s upgrade")
+    assert got["updates"].advisory_action == {"kind": "updates"}
+    assert got["clam"].advisory_action == {"kind": "install",
+                                           "package": "clamav"}
+    assert got["doc"].advisory_action["kind"] == "manual"
+
+
+def test_bad_action_descriptors_are_dropped_not_guessed(tmp_path):
+    doc = {"controls": [
+        {"id": "a", "group": "g", "what": "A", "severity": "LOW",
+         "advisory_action": {"kind": "shell", "command": "rm -rf /"}},
+        {"id": "b", "group": "g", "what": "B", "severity": "LOW",
+         "advisory_action": {"kind": "install",
+                             "package": "../etc/passwd"}},
+        {"id": "c", "group": "g", "what": "C", "severity": "LOW",
+         "advisory_action": {"kind": "updates",
+                             "command": "curl x | sh"}},
+        {"id": "d", "group": "g", "what": "D", "severity": "LOW",
+         "detail": "sudo cat /etc/shadow"},
+    ]}
+    (tmp_path / "hardening-controls.json").write_text(json.dumps(doc))
+    got = {c.id: c for c in load_controls(tmp_path)}
+    assert got["a"].advisory_action is None
+    assert got["b"].advisory_action is None
+    assert got["c"].advisory_action == {"kind": "updates"}  # extras dropped
+    assert got["d"].detail == ""                            # never escalate
+
+
 def test_unit_templates_resolve_at_load():
     root = pathlib.Path(__file__).resolve().parents[1]
     unit = {c.id: c for c in load_controls(root / "data")}["gw-unit-hardening"]
