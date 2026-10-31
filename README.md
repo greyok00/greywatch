@@ -239,9 +239,9 @@ uses `/usr/lib/greywatch`. Keep one. Check what the service runs with
 ## Build and test
 
 ```bash
-python3 -m pytest tests/ -q     # 1186 passing, 1 skipped
+python3 -m pytest tests/ -q     # 1163 passing, 3 skipped
 ruff check .
-./build-cython.sh               # compile the modules (150)
+./build-cython.sh               # compile the modules (77)
 packaging/build-deb.sh
 packaging/build-tarball.sh
 packaging/build-wheel.sh
