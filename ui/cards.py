@@ -7,7 +7,7 @@ from __future__ import annotations
 SCAN_MODES = [
     {"key": "scan-all", "scope": "root", "helper": "tool-control",
      "icon": "system-run-symbolic", "title": "Scan everything", "short": "Scan all",
-     "about": "Runs every scanner at once: antivirus, rootkit, audit, integrity, and a temp-folder sweep. One click, one password."},
+     "about": "Runs every scanner in turn: antivirus, rootkit, audit, integrity, then a temp-folder sweep. One click, one password."},
     {"key": "yara-tmp-scan", "unit": "yara-tmp-scan.service", "scope": "user",
      "icon": "gw-tool-yara-tmp-scan-symbolic", "title": "Quick scan", "short": "Quick scan",
      "about": "Scans the temporary folder for threats. Takes seconds."},
