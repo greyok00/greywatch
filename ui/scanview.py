@@ -21,6 +21,9 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk, Pango  # noqa: E402
 
+from ui.plain import muted as theme_muted  # noqa: E402
+from ui.plain import severity_colour  # noqa: E402
+
 SCANNER_ORDER = ("clamav", "rkhunter", "lynis", "aide", "yara-tmp-scan")
 NAMES = {"clamav": "Antivirus", "rkhunter": "Rootkit", "lynis": "Audit",
          "aide": "File integrity", "yara-tmp-scan": "Quick scan"}
@@ -30,11 +33,9 @@ TITLES = {"scan-all": "Scan everything", "yara-tmp-scan": "Quick scan",
 
 STATE_WORDS = {"queued": "Queued", "running": "Scanning", "done": "Done",
                "failed": "Failed", "interrupted": "Interrupted"}
-STATE_INK = {"queued": "#8b9bb0", "running": "#5b8def", "done": "#4dd07a",
-             "failed": "#ff5a52", "interrupted": "#ffc940"}
-SEVERITY_INK = {"HIGH": "#ff5a52", "CRITICAL": "#ff5a52",
-                "MEDIUM": "#ffc940", "LOW": "#8b9bb0", "INFO": "#8b9bb0"}
-MUTED = "#8b9bb0"
+# Colours come from the active theme at paint time (ui.plain), never from
+# literals: the hardcoded dark-theme hexes read as washed-out blue-grey on
+# the light cream theme (2026-10-31).
 
 # Severity words mean nothing without a sentence beside them; the owner
 # read a lone red "HIGH" and asked what it was for (2026-10-30).
@@ -240,7 +241,7 @@ class ScanConsole(Gtk.Box):
         self.painted_live = live
         if not live:
             self.headline.set_markup(
-                f"<span size='13000' font_family='Inter' color='{MUTED}'>"
+                f"<span size='13000' font_family='Inter' color='{theme_muted()}'>"
                 "No scan yet. Press a scan button above — each protection "
                 "below shows its own progress and log while it runs."
                 "</span>")
@@ -262,7 +263,7 @@ class ScanConsole(Gtk.Box):
         self.headline.set_markup(
             f"<span size='15000' font_family='Inter' weight='650'>{line}"
             f"</span><span size='12000' font_family='Inter' "
-            f"color='{MUTED}'>{extra}</span>")
+            f"color='{theme_muted()}'>{extra}</span>")
         self._paint_findings(findings)
         self._paint_history()
 
@@ -282,7 +283,7 @@ class ScanConsole(Gtk.Box):
                     else "Nothing to report yet.")
             quiet = Gtk.Label(label=said, xalign=0)
             quiet.set_xalign(0)
-            quiet.set_markup(f"<span color='{MUTED}'>{said}</span>")
+            quiet.set_markup(f"<span color='{theme_muted()}'>{said}</span>")
             self.findings_box.append(quiet)
         for f in real:
             self.findings_box.append(self._finding_row(f))
@@ -304,7 +305,7 @@ class ScanConsole(Gtk.Box):
 
     def _finding_row(self, f) -> Gtk.Button:
         sev = str(f.get("severity", "INFO")).upper()
-        ink = SEVERITY_INK.get(sev, MUTED)
+        ink = severity_colour(sev)
         btn = Gtk.Button()
         btn.add_css_class("gw-finding")
         btn.add_css_class("sev-" + sev.lower())
@@ -352,7 +353,7 @@ class ScanConsole(Gtk.Box):
         head.set_wrap(True)
         head.set_markup(
             f"<span size='15000' weight='650'>{sev}</span> "
-            f"<span color='{SEVERITY_INK.get(sev, MUTED)}'>"
+            f"<span color='{severity_colour(sev)}'>"
             f"{SEVERITY_MEANING.get(sev, '')}</span>")
         body.append(head)
         what = Gtk.Label(label=text, xalign=0)
