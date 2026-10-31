@@ -144,6 +144,42 @@ def test_the_findings_pane_shrinks_to_its_content(tmp_path):
     view.unparent()
 
 
+def test_past_six_findings_a_show_all_button_opens_every_row(tmp_path):
+    # The pane shows about six rows; without a doorway the cut-off row read
+    # as "only six findings" (owner, 2026-10-31).
+    rows = [{"scan_id": "s1", "tool": "aide", "severity": "HIGH",
+             "text": f"Changed since the file-integrity baseline: /f{i}",
+             "routine": False} for i in range(9)]
+    view = ScanConsole(tmp_path)
+    win = Gtk.Window()
+    win.set_child(view)
+    view.paint({"scanners": {}}, rows)
+    pump()
+    assert view.more_btn.get_visible()
+    assert view.more_btn.get_label() == "Show all 9 findings"
+    view._show_all_findings()
+    pump()
+    dialogs = [w for w in Gtk.Window.list_toplevels()
+               if isinstance(w, Gtk.Dialog)
+               and w.get_title() == "All findings"]
+    assert dialogs, "the dialog opens"
+    scroller = next(w for w in _walk(dialogs[0].get_content_area())
+                    if isinstance(w, Gtk.ScrolledWindow))
+    box = next(w for w in _walk(scroller) if isinstance(w, Gtk.Box))
+    count, child = 0, box.get_first_child()
+    while child is not None:
+        count += 1
+        child = child.get_next_sibling()
+    assert count == 9                     # every finding, not the six on top
+    # Six or fewer: no button, the pane is the whole list.
+    view.paint({"scanners": {}}, rows[:6])
+    pump()
+    assert not view.more_btn.get_visible()
+    for d in dialogs:
+        d.destroy()
+    win.destroy()
+
+
 def _walk(widget):
     child = widget.get_first_child()
     while child is not None:

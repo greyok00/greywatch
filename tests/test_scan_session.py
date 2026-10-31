@@ -1,4 +1,5 @@
 import datetime as dt
+import os
 import pathlib
 import sys
 
@@ -78,6 +79,24 @@ def test_warning_summary_reaches_the_live_document(tmp_path):
     assert row["state"] == "done"
     assert row["warned"] is True
     assert row["findings"] == 0
+
+
+def test_scan_directories_are_readable_by_the_desktop_group(tmp_path):
+    # Scans run as root and a plain mkdir made scans/ and scan-logs/ root-only
+    # 0700, so the window (running as the desktop user) showed an empty
+    # RECENT SCANS list and could not read a scanner's log (owner,
+    # 2026-10-31). Both roots and the per-scan folder are 0770 root:<group>.
+    (tmp_path / "security-hardening").mkdir()
+    (tmp_path / "scan-request.json").write_text(json.dumps(
+        {"id": "20261030T074500-a1e1", "key": "clamav"}))
+    svc, _calls = _service(tmp_path, [(["startup", "/tmp/a: OK"], 0)])
+    svc.gid = os.getgid()
+    _run(svc)
+    for path in (tmp_path / "scans", tmp_path / "scan-logs",
+                 tmp_path / "scan-logs" / "20261030T074500-a1e1"):
+        assert path.is_dir(), path
+        assert path.stat().st_mode & 0o777 == 0o770, path
+        assert path.stat().st_gid == os.getgid(), path
 
 
 def test_lynis_tests_count_and_warnings_are_medium():

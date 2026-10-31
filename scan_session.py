@@ -602,6 +602,8 @@ class ScanService:
         self.session = {"scan_id": scan_id, "key": key, "state": "running",
                         "started_at": _now_iso(), "ended_at": None,
                         "note": ""}
+        self._shared_dir(self.dir / "scan-logs")
+        self._shared_dir(scans_dir(self.dir))
         self._advance()
         if self.session is None:            # nothing could start
             return
@@ -633,6 +635,7 @@ class ScanService:
         argv = line_buffered(key, argv)
         scan_id = (self.session or {}).get("scan_id") or "scan"
         log = scan_log_path(self.dir, scan_id, key)
+        self._shared_dir(log.parent)
         unit = unit_name(scan_id, key) if self._systemd else None
         limit = SCANNERS.get(key, {"timeout_s": 3600})["timeout_s"]
         try:
@@ -807,12 +810,30 @@ class ScanService:
         except (OSError, ValueError) as e:
             self.log(f"could not write scan-live.json: {type(e).__name__}")
 
+    def _shared_dir(self, path) -> None:
+        """Create a scan directory the desktop user can actually read.
+
+        Scans run as root, so a plain mkdir produced root-only ``0700``
+        directories: the window runs as the desktop user, and RECENT SCANS
+        stayed empty, "Show in folder" had nothing to open, and a scanner's
+        own log could not be read (owner, 2026-10-31). The data directory's
+        pattern — ``0770``, root plus the desktop group — is the fix, and
+        applying it on every scan repairs directories made by older builds.
+        """
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            os.chmod(path, 0o770)
+            if self.gid is not None:
+                os.chown(path, -1, self.gid)
+        except OSError as e:
+            self.log(f"could not prepare {path.name}: {type(e).__name__}")
+
     def _write_summary(self, state: str):
         doc = self._document()
         doc["state"] = state
         target = scans_dir(self.dir) / f"{doc['scan_id']}.json"
+        self._shared_dir(target.parent)
         try:
-            target.parent.mkdir(parents=True, exist_ok=True)
             import status
             status.atomic_replace(str(target), json.dumps(doc),
                                   gid=self.gid)
