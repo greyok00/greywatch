@@ -10,7 +10,7 @@ import subprocess
 import sys
 import threading
 
-from . import config
+from . import config, history
 from .base import Conn
 from .policy import Policy, decide
 from .resolve import Resolver
@@ -65,6 +65,7 @@ class Engine:
         self._reader = None
         self._cfg_mtime = 0.0
         self.running = False
+        self.state = "stopped"
         self._stop = threading.Event()
         self._ctl_sock = None
         self._stall_since = 0.0
@@ -119,19 +120,24 @@ class Engine:
             # the detailed reason was already emitted by _install_nft()
             return False
         self.running = True
+        self.state = "running"
         self._stop.clear()
         self._stall_since = 0.0
         self._watchdog_thread = threading.Thread(
             target=self._watchdog, daemon=True, name="appfw-failopen-watchdog")
         self._watchdog_thread.start()
+        history.record(self.data_dir, "arm",
+                       reason=f"queue {config.load(self.data_dir).get('nfqueue_num')}")
         self.on_event("appfw engine: running "
                       f"(queue {config.load(self.data_dir).get('nfqueue_num')}, "
                       f"worker {self._worker_bin.name})")
         return True
 
-    def stop(self) -> None:
+    def stop(self, reason: str = "switch") -> None:
         self._stop.set()
         self.running = False
+        self.state = f"off ({reason})"
+        history.record(self.data_dir, "stop", reason=reason)
         try:
             if self._proc is not None and self._proc.poll() is None:
                 self._proc.terminate()
@@ -209,6 +215,9 @@ class Engine:
         # last line turned every failure into a row of ^^^^^ in the UI.
         detail = next((ln for ln in lines if ln.startswith("Error:")),
                       lines[-1] if lines else f"exit {run.returncode}")
+        history.record(self.data_dir, "fail",
+                       reason="nftables install failed",
+                       detail=detail.strip())
         self.on_event(f"appfw engine: nftables install failed "
                       f"({detail.strip()}) — OFF")
         self._remove_nft()        # never leave a half-installed table
@@ -272,8 +281,11 @@ class Engine:
             except Exception:
                 pass
             else:
-                self.on_event("appfw worker exited — enforcement OFF")
-                self.running = False
+                if not self._stop.is_set():
+                    history.record(self.data_dir, "respawn",
+                                   reason="worker exited; watchdog will "
+                                          "restart it")
+                    self.on_event("appfw worker exited — respawning")
         threading.Thread(target=_monitor, daemon=True,
                          name="appfw-worker-monitor").start()
 
@@ -303,18 +315,56 @@ class Engine:
         while not self._stop.wait(2.0):
             if not self.running:
                 return
-            if not self._watchdog_step():
-                return
+            self._watchdog_step()
+
+    def table_present(self) -> bool:
+        """Cheap, root-only presence check. A missing table means some
+        other tool (ufw reload, docker, a manual flush) removed ours."""
+        try:
+            run = subprocess.run(
+                ["nft", "list", "table", "inet", NFT_TABLE],
+                capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return run.returncode == 0
+
+    def _worker_healthy(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    def _respawn_worker(self) -> bool:
+        try:
+            self._bind_worker()
+            history.record(self.data_dir, "respawn",
+                           reason="worker was down")
+            return True
+        except Exception as e:          # noqa: BLE001 - keep the table armed
+            history.record(self.data_dir, "fail",
+                           reason=f"respawn: {e}")
+            return False
+
+    def _rearm(self, reason: str) -> bool:
+        self.state = "re-arming"
+        ok = self._install_nft()
+        history.record(self.data_dir, "reinstall" if ok else "fail",
+                       reason=reason)
+        if ok:
+            if not self._worker_healthy() and not self._respawn_worker():
+                self.state = "off (failed: worker unavailable)"
+                return False
+            self.state = "running"
+        return ok
 
     def _watchdog_step(self) -> bool:
-        """One watchdog check; returns False when it fired FAIL-OPEN."""
-        try:
-            if self._proc is None or self._proc.poll() is not None:
-                self.on_event("appfw watchdog: worker gone — FAIL-OPEN")
-                self.stop()
-                return False
-        except OSError:
-            pass
+        """Keep the table armed. Never disarm on trouble: the nftables
+        queue already carries 'flags bypass' in standard mode, so a sick
+        worker degrades to per-packet bypass instead of an open network.
+        Returns False only when the engine itself could not stay armed."""
+        if not self.table_present():
+            self.on_event("appfw watchdog: table was removed — reinstalling")
+            self._rearm("table was removed externally")
+        if not self._worker_healthy():
+            self.on_event("appfw watchdog: worker gone — respawning")
+            self._respawn_worker()
         q = self._query_backlog()
         if q is None:
             # measurement failed — that is NOT "queue empty". Keep the
@@ -335,10 +385,13 @@ class Engine:
             if self._stall_since == 0.0:
                 self._stall_since = time.monotonic()
             elif time.monotonic() - self._stall_since >= 2.0:
+                history.record(self.data_dir, "stall",
+                               reason=f"verdict backlog {q} B")
                 self.on_event(
-                    f"appfw watchdog: verdict backlog {q} B — FAIL-OPEN")
-                self.stop()          # kills worker, deletes nft table
-                return False
+                    f"appfw watchdog: verdict backlog {q} B — worker "
+                    "restarted, firewall stays armed")
+                self._respawn_worker()
+                self._stall_since = 0.0
         else:
             self._stall_since = 0.0
         return True
