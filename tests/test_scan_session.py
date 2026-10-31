@@ -49,6 +49,37 @@ def test_rkhunter_checks_count_and_warnings_are_findings():
     assert p["finding"]["text"].startswith("Warning:")
 
 
+def test_rkhunter_warning_summary_flags_the_scan_but_is_not_a_finding():
+    # rkhunter ends with this line whenever any check failed, and not every
+    # failure prints a "Warning:" line the parser can read. The flag lets
+    # the row say "warnings logged" instead of "clean" (owner, 2026-10-31).
+    p = S.parse_progress(
+        "rkhunter",
+        "One or more warnings have been found while checking the system.")
+    assert p["counted"] is False
+    assert p["finding"] is None
+    assert p["warned"] is True
+    # A plain check line must not set it.
+    p = S.parse_progress("rkhunter", "Checking system commands...")
+    assert not p.get("warned")
+
+
+def test_warning_summary_reaches_the_live_document(tmp_path):
+    (tmp_path / "security-hardening").mkdir()
+    (tmp_path / "scan-request.json").write_text(json.dumps(
+        {"id": "20261030T074500-a1d1", "key": "rkhunter"}))
+    svc, _calls = _service(tmp_path, [([
+        "Checking system commands...",
+        "One or more warnings have been found while checking the system."],
+        0)])
+    _run(svc)
+    live = json.loads((tmp_path / "scan-live.json").read_text())
+    row = live["scanners"]["rkhunter"]
+    assert row["state"] == "done"
+    assert row["warned"] is True
+    assert row["findings"] == 0
+
+
 def test_lynis_tests_count_and_warnings_are_medium():
     p = S.parse_progress("lynis", "  Performing test ID 1.1 (boot)")
     assert p["counted"] is True

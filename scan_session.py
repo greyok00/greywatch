@@ -155,6 +155,11 @@ _CLAM = re.compile(r"^(?P<path>.+?): (?P<verdict>OK|Empty file|"
 _RKH_CHECK = re.compile(r"^\[?[0-9:]{0,8}\]?\s*Checking\s+(?P<what>.*?)"
                         r"(?:\.\.\.|\s*\])?\s*$")
 _RKH_WARN = re.compile(r"Warning:\s*(?P<what>.+)$")
+# rkhunter closes with this summary whenever anything failed a check, and
+# some of those failures never print a "Warning:" line the parser can read.
+# Without it a finished scan was described as "clean" over a log that said
+# warnings were found (owner, 2026-10-31).
+_RKH_SUMMARY = re.compile(r"warnings? (?:have|has) been found", re.I)
 _LYNIS_TEST = re.compile(r"^\s*Performing test\s+(?P<what>.*)$")
 _LYNIS_WARN = re.compile(r"^\s*Warning\s*[:\[]\s*(?P<what>.+?)\s*\]?\s*$")
 _YARA = re.compile(r"^(?P<rule>[A-Za-z0-9_:+.-]{2,64})\s+(?P<path>/\S.*)$")
@@ -207,6 +212,11 @@ def parse_progress(tool: str, line: str):
             return {"counted": False, "current": "",
                     "finding": {"severity": "HIGH",
                                 "text": "Warning: " + m.group("what").strip()}}
+        if _RKH_SUMMARY.search(text):
+            # A flag, not a finding: the individual warnings are recorded
+            # above, and counting the summary too would double them.
+            return {"counted": False, "current": "", "finding": None,
+                    "warned": True}
         return dict(_BLANK)
     if tool == "lynis":
         m = _LYNIS_TEST.match(text)
@@ -584,7 +594,8 @@ class ScanService:
         for k in keys:
             self.children[k] = {
                 "state": "queued", "count": 0, "current": "",
-                "findings": 0, "detail": "", "started_at": None,
+                "findings": 0, "warned": False, "detail": "",
+                "started_at": None,
                 "ended_at": None, "exit_code": None, "handle": None,
                 "started": self.clock(), "last_line": "", "log": [],
                 "log_offset": 0, "unit": None}
@@ -664,6 +675,8 @@ class ScanService:
                 child["current"] = prog["current"][:160]
             if prog["finding"]:
                 self._record_finding(key, prog["finding"], when)
+            if prog.get("warned"):
+                child["warned"] = True
         child["log_offset"] = getattr(handle, "_offset", child["log_offset"])
         rc = handle.poll()
         if rc is not None:
@@ -763,7 +776,8 @@ class ScanService:
                 "counter_label": SCANNERS.get(key, {}).get("counter", "checks"),
                 "count": c["count"], "current": current,
                 "waiting_for": waiting,
-                "findings": c["findings"], "started_at": c["started_at"],
+                "findings": c["findings"], "warned": bool(c.get("warned")),
+                "started_at": c["started_at"],
                 "ended_at": c["ended_at"], "detail": c["detail"],
                 "exit_code": c.get("exit_code"), "duration_s": duration,
                 "log": list(c.get("log") or [])[-4:],

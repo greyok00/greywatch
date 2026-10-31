@@ -147,8 +147,15 @@ def card_text(tool: str, live) -> str:
                                      if sc.get("detail") else "")
     if state == "interrupted":
         return "Last scan interrupted"
-    return f"Last scan done · {n:,} {label}" + \
-        (f" · {finds} found" if finds else " · clean")
+    tail = " · clean"
+    if finds:
+        tail = f" · {finds} found"
+    elif sc.get("warned"):
+        # rkhunter's own closing line says warnings were found even when
+        # none of them matched a "Warning:" line, so the honest word is
+        # "warnings logged", never "clean" (owner, 2026-10-31).
+        tail = " · warnings logged"
+    return f"Last scan done · {n:,} {label}" + tail
 
 
 class ScanConsole(Gtk.Box):
@@ -192,6 +199,18 @@ class ScanConsole(Gtk.Box):
         scroll.set_max_content_height(260)
         scroll.set_child(self.findings_box)
         self.append(scroll)
+
+        # The list is capped at about six rows so the protection list below
+        # stays in view. Past that the cap read as "only six findings",
+        # because a cut-off row with a hairline scrollbar is easy to miss
+        # (owner, 2026-10-31). The count and the doorway make it explicit.
+        self.more_btn = Gtk.Button(label="Show all findings")
+        self.more_btn.add_css_class("gw-mini")
+        self.more_btn.set_halign(Gtk.Align.START)
+        self.more_btn.set_visible(False)
+        self.more_btn.connect("clicked", self._show_all_findings)
+        self.append(self.more_btn)
+        self._last_findings = []
 
         self.routine_expander = Gtk.Expander()
         self.routine_expander.set_visible(False)
@@ -277,6 +296,7 @@ class ScanConsole(Gtk.Box):
         if key == self._find_key:
             return
         self._find_key = key
+        self._last_findings = list(findings)
         for box in (self.findings_box, self.routine_body):
             while (c := box.get_first_child()) is not None:
                 box.remove(c)
@@ -306,8 +326,44 @@ class ScanConsole(Gtk.Box):
             "debris, and tool suggestions. Nothing to act on. Open to read "
             "the exact files.")
         self.routine_expander.set_visible(bool(routine))
+        shown = len(real)
+        self.more_btn.set_visible(shown > 6)
+        self.more_btn.set_label(
+            f"Show all {shown} findings" if shown > 6 else "Show all")
 
-    def _finding_row(self, f) -> Gtk.Button:
+    def _show_all_findings(self, *_a):
+        """Every finding, in a dialog with its own scroll — the list on the
+        page stays short so the protections underneath stay reachable."""
+        findings = self._last_findings or []
+        dialog = Gtk.Dialog(title="All findings",
+                            transient_for=self.get_root(), modal=True)
+        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        dialog.set_default_size(780, 620)
+        body = dialog.get_content_area()
+        body.set_margin_top(12)
+        body.set_margin_bottom(12)
+        body.set_margin_start(18)
+        body.set_margin_end(18)
+        body.set_spacing(8)
+        head = Gtk.Label(xalign=0)
+        head.set_xalign(0)
+        head.set_wrap(True)
+        head.set_text(f"Every finding from this scan, newest first — "
+                      f"{len(findings)} in total. Click one to act on it.")
+        head.add_css_class("gw-page-meta")
+        body.append(head)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        for f in findings:
+            box.append(self._finding_row(f, parent=dialog))
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_vexpand(True)
+        scroll.set_child(box)
+        body.append(scroll)
+        dialog.connect("response", lambda d, _r: d.destroy())
+        dialog.present()
+
+    def _finding_row(self, f, parent=None) -> Gtk.Button:
         sev = str(f.get("severity", "INFO")).upper()
         ink = severity_colour(sev)
         btn = Gtk.Button()
@@ -334,16 +390,18 @@ class ScanConsole(Gtk.Box):
             row.append(w)
         btn.set_child(row)
         btn.set_tooltip_text(f"{sev} — {meaning}\n{f.get('text', '')}")
-        btn.connect("clicked", lambda *_a, row=f: self._open_finding(row))
+        btn.connect("clicked", lambda *_a, row=f:
+                    self._open_finding(row, parent=parent))
         return btn
 
     # ---- one finding: meaning + real actions -------------------------
-    def _open_finding(self, f):
+    def _open_finding(self, f, parent=None):
         sev = str(f.get("severity", "INFO")).upper()
         tool = str(f.get("tool", ""))
         text = str(f.get("text", ""))
         dialog = Gtk.Dialog(title=f"{sev} finding — {NAMES.get(tool, tool)}",
-                            transient_for=self.get_root(), modal=True)
+                            transient_for=parent or self.get_root(),
+                            modal=True)
         dialog.add_button("Close", Gtk.ResponseType.CLOSE)
         body = dialog.get_content_area()
         body.set_margin_top(14)

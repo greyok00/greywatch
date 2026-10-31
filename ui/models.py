@@ -88,6 +88,20 @@ def status_words(state: str, installed=None, paused: bool = False) -> str:
     return "unknown"
 
 
+def service_words(state: str, installed=None, paused: bool = False) -> str:
+    """The pill on a Security Tools row names the SERVICE it describes.
+
+    That row also carries the scan's own sentence and log, so a bare
+    "running" sitting beside "Last scan failed" read as a contradiction:
+    one word was about the unit, the other about the scan (owner,
+    2026-10-31). Naming the service keeps the two apart.
+    """
+    word = status_words(state, installed, paused)
+    if word in ("not installed", "could not check", "unknown"):
+        return word
+    return "service " + word
+
+
 def recent_rows(events: list, limit: int = 6) -> list:
     picked = dedupe([e for e in reversed(events) if feed_worthy(e)])
     picked.sort(key=lambda e: str(e.get("ts", "")), reverse=True)

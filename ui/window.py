@@ -13,7 +13,8 @@ from gi.repository import Gtk, GLib, Gio, Pango    # noqa: E402
 
 from assistant import audit
 from registry import load_registry
-from ui.models import (status_words, recent_rows, age_words, local_clock)
+from ui.models import (status_words, service_words, recent_rows, age_words,
+                       local_clock)
 from ui.plain import (sentence as plain_sentence, friendly_name, what_is,
                       escape, without_mark, soft as pc_soft,
                       muted as pc_muted, ok as pc_ok, state_colour as pc_state_colour,
@@ -1175,12 +1176,15 @@ class MainWindow(Gtk.Window):
         names.append(tool_name)
         box.append(names)
 
-        # Live state only — "● running" / "● needs attention". The extra
-        # detail sentence lives in the row's tooltip; at a 400px column it
-        # used to truncate to "● runni…" and read as a defect.
+        # Live state only — "● service running" / "● service needs
+        # attention". The extra detail sentence lives in the row's tooltip;
+        # at a 400px column it used to truncate to "● runni…" and read as a
+        # defect. The noun "service" is load-bearing: the row below carries
+        # the scan's own sentence, and a bare "running" beside "Last scan
+        # failed" read as a contradiction (owner, 2026-10-31).
         sub = Gtk.Label(xalign=0)
         sub.set_xalign(0)
-        sub.set_size_request(78, -1)
+        sub.set_size_request(150, -1)
         sub.set_ellipsize(Pango.EllipsizeMode.END)
         sub.set_markup(f"<span size='11000' font_family='Inter' "
                        f"color='{pc_muted()}'>checking…</span>")
@@ -3600,7 +3604,7 @@ class MainWindow(Gtk.Window):
                            and not str(e.get("text", "")).startswith(
                                "check-in:")), None)
                 state_color = pc_state_colour(state, paused)
-                words = status_words(state, info.get("installed"), paused)
+                words = service_words(state, info.get("installed"), paused)
                 stamp = self._update_detail(name)
                 if stamp and not paused:
                     words = ("up to date" if state == "GREEN"

@@ -41,6 +41,34 @@ def test_css_carries_the_padding_scale():
     assert "border-radius: 10px; padding: 16px; box-shadow: none;" in css
 
 
+def test_the_protection_pill_names_the_service_it_describes():
+    # The Security Tools row carries both a service state and the scan's
+    # own sentence. A bare "running" beside "Last scan failed" read as a
+    # contradiction (owner, 2026-10-31), so the pill carries the noun; the
+    # tree and tiles keep the short word.
+    from ui.models import service_words, status_words
+
+    assert status_words("GREEN", True, False) == "running"
+    assert service_words("GREEN", True, False) == "service running"
+    assert service_words("RED", True, False) == "service not running"
+    assert service_words("YELLOW", True, False) == "service needs attention"
+    assert service_words("YELLOW", False, False) == "not installed"
+    assert service_words("GREEN", True, True) == "service paused"
+    assert service_words("UNKNOWN", None, False) == "could not check"
+
+
+def test_a_scan_is_never_called_clean_over_its_own_warning_summary():
+    from ui.scanview import card_text
+
+    live = {"scanners": {"rkhunter": {
+        "state": "done", "count": 34, "counter_label": "checks completed",
+        "findings": 0, "warned": True}}}
+    assert card_text("rkhunter", live) == \
+        "Last scan done · 34 checks · warnings logged"
+    live["scanners"]["rkhunter"]["warned"] = False
+    assert card_text("rkhunter", live) == "Last scan done · 34 checks · clean"
+
+
 def test_every_page_starts_at_the_same_inset():
     # Source-level: no page builder may keep a one-off margin of its own.
     src = (pathlib.Path(__file__).resolve().parents[1]
