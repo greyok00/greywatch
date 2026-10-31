@@ -112,10 +112,12 @@ class HardenView(Gtk.Box):
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
         intro.set_wrap(True)
-        intro.set_markup(
-            "<span size='13000' font_family='Inter'>Baseline checks test "
-            "this computer's security settings. Nothing is applied until "
-            "you press Apply.</span>")
+        # Theme tokens, not an inline span: the page lede used to hard-code
+        # Inter at 13px, which ignored whichever theme was active (design
+        # pass 2026-10-30).
+        intro.set_text("Baseline checks test this computer's security "
+                       "settings. Nothing is applied until you press Apply.")
+        intro.add_css_class("gw-page-meta")
         intro.set_tooltip_text(
             "Each check shows where it stands and what applying it "
             "would change.")
@@ -130,7 +132,7 @@ class HardenView(Gtk.Box):
         self.status.set_text("Not run yet.")
         row.append(self.status)
         self.scan_btn = Gtk.Button(label="Run baseline checks")
-        self.scan_btn.add_css_class("gw-cta")
+        self.scan_btn.add_css_class("gw-primary")
         self.scan_btn.connect("clicked", self._on_scan)
         row.append(self.scan_btn)
         self.apply_btn = Gtk.Button(label="Apply baseline")
@@ -255,6 +257,20 @@ class HardenView(Gtk.Box):
         self._dead = True
         return False
 
+    def _focus_primary(self):
+        """One accent per view: whichever action comes next.
+
+        Before a scan the accent sits on Run baseline checks; the moment
+        there is something to apply it moves to Apply and Run drops back to
+        a neutral fill, so the beige never becomes wallpaper (design pass
+        2026-10-30)."""
+        apply_next = bool(self.apply_btn.get_sensitive())
+        for btn, on in ((self.apply_btn, apply_next),
+                        (self.scan_btn, not apply_next)):
+            btn.remove_css_class("gw-primary")
+            btn.remove_css_class("gw-cta")
+            btn.add_css_class("gw-primary" if on else "gw-cta")
+
     def _scan_failed(self, msg):
         if self._dead:
             return False
@@ -263,6 +279,7 @@ class HardenView(Gtk.Box):
         fail_effect = ("Nothing was checked or applied. Apply stays "
                        "off until a scan runs.")
         self.status.set_text(fail_reason + " " + fail_effect)
+        self._focus_primary()
         return False
 
     def _scan_done(self, findings, controls):
@@ -276,6 +293,7 @@ class HardenView(Gtk.Box):
             self.verify_label.set_text(
                 "The scan failed. Nothing was checked. Run the checks "
                 "again.")
+            self._focus_primary()
             return False
         self._findings = findings
         self._scanned = True
@@ -357,6 +375,7 @@ class HardenView(Gtk.Box):
         else:
             self.apply_btn.set_tooltip_text("")
         self.apply_btn.set_sensitive(not gating and auto > 0)
+        self._focus_primary()
         return False
 
     def _load_cve_cache(self) -> dict:
@@ -674,6 +693,7 @@ class HardenView(Gtk.Box):
                         "each need a manual change, so none was "
                         "attempted. The cards name the change for each "
                         "one.")
+                self._focus_primary()
                 return False
             planfile = pathlib.Path(tempfile.mkstemp(
                 prefix="harden-plan-", suffix=".json")[1])
