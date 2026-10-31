@@ -19,7 +19,7 @@ import re
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from ui.plain import muted as theme_muted  # noqa: E402
 from ui.plain import severity_colour  # noqa: E402
@@ -155,10 +155,13 @@ class ScanConsole(Gtk.Box):
     """The findings list, its legend, and recent scans — the actionable half
     of the merged Protections page."""
 
-    def __init__(self, data_dir, on_explain=None):
+    def __init__(self, data_dir, on_explain=None, on_scan=None,
+                 on_show=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.data_dir = pathlib.Path(data_dir)
         self.on_explain = on_explain
+        self.on_scan = on_scan        # (tool) -> run that scanner again
+        self.on_show = on_show        # (path) -> open its folder
         self._pinned = None
         self._find_key = None
         self._history_key = None
@@ -176,8 +179,9 @@ class ScanConsole(Gtk.Box):
         self.legend.add_css_class("gw-page-meta")
         self.legend.set_markup(
             "High findings need a decision now; medium findings are worth a "
-            "look. Click any finding to read what it means and quarantine, "
-            "delete or ask the assistant about it.")
+            "look. Click any finding to read what it means, re-run the "
+            "scanner, show the file, quarantine or delete it, or ask the "
+            "assistant.")
         self.append(self.legend)
 
         self.findings_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
@@ -385,8 +389,39 @@ class ScanConsole(Gtk.Box):
         status.set_wrap(True)
         body.append(status)
 
-        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        actions = Gtk.FlowBox()
+        actions.set_selection_mode(Gtk.SelectionMode.NONE)
+        actions.set_column_spacing(8)
+        actions.set_row_spacing(6)
+        actions.set_max_children_per_line(4)
+        actions.set_homogeneous(False)
+
+        # Manual control first. The dialog used to offer only Close or
+        # "ask the assistant", so a person could not do anything about a
+        # finding themselves (owner 2026-10-30).
+        copy = Gtk.Button(label="Copy details")
+        copy.add_css_class("gw-quiet")
+        copy.set_tooltip_text("Copy the severity, tool and raw line")
+        copy.connect("clicked", self._copy_finding, tool, sev, text, status)
+        actions.append(copy)
+
         path = finding_path(text) if tool in _FILE_TOOLS else None
+        if path and pathlib.Path(path).exists():
+            show = Gtk.Button(label="Show in folder")
+            show.add_css_class("gw-quiet")
+            show.set_tooltip_text(path)
+            show.connect("clicked", self._show_finding, path, status)
+            actions.append(show)
+
+        if tool in SCANNER_ORDER and callable(self.on_scan):
+            again = Gtk.Button(label=f"Run {NAMES.get(tool, tool)} again")
+            again.add_css_class("gw-quiet")
+            again.set_tooltip_text(
+                "Queue the same scanner; it runs after anything already "
+                "in the queue")
+            again.connect("clicked", self._scan_again, tool, dialog)
+            actions.append(again)
+
         if path:
             for label, action in (("Quarantine file", "quarantine"),
                                   ("Delete file", "delete")):
@@ -395,18 +430,53 @@ class ScanConsole(Gtk.Box):
                 b.connect("clicked", self._file_action, action, path,
                           dialog, status)
                 actions.append(b)
+
         ask = Gtk.Button(label="Ask the assistant")
         ask.add_css_class("gw-primary")
-        ask.connect("clicked", self._explain, text, dialog)
+        ask.connect("clicked", self._explain, tool, sev, text, dialog)
         actions.append(ask)
         body.append(actions)
         dialog.present()
 
-    def _explain(self, _btn, text, dialog):
+    def _copy_finding(self, _btn, tool, sev, text, status):
+        detail = (f"{sev} - {NAMES.get(tool, tool)} ({tool})\n{text}")
+        try:
+            clip = Gdk.Display.get_default().get_clipboard()
+            clip.set(detail)
+            status.set_text("Copied. Paste it into a note or a bug report.")
+        except Exception:
+            status.set_text(f"Could not reach the clipboard. The line is:\n"
+                            f"{detail}")
+
+    def _show_finding(self, _btn, path, status):
+        if callable(self.on_show):
+            try:
+                self.on_show(path)
+                status.set_text(f"Opened the folder holding {path}.")
+                return
+            except Exception as exc:            # noqa: BLE001
+                status.set_text(f"Could not open the folder: {exc}")
+        status.set_text(f"The file is at {path}.")
+
+    def _scan_again(self, _btn, tool, dialog):
         dialog.destroy()
+        if callable(self.on_scan):
+            self.on_scan(tool)
+
+    def _explain(self, _btn, tool, sev, text, dialog=None):
+        if dialog is not None:
+            dialog.destroy()
         if callable(self.on_explain):
-            self.on_explain(
-                f"How do I fix this scan finding? {text}")
+            # Tool and severity travel with the question: without them the
+            # assistant matched the text alone and answered an infected-
+            # file finding with "the scan is clean" (owner 2026-10-30).
+            question = (f"How do I fix this {sev} finding from "
+                        f"{NAMES.get(tool, tool)} ({tool})? {text}")
+            row = {"tool": tool, "severity": sev, "text": text}
+            try:
+                self.on_explain(question, row)
+            except TypeError:          # an older one-argument callback
+                self.on_explain(question)
 
     def _file_action(self, btn, action, path, dialog, status):
         warn = ("Quarantine" if action == "quarantine" else "Delete")
