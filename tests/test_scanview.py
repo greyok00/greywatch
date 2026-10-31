@@ -13,7 +13,7 @@ from gi.repository import GLib, Gtk  # noqa: E402
 
 from ui.scanview import (  # noqa: E402
     SEVERITY_MEANING, ScanConsole, card_text, finding_path, read_history,
-    when_label)
+    status_line, when_label)
 
 
 def pump(n=20):
@@ -141,6 +141,44 @@ def test_the_findings_pane_shrinks_to_its_content(tmp_path):
     assert scrollers, "the findings list scrolls"
     assert scrollers[0].get_propagate_natural_height() is True
     assert scrollers[0].get_max_content_height() == 260
+    view.unparent()
+
+
+def test_a_finished_scan_is_never_called_clean_over_a_failed_scanner():
+    # The strip said "Last scan finished · clean" while the antivirus row
+    # underneath said it had failed and reported nothing (owner, 2026-10-31).
+    done = {"state": "done", "real_findings": 0, "scanners": {
+        "clamav": {"state": "failed", "detail": "clamscan exited 2"},
+        "lynis": {"state": "done"},
+    }}
+    assert status_line(done, "below") == (
+        "Last scan finished · 1 scanner did not finish. Details below.")
+    # Every scanner finished: "clean" is now earned.
+    ok = {"state": "done", "real_findings": 0,
+          "scanners": {"lynis": {"state": "done"}}}
+    assert "clean" in status_line(ok, "on the page")
+    # Findings outrank the failure note, and both are named.
+    mixed = dict(done, real_findings=2)
+    text = status_line(mixed, "below")
+    assert "2 findings" in text and "did not finish" in text
+    assert "clean" not in text
+    assert status_line({}, "below") == ""
+    assert "Details below" in status_line(
+        {"state": "running", "real_findings": 0,
+         "scanners": {"clamav": {"state": "running"}}},
+        "below", lambda key: "Antivirus")
+
+
+def test_findings_from_an_earlier_scan_do_not_leak_into_this_one(tmp_path):
+    (tmp_path / "scan-findings.jsonl").write_text("\n".join(json.dumps(r) for r in (
+        {"scan_id": "old", "tool": "aide", "severity": "HIGH",
+         "text": "Changed since the file-integrity baseline: /old", "routine": False},
+        {"scan_id": LIVE["scan_id"], "tool": "clamav", "severity": "HIGH",
+         "text": "Infected file: /tmp/new", "routine": False},
+    )) + "\n")
+    view = ScanConsole(tmp_path)
+    got = view._findings_for(LIVE)
+    assert [r["text"] for r in got] == ["Infected file: /tmp/new"]
     view.unparent()
 
 

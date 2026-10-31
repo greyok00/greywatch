@@ -25,7 +25,7 @@ from ui.themes import (ThemeStore, dark_default, load_setting,
 from ui.cards import SCAN_MODES, quiet_note
 from ui.scanview import NAMES as SCAN_NAMES
 from ui.scanview import (ScanConsole, SCANNER_ORDER, card_text,
-                         read_live)
+                         read_live, status_line)
 from ui.assistant import AssistantPanel
 from ui.harden import HardenView
 from ui.toolicons import icon_name as tool_icon
@@ -3663,28 +3663,12 @@ class MainWindow(Gtk.Window):
         self._scan_status_state = state
         if state is None:
             return
-        rows = (live or {}).get("scanners") or {}
-        finds = int((live or {}).get("real_findings") or 0)
         # On the page itself, "details on the Security Tools page" tells the
         # reader to go where they already are.
         where = ("below" if self.stack.get_visible_child_name() == "deep"
                  else "on the Security Tools page")
-        if state == "running":
-            running = [SCAN_NAMES.get(k, k) for k, v in rows.items()
-                       if (v or {}).get("state") == "running"]
-            msg = ("Scanning: " + ", ".join(running)) if running \
-                else "Finishing the scan…"
-            if finds:
-                msg += f" · {finds} finding{'s' if finds != 1 else ''}"
-            msg += f". Details {where}."
-        elif state == "done":
-            msg = ("Last scan finished"
-                   + (f" · {finds} finding{'s' if finds != 1 else ''}"
-                      if finds else " · clean")
-                   + f". Details {where}.")
-        elif state in ("failed", "interrupted"):
-            msg = f"Last scan {state}. Details {where}."
-        else:
+        msg = status_line(live, where, lambda k: SCAN_NAMES.get(k, k))
+        if not msg:
             return
         owned = self.scan_status.get_text() == getattr(
             self, "_scan_status_text", None)

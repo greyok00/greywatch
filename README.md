@@ -2,9 +2,9 @@
   <img src="doc/images/greywatch-banner.png" alt="greywatch — running wolf" width="440">
 </div>
 
-# greywatch
+# GreyWatch
 
-greywatch collects the security tools already installed on a Debian-based
+GreyWatch collects the security tools already installed on a Debian-based
 desktop — antivirus, rootkit scanner, integrity check, firewall, audit — into
 one window, runs their scans in order, and adds an assistant that reads this
 machine's own event log to answer questions about what they found.
@@ -12,9 +12,9 @@ machine's own event log to answer questions about what they found.
 Everything stays on your computer: no cloud, no account, no telemetry.
 
 <div align="center">
-  <img src="doc/images/assistant-blocked.png" alt="The assistant answering “What program was blocked?”: the block, the reason, the destination identified as Cloudflare, and evidence tiles for the program and the network" width="900">
+  <img src="doc/images/assistant-blocked.png" alt="GreyWatch Assistant answering “Last block”: the newest refused connection, what a deny line means, the destination, and evidence tiles for the program and the server" width="900">
   <br>
-  <sub>Asked “What program was blocked?” — the answer is built from this machine's event log.</sub>
+  <sub>Asked “Last block” — the newest refused connection, read from this machine's own event log.</sub>
 </div>
 
 ## Install
@@ -109,13 +109,9 @@ sudo curl -L --fail -o /var/lib/greywatch/models/Qwen3-1.7B-Q4_K_M.gguf \
 sudo systemctl restart greywatch
 ```
 
-## Scans and the Protections page
+## Scans and the Security Tools page
 
-<div align="center">
-  <img src="doc/images/protections.png" alt="The Protections page: scan buttons, live scanner rows with progress bars and logs, findings with Review and fix, and one row per protection" width="900">
-</div>
-
-The Protections page is where you start a scan and watch it. Six buttons run
+The Security Tools page is where you start a scan and watch it. Six buttons run
 scans: **Scan everything**, **Quick scan**, **Full antivirus scan**, **Rootkit
 scan**, **Security audit**, and **File-integrity check**. They run one at a
 time, in the order you asked for them. Each scanner starts as its own systemd
@@ -241,7 +237,7 @@ uses `/usr/lib/greywatch`. Keep one. Check what the service runs with
 ## Build and test
 
 ```bash
-python3 -m pytest tests/ -q     # 1128 passing, 2 skipped
+python3 -m pytest tests/ -q     # 1185 passing, 1 skipped
 ruff check .
 ./build-cython.sh               # compile the modules (150)
 packaging/build-deb.sh

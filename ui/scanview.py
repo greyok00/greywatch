@@ -158,6 +158,43 @@ def card_text(tool: str, live) -> str:
     return f"Last scan done · {n:,} {label}" + tail
 
 
+def status_line(live, where: str, name_of=None) -> str:
+    """One sentence about the scan for the strip above the page, or "".
+
+    A finished scan is only "clean" when every scanner actually finished. A
+    scanner that failed reported nothing, which is not the same as reporting
+    no problem, and saying "clean" over it hides the failure (owner,
+    2026-10-31).
+    """
+    live = live or {}
+    state = live.get("state")
+    rows = live.get("scanners") or {}
+    finds = int(live.get("real_findings") or 0)
+    if state == "running":
+        name_of = name_of or (lambda key: key)
+        running = [name_of(key) for key, v in rows.items()
+                   if (v or {}).get("state") == "running"]
+        msg = ("Scanning: " + ", ".join(running)) if running \
+            else "Finishing the scan…"
+        if finds:
+            msg += f" · {finds} finding{'s' if finds != 1 else ''}"
+        return msg + f". Details {where}."
+    if state == "done":
+        failed = sum(1 for v in rows.values()
+                     if (v or {}).get("state") == "failed")
+        bits = [f"{finds} finding{'s' if finds != 1 else ''}"] if finds else []
+        if not finds and not failed:
+            bits.append("clean")
+        if failed:
+            bits.append(f"{failed} scanner{'s' if failed != 1 else ''} "
+                        "did not finish")
+        return ("Last scan finished · " + " · ".join(bits)
+                + f". Details {where}.")
+    if state in ("failed", "interrupted"):
+        return f"Last scan {state}. Details {where}."
+    return ""
+
+
 class ScanConsole(Gtk.Box):
     """The findings list, its legend, and recent scans — the actionable half
     of the merged Protections page."""
@@ -236,7 +273,12 @@ class ScanConsole(Gtk.Box):
         if self._pinned:
             return read_findings(self.data_dir, limit=400,
                                  scan_id=self._pinned)
-        return read_findings(self.data_dir, limit=200)
+        # The findings file is appended to by every scan and trimmed in
+        # place, so an unfiltered read mixed a finished scan's rows into the
+        # one on screen: a "clean" headline sat over six HIGH rows left by
+        # an earlier run (owner, 2026-10-31).
+        sid = (live or {}).get("scan_id")
+        return read_findings(self.data_dir, limit=200, scan_id=sid)
 
     def pin(self, scan_id):
         self._pinned = scan_id
