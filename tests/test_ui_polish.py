@@ -22,11 +22,12 @@ def test_one_page_margin_scale():
 
 
 def test_the_scroll_thumb_is_a_tint_not_a_slab():
-    # An opaque 10px band down the page edge read as the "grey overlay"
-    # again in the 2026-10-30 pass; the thumb is now a translucent tint of
-    # the theme's own ink, and the trough stays clear.
+    # An opaque 10px band down the page edge read as the "grey overlay" in
+    # the 2026-10-30 pass; the thumb is a thin rounded bar in the theme's
+    # own hairline tone, and the trough stays clear. (The 2026-10-31 pass
+    # raised its alpha from 0.22 to 0.85, which was too faint to find.)
     css = gtk_css(load_themes()["obsidian"])
-    assert "background-color: alpha(#b4b2ad, 0.22)" in css
+    assert "background-color: alpha(#55595f, 0.85)" in css
     assert "scrollbar trough { background: transparent;" in css
     assert "min-width: 5px; min-height: 28px; margin: 3px;" in css
 
@@ -37,7 +38,7 @@ def test_css_carries_the_padding_scale():
     assert "padding: 9px 13px;" in css
     assert ".gw-card { padding: 16px; }" in css
     # the winning rule near the end of the sheet, not just the base block
-    assert "border-radius: 14px; padding: 16px;" in css
+    assert "border-radius: 10px; padding: 16px; box-shadow: none;" in css
 
 
 def test_every_page_starts_at_the_same_inset():

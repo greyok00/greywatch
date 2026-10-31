@@ -100,9 +100,12 @@ def test_watchdog_counts_measurement_failures(tmp_path, monkeypatch):
     assert eng.running                            # engine NOT torn down
 
 
-def test_watchdog_fail_open_on_sustained_stall(tmp_path, monkeypatch):
-    """A measured, sustained verdict backlog trips FAIL-OPEN; a single
-    spike does not."""
+def test_watchdog_restarts_the_worker_on_a_sustained_stall(tmp_path,
+                                                           monkeypatch):
+    """A measured, sustained verdict backlog restarts the worker and keeps
+    the table armed. The engine never disarms on a stall: the standard-mode
+    queue already carries 'flags bypass', so a sick worker degrades to
+    per-packet bypass rather than an open network (2026-10-30 design)."""
     from appfw.engine import Engine
     eng = Engine(data_dir=tmp_path)
     eng.running = True
@@ -111,7 +114,7 @@ def test_watchdog_fail_open_on_sustained_stall(tmp_path, monkeypatch):
     events = []
     eng.on_event = events.append
     clock = {"t": 1000.0}
-    stops = []
+    stops, respawns = [], []
     monkeypatch.setattr("appfw.engine.time.monotonic", lambda: clock["t"])
     backlog = {"q": 1}
     # SIOCOUTQ's third argument is a pointer to an int, so ioctl hands back
@@ -120,16 +123,24 @@ def test_watchdog_fail_open_on_sustained_stall(tmp_path, monkeypatch):
         "appfw.engine.fcntl.ioctl",
         lambda fd, req, arg=b"\0\0\0\0": backlog["q"].to_bytes(4, "little"))
     eng.stop = lambda: stops.append("stopped")
+    eng.table_present = lambda: True
+    eng._respawn_worker = lambda: respawns.append("respawn") or True
 
     assert eng._watchdog_step()                  # one spike: arms, no stop
-    assert stops == []
+    assert stops == [] and respawns == []
     backlog["q"] = 1 << 20
     assert eng._watchdog_step()                  # still >65536 but <2 s
-    assert stops == []
+    assert stops == [] and respawns == []
+    assert eng.state == "running (bypassing: queue full)"
     clock["t"] += 3.0
-    assert not eng._watchdog_step()              # sustained → FAIL-OPEN
-    assert stops == ["stopped"]
-    assert any("FAIL-OPEN" in e for e in events)
+    assert eng._watchdog_step()                  # sustained → worker restarted
+    assert respawns == ["respawn"]
+    assert stops == []                           # the table stays armed
+    assert any("verdict backlog" in e for e in events)
+    assert eng.state == "running (bypassing: queue full)"
+    backlog["q"] = 1                             # backlog clears → plain state
+    assert eng._watchdog_step()
+    assert eng.state == "running"
 
 
 # ---- fix 5: the headless ask policy is explicit and configurable -------
