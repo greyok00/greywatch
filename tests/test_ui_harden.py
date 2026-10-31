@@ -109,6 +109,8 @@ def _find_card_texts(view):
             texts = []
             while b is not None:
                 t = b.get_text() if hasattr(b, "get_text") else ""
+                if not t and hasattr(b, "get_label"):
+                    t = b.get_label() or ""
                 if t:
                     texts.append(t)
                 b = b.get_next_sibling()
@@ -428,3 +430,65 @@ def test_apply_success_rescans_the_cards():
     pump(40)
     assert len(seen) > after_first, "apply must re-run the checks"
     assert "gap-control GREEN" in view.verify_label.get_text()
+
+
+def _card_texts_after(view):
+    view._on_scan(None)
+    pump()
+    return "\n".join(_find_card_texts(view))
+
+
+def test_advisory_card_gets_a_button_that_confirms_once():
+    from hardening.controls import Control
+    ctrl = Control("advisory-install", "malware", "ClamAV is not installed",
+                   probe="false", severity="INFO", advisory=True,
+                   advisory_action={"kind": "install", "package": "clamav"})
+    view = HardenView(controls=[ctrl], runner=fake_runner,
+                      helper=lambda a: (0, "APPLY advisory-install 0\n", ""))
+    view._on_scan(None)
+    pump()
+    assert "Install ClamAV" in _card_texts_after(view)
+    confirms, plans = [], []
+
+    def helper(args):
+        plans.append(json.loads(pathlib.Path(args[1]).read_text()))
+        return 0, "APPLY advisory-install 0\n", ""
+
+    view._helper = helper
+    view._confirm = lambda spec: confirms.append(spec) or True
+    view._on_action(None, ctrl)
+    import time
+    for _ in range(50):
+        pump(4)
+        if plans:
+            break
+        time.sleep(0.02)
+    assert confirms and confirms[0]["kind"] == "install"
+    assert plans and plans[0]["entries"][0]["verb"] == "pkg-install"
+    assert plans[0]["entries"][0]["package"] == "clamav"
+
+
+def test_batch_apply_never_runs_advisory_actions():
+    from hardening.controls import Control
+    ctrl = Control("advisory-updates", "updates", "Updates pending",
+                   probe="false", severity="INFO", advisory=True,
+                   advisory_action={"kind": "updates"})
+    view = HardenView(controls=[ctrl], runner=fake_runner,
+                      helper=lambda a: pytest.fail("batch must not run it"))
+    view._on_scan(None)
+    pump()
+    view._on_apply(None)
+    pump()
+    assert not view.apply_btn.get_sensitive()
+
+
+def test_restart_banner_lists_only_validated_units():
+    view = HardenView(controls=[CONTROLS[0]], runner=fake_runner)
+    view._show_restart_banner(
+        {"reboot_required": True, "packages": ["linux-image-1"],
+         "services": ["ssh", "bad;unit"]})
+    pump()
+    text = view.restart_banner.get_text()
+    assert "ssh" in text and "bad;unit" not in text
+    assert view.restart_btn.get_label() == "Restart those services"
+    assert view.restart_box.get_visible()

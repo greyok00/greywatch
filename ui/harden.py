@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import tempfile
 import threading
@@ -141,6 +142,27 @@ class HardenView(Gtk.Box):
         self.undo_btn.connect("clicked", self._on_undo)
         row.append(self.undo_btn)
         self.append(row)
+
+        # Pending restarts after an update. Hidden until an update action
+        # asks the helper what is still holding old libraries.
+        self.restart_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                                   spacing=10)
+        self.restart_box.set_visible(False)
+        self.restart_banner = Gtk.Label(xalign=0)
+        self.restart_banner.set_xalign(0)
+        self.restart_banner.set_wrap(True)
+        self.restart_banner.set_hexpand(True)
+        self.restart_btn = Gtk.Button(label="Restart those services")
+        self.restart_btn.add_css_class("gw-cta")
+        self.restart_btn.connect("clicked", self._on_restart_services)
+        later_btn = Gtk.Button(label="Leave them until later")
+        later_btn.connect(
+            "clicked", lambda _b: self.restart_box.set_visible(False))
+        self.restart_box.append(self.restart_banner)
+        self.restart_box.append(self.restart_btn)
+        self.restart_box.append(later_btn)
+        self.restart_units: list[str] = []
+        self.append(self.restart_box)
 
         # Until a scan runs, the card area is empty; a blank half-screen
         # read as a broken page (owner 2026-10-30). One sentence says what
@@ -427,8 +449,190 @@ class HardenView(Gtk.Box):
                 f"<span size='11000' font_family='Inter' color='{pc_soft()}'>"
                 f"current: {escape(fnd.current[:200])}</span>")
             box.append(cur)
+        action_btn = self._action_button(control)
+        if action_btn is not None:
+            box.append(action_btn)
         frame.set_child(box)
         return frame
+
+    _ACTION_LABEL = {
+        "updates": "Apply updates",
+        "install": "Install ClamAV",
+        "manual": "Copy search command",
+    }
+
+    def _action_button(self, control):
+        action = getattr(control, "advisory_action", None)
+        if not action or not getattr(control, "advisory", False):
+            return None
+        kind = action.get("kind")
+        btn = Gtk.Button(label=self._ACTION_LABEL.get(kind, "Do it"))
+        btn.add_css_class("gw-cta")
+        btn.set_halign(Gtk.Align.START)
+        if kind == "manual":
+            btn.connect("clicked", lambda _b: self._copy_command(
+                action.get("command", "")))
+        else:
+            btn.connect("clicked", lambda _b: self._on_action(_b, control))
+        return btn
+
+    def _copy_command(self, command):
+        if not command:
+            return
+        try:
+            self.get_clipboard().set(command)
+        except Exception:          # clipboard is best-effort on a bare test
+            return
+        self.status.set_text("Search command copied. Nothing was run.")
+
+    _CONFIRM = {
+        "updates": ("Apply pending updates?",
+                    "Packages are replaced and cannot be undone. Services "
+                    "are not restarted; a reboot may be needed."),
+        "install": ("Install ClamAV?",
+                    "The engine and definitions are installed. Nothing is "
+                    "scanned automatically."),
+    }
+
+    def _confirm(self, spec):
+        dialog = Gtk.AlertDialog()
+        dialog.set_modal(True)
+        title, body = self._CONFIRM.get(
+            spec["kind"], ("Run this action?", "This cannot be undone."))
+        dialog.set_message(title)
+        dialog.set_detail(body)
+        dialog.set_buttons(["Cancel", "Run"])
+        dialog.set_cancel_button(0)
+        dialog.set_default_button(0)
+        loop = GLib.MainLoop()
+        result = {"choice": -1}
+
+        def done(source, res):
+            try:
+                result["choice"] = source.choose_finish(res)
+            except GLib.Error:
+                result["choice"] = -1
+            loop.quit()
+
+        dialog.choose(None, None, done)
+        loop.run()
+        return result["choice"] == 1
+
+    def _on_action(self, _btn, control):
+        action = control.advisory_action or {}
+        kind = action.get("kind")
+        if kind not in ("updates", "install"):
+            return
+        spec = {"kind": kind, "package": action.get("package", ""),
+                "control_id": control.id}
+        if not self._confirm(spec):
+            return
+        fix = ([["pkg-upgrade"]] if kind == "updates"
+               else [["pkg-install", action["package"]]])
+        self.status.set_text("Running the advisory action. One password "
+                             "prompt may appear…")
+
+        def worker():
+            rc, out, err = self._run_steps(control.id, fix)
+            GLib.idle_add(self._action_done, rc, out, err, kind)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _run_steps(self, cid, fix):
+        """One-entry plan through the same helper contract as Apply."""
+        entries, _skipped = planfile_entries(
+            [{"id": cid, "fix": fix}],
+            self._scanned_controls or self._controls or [])
+        fd, name = tempfile.mkstemp(prefix="gw-action-", suffix=".json")
+        path = pathlib.Path(name)
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump({"entries": entries}, fh)
+            return self._helper_out(["apply", str(path)])
+        finally:
+            path.unlink(missing_ok=True)
+
+    def _action_done(self, rc, out, err, kind):
+        if self._dead:
+            return False
+        colors = parse_apply_output((out or "") + "\n" + (err or ""))
+        if rc != 0:
+            self.status.set_text(
+                "The action did not complete. Nothing else was changed.")
+        else:
+            self.status.set_text("Done. The checks run again now.")
+            self._on_scan(None)
+            if kind == "updates":
+                self._check_restarts()
+        if colors:
+            self.verify_label.set_text(
+                "\n".join(f"{cid} {color}" for cid, color in colors.items()))
+        return False
+
+    def _check_restarts(self):
+        def worker():
+            rc, out, err = self._run_steps("pending-restarts-read",
+                                           [["pending-restarts"]])
+            GLib.idle_add(self._restart_done, rc, out)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _restart_done(self, rc, out):
+        if self._dead or rc != 0:
+            return False
+        doc = {}
+        for line in (out or "").splitlines():
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    doc = json.loads(line)
+                except ValueError:
+                    doc = {}
+                break
+        if doc:
+            self._show_restart_banner(doc)
+        return False
+
+    def _show_restart_banner(self, doc):
+        import re
+        units = [u for u in (doc.get("services") or [])
+                 if isinstance(u, str)
+                 and re.fullmatch(r"[A-Za-z0-9@._-]+", u)]
+        self.restart_units = units
+        self.restart_box.set_visible(True)
+        if units:
+            line = ("These services still hold old libraries: "
+                    + ", ".join(units))
+        elif doc.get("reboot_required"):
+            line = "A reboot is needed to finish the update."
+        else:
+            line = "No restart is needed."
+        self.restart_banner.set_text(line)
+        self.restart_btn.set_sensitive(bool(units))
+
+    def _on_restart_services(self, _btn):
+        if not self.restart_units:
+            return
+        if not self._confirm({"kind": "restart"}):
+            return
+        units = ",".join(self.restart_units)
+        self.restart_btn.set_sensitive(False)
+
+        def worker():
+            rc, out, err = self._run_steps(
+                "restart-services", [["restart-units", units]])
+            GLib.idle_add(self._restart_action_done, rc)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _restart_action_done(self, rc):
+        if self._dead:
+            return False
+        self.restart_box.set_visible(False)
+        self.status.set_text(
+            "Services restarted." if rc == 0
+            else "Some services could not be restarted. See the logs.")
+        return False
 
     def _on_apply(self, _btn):
         self.apply_btn.set_sensitive(False)
