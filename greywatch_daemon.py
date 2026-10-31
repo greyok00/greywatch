@@ -384,19 +384,28 @@ class Daemon:
                 snap["tools"][name]["paused"] = True
         eng = getattr(self, "appfw_engine", None)
         try:
-            running = eng is not None and eng.running
             enabled = True
             try:
                 from appfw.engine import read_enabled
                 enabled = read_enabled(self.data_dir)
             except Exception:
                 pass
-            snap["appfw_engine"] = (
-                "running" if running else
-                ("off (owner switch in data/appfw)" if not enabled
-                 else "off (engine failed to start — see the event log)"))
+            if eng is not None:
+                # The engine owns its own sentence (running, re-arming,
+                # suspended by the valve, …). Guessing from a bool is how
+                # the tile said "running" over a dead worker.
+                snap["appfw_engine"] = str(eng.state or "running")
+            elif not enabled:
+                snap["appfw_engine"] = "off (switch)"
+            else:
+                snap["appfw_engine"] = "off (failed: engine not armed)"
         except Exception as e:
             self.count_failure("status", "appfw summary", e)
+        try:
+            from appfw import history as appfw_history
+            snap["appfw_history"] = appfw_history.recent(self.data_dir, 3)
+        except Exception as e:
+            self.count_failure("status", "appfw history", e)
         try:
             eng_state = ({"state": "running", "restarts": 0,
                           "ask_policy": self._ask_policy_label,

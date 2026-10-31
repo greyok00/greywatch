@@ -427,6 +427,8 @@ class Engine:
         self._backlog_fails = 0
         self._last_backlog = q
         if q > 65536:
+            if not self._whitelist_suspended:
+                self.state = "running (bypassing: queue full)"
             if self._stall_since == 0.0:
                 self._stall_since = time.monotonic()
             elif time.monotonic() - self._stall_since >= 2.0:
@@ -439,6 +441,8 @@ class Engine:
                 self._stall_since = 0.0
         else:
             self._stall_since = 0.0
+            if self.state == "running (bypassing: queue full)":
+                self.state = "running"
         return True
 
     def _decide_line(self, line: str, ctl: socket.socket) -> None:

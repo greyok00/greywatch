@@ -26,6 +26,7 @@ from ui.scanview import NAMES as SCAN_NAMES
 from ui.scanview import (ScanConsole, SCANNER_ORDER, card_text,
                          read_live)
 from ui.assistant import AssistantPanel
+from ui.harden import HardenView
 from ui.toolicons import icon_name as tool_icon
 from ui.settings import (TrustList, PausedStore, LearningStore,
                          FirewallModeStore)
@@ -60,7 +61,7 @@ def _fixed(col, width):
 class MainWindow(Gtk.Window):
     def __init__(self, on_status_change=None, tray_available=True,
                  quit_cb=None):
-        super().__init__(title="Greywatch")
+        super().__init__(title="GreyWatch - Linux Endpoint Security")
         # A share of the monitor, not a fixed pixel count: the same
         # build opens on a 1366px laptop and on a 4K panel.
         self.set_default_size(*metrics.window_size())
@@ -164,9 +165,9 @@ class MainWindow(Gtk.Window):
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
         bar.add_css_class("gw-titlebar")
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-        title = Gtk.Label(label="Greywatch", xalign=0)
+        title = Gtk.Label(label="GreyWatch", xalign=0)
         title.add_css_class("gw-title")
-        sub = Gtk.Label(label="Endpoint security", xalign=0)
+        sub = Gtk.Label(label="Linux endpoint security", xalign=0)
         sub.add_css_class("gw-subtitle")
         left.append(title)
         left.append(sub)
@@ -203,8 +204,10 @@ class MainWindow(Gtk.Window):
 
         self._rail_btns = {}
         for key, icon, label in (
-                ("tools", "security-high-symbolic", "Security"),
-                ("deep", "applications-system-symbolic", "Protections"),
+                ("tools", "security-high-symbolic", "Overview"),
+                ("deep", "applications-system-symbolic", "Security Tools"),
+                ("harden", "security-medium-symbolic",
+                 "Endpoint Hardening"),
                 ("logs", "document-open-recent-symbolic", "Logs"),
                 ("settings", "preferences-system-symbolic", "Settings"),
                 ("help", "help-about-symbolic", "Help")):
@@ -265,13 +268,15 @@ class MainWindow(Gtk.Window):
 
     def _build_all(self):
         self._views = {}
-        # "harden" is deliberately absent: baseline hardening is a task in
-        # the Wizard hub, not a top-level page duplicating the wizard.
         # One page owns every protection and every scan (owner 2026-10-30:
         # Tools and Scans showed the same scan as "running" and as "0", and
-        # neither page could be understood on its own).
+        # neither page could be understood on its own). Baseline hardening
+        # is its own page in the rail (owner 2026-10-30: it was a card at
+        # the bottom of the protection list, in a place nobody looked and
+        # every run of it shifted the page under the pointer).
         self._builders = {"tools": self._security_view,
                           "deep": self._protections_view,
+                          "harden": self._harden_view,
                           "logs": self._logs_view,
                           "help": self._help_view,
                           "settings": self._settings_view}
@@ -629,7 +634,7 @@ class MainWindow(Gtk.Window):
         rail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         rail.set_margin_top(2)
         top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        top.append(self._h2("Protections"))
+        top.append(self._h2("Security tools"))
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         top.append(spacer)
@@ -902,6 +907,22 @@ class MainWindow(Gtk.Window):
             self.chat_retry.set_visible(not ok)
         return False
 
+    def _harden_view(self):
+        """Endpoint Hardening: the baseline pass, as its own rail page.
+
+        The same checks the wizard runs, with the controls visible: run
+        the checks, read every card, apply with one password prompt,
+        verify, undo. It used to exist only inside the setup wizard, and
+        its doorway was a card at the bottom of the protection list —
+        reached by scrolling past everything else (owner 2026-10-30).
+        """
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_vexpand(True)
+        self.harden_view = HardenView(win=self)
+        scroller.set_child(self.harden_view)
+        return scroller
+
     def _protections_view(self):
         """Every protection and every scan, on one page (owner 2026-10-30).
 
@@ -914,7 +935,7 @@ class MainWindow(Gtk.Window):
         once, nothing to track" cannot happen again.
         """
         page = self._page_box(8)
-        page.append(self._h1("Protections"))
+        page.append(self._h1("Security Tools"))
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
         intro.set_wrap(True)
@@ -928,7 +949,9 @@ class MainWindow(Gtk.Window):
         page.append(self._scan_strip())
 
         self.scanconsole = ScanConsole(self.data_dir,
-                                       on_explain=self._ask_assistant)
+                                       on_explain=self._ask_assistant,
+                                       on_scan=self._rescan_tool,
+                                       on_show=self._show_folder)
         page.append(self.scanconsole)
 
         sec = Gtk.Label(xalign=0)
@@ -945,10 +968,6 @@ class MainWindow(Gtk.Window):
             tool = self.by_name.get(name) or {"name": name}
             self.card_widgets[name] = self._tool_card(tool)
             rows.append(self.card_widgets[name])
-        # The baseline is one action among the protections, not a banner
-        # above them: the scanner rows have to start in the first screenful
-        # or the live progress is what gets buried (owner 2026-10-30).
-        rows.append(self._baseline_card())
 
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -975,13 +994,21 @@ class MainWindow(Gtk.Window):
         self._paint_scan_rows()
         return True
 
-    def _ask_assistant(self, question: str):
-        """Open Security and put a real question in the composer."""
+    def _ask_assistant(self, question: str, finding: dict | None = None):
+        """Open the Overview and put a real question in the composer.
+
+        When the question came from a finding, the row travels with it so
+        the advice engine answers about that exact line instead of
+        guessing from its words.
+        """
         panel = getattr(self, "assistant_panel", None)
         if panel is None:
             return
         self._show("tools")
-        panel.ask(question)
+        if finding:
+            panel.ask(question, finding=finding)
+        else:
+            panel.ask(question)
 
     def _pulse_bars(self):
         """Step the indeterminate block on every bar whose scanner runs."""
@@ -1057,45 +1084,6 @@ class MainWindow(Gtk.Window):
                                    "interrupted"))
             line.set_visible(True)
             log.set_visible(bool(lines))
-
-    def _baseline_card(self):
-        """The baseline pass lives in the wizard, so this is the doorway.
-
-        The old top-level Harden page duplicated the wizard's scan/apply
-        flow with a second journal; two implementations of one job is how
-        they drift apart. One task, one home.
-        """
-        frame = Gtk.Frame()
-        frame.add_css_class("gw-card")
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        ic = Gtk.Image.new_from_icon_name("security-high-symbolic")
-        ic.set_pixel_size(24)
-        ic.set_valign(Gtk.Align.CENTER)
-        box.append(ic)
-        words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-        words.set_hexpand(True)
-        head = Gtk.Label(xalign=0)
-        head.set_xalign(0)
-        head.set_markup("<span size='14000' font_family='Inter' weight='600'>"
-                        "Security baseline hardening</span>")
-        body = Gtk.Label(xalign=0)
-        body.set_xalign(0)
-        body.set_wrap(True)
-        body.set_markup(
-            f"<span size='11500' font_family='Inter' color='{pc_muted()}'>"
-            "Check this computer against the baseline, preview every change, "
-            "apply them with one password prompt, then verify or undo.</span>")
-        words.append(head)
-        words.append(body)
-        box.append(words)
-        go = Gtk.Button(label="Open the baseline wizard")
-        # The one real call to action on this page, so it gets the accent.
-        go.add_css_class("gw-primary")
-        go.set_valign(Gtk.Align.CENTER)
-        go.connect("clicked", lambda *_a: self._open_setup_wizard())
-        box.append(go)
-        frame.set_child(box)
-        return frame
 
     def _scan_strip(self):
         strip = Gtk.Frame()
@@ -1341,6 +1329,17 @@ class MainWindow(Gtk.Window):
             return
         self._show("deep")
 
+    def _rescan_tool(self, tool_name):
+        """Queue one scanner again, from a finding or a tool row."""
+        self._open_scan_for(None, tool_name)
+
+    def _show_folder(self, path):
+        """Open the folder that holds a file, in the desktop's own file
+        manager. The app only asks; it never deletes or moves anything."""
+        folder = str(pathlib.Path(str(path)).parent)
+        subprocess.Popen(["xdg-open", folder], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+
     def _open_scan_for(self, _btn, tool_name):
         key = "yara-tmp-scan" if tool_name == "yara-watch" else tool_name
         mode = next((m for m in SCAN_MODES if m["key"] == key), None)
@@ -1402,22 +1401,20 @@ class MainWindow(Gtk.Window):
         # stopped. If the monitor reports it running, the marker lied —
         # it is dropped, and no row ever says paused over a live guard.
         tools = snap.get("tools", {})
-        appfw_running = str(snap.get("appfw_engine",
-                                     "")).startswith("running")
         setter = getattr(self.paused, "set", None)
         if not callable(setter):
             return
+        if self.paused.is_paused("appfw"):
+            # The app firewall has its own switch and its own running
+            # state; a pause record for it was the source of "app firewall
+            # paused by itself" (owner 2026-10-30). Never claim it again.
+            setter("appfw", False)
         for t in self.registry:
             name = t["name"]
-            if not self.paused.is_paused(name):
+            if name == "appfw" or not self.paused.is_paused(name):
                 continue
-            if name == "appfw":
-                really_running = appfw_running
-            else:
-                really_running = self._display_state(
-                    name, tools.get(name, {}),
-                    snap.get("updated")) == "GREEN"
-            if really_running:
+            if self._display_state(name, tools.get(name, {}),
+                                   snap.get("updated")) == "GREEN":
                 setter(name, False)
 
     def _on_panic(self, _btn):
@@ -1609,7 +1606,12 @@ class MainWindow(Gtk.Window):
             if state:
                 self._state_override[name] = (
                     state, _dt.datetime.now(_dt.timezone.utc))
-            self.paused.set(name, pause)
+            if name != "appfw":
+                # The firewall's switch lives in appfw/enable.json, and its
+                # real state comes from status.json. Writing a pause record
+                # too is what let the tile say "paused" over an armed engine
+                # and vice versa (owner 2026-10-30).
+                self.paused.set(name, pause)
             msg = (f"{friendly_name(name)} was "
                    f"{'paused' if pause else 'resumed'}.")
         else:
@@ -1632,6 +1634,9 @@ class MainWindow(Gtk.Window):
                            "once without a pop-up.")
                 recorded = "Learning mode records them. Strict stops unknown ones."
                 self.fw_status.set_text(started + " " + recorded)
+            # Keep the just-happened sentence visible for a moment; the
+            # periodic refresh would otherwise replace it instantly.
+            self._fw_status_hold = time.monotonic() + 6.0
             self._refresh_fw()
         self.refresh()
         return False
@@ -1672,6 +1677,32 @@ class MainWindow(Gtk.Window):
         wrap = self._wrap(view)
         wrap.set_hexpand(True)
         content.append(wrap)
+
+        # Manual controls belong here too: the row's own buttons are one
+        # thing, but a person reading this protection's history should not
+        # have to close the dialog to act on it (owner 2026-10-30).
+        acts = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        tool = self.by_name.get(name) or {}
+        if tool.get("unit"):
+            paused = self.paused.is_paused(name)
+            toggle = Gtk.Button(label="Resume" if paused else "Pause")
+            toggle.add_css_class("gw-quiet")
+            toggle.connect(
+                "clicked",
+                lambda _b, n=name, p=paused: (
+                    dlg.destroy(),
+                    self._resume_tool(n) if p else self._pause_tool(n)))
+            acts.append(toggle)
+        scan_keys = {m["key"] for m in SCAN_MODES}
+        if name in scan_keys or name == "yara-watch":
+            run = Gtk.Button(label="Scan now")
+            run.add_css_class("gw-quiet")
+            run.connect("clicked",
+                        lambda _b, n=name: (dlg.destroy(),
+                                            self._rescan_tool(n)))
+            acts.append(run)
+        if acts.get_first_child() is not None:
+            content.append(acts)
 
         wizard_key = WIZARD_FOR.get(name)
         if wizard_key:
@@ -1891,7 +1922,7 @@ class MainWindow(Gtk.Window):
         for key, icon, label, builder in (
                 ("start", "help-contents-symbolic", "Using it",
                  self._help_start),
-                ("tools", "applications-system-symbolic", "Protections",
+                ("tools", "applications-system-symbolic", "Security Tools",
                  self._help_tools),
                 ("questions", "dialog-question-symbolic", "Questions",
                  self._help_questions),
@@ -1931,8 +1962,9 @@ class MainWindow(Gtk.Window):
         guide.set_row_spacing(8)
         for row, (name, what) in enumerate((
                 ("Wizard", "Guided setup, one task at a time."),
-                ("Security", "State of every protection at a glance."),
-                ("Protections", "Every protection, its scan progress and log."),
+                ("Overview", "The assistant and every protection at a glance."),
+                ("Security Tools", "Every protection, its scan progress and log."),
+                ("Endpoint Hardening", "Baseline checks, apply, verify, undo."),
                 ("Logs", "The raw record, newest first."),
                 ("Settings", "Theme, app firewall, trusted items, updates."),
                 ("Help", "What each protection does, in plain words."))):
@@ -2044,9 +2076,11 @@ class MainWindow(Gtk.Window):
             ("What does greywatch do?",
              "One dashboard for every protection already on this computer."),
             ("How do I run a scan?",
-             "Tools: press a scan button; the circle shows progress."),
+             "Security Tools: press a scan button; each scanner shows "
+             "its own progress."),
             ("How do I pause a protection?",
-             "Security: press Pause on its row; Resume brings it back."),
+             "Overview or Security Tools: press Pause on its row; "
+             "Resume brings it back."),
             ("What does At risk mean?",
              "A protection that should be running is not. Not a detection."),
             ("A detection appeared — what now?",
@@ -2060,7 +2094,7 @@ class MainWindow(Gtk.Window):
             ("Is my disk encrypted — how do I check?",
              "Not checked today. Run lsblk in a terminal; LUKS shows crypto."),
             ("How do I undo a wizard change?",
-             "Wizard — Security baseline hardening — Undo last change."),
+             "Endpoint Hardening — Undo last change."),
         ]
         card, inner = self._settings_card(
             "Questions",
@@ -2141,8 +2175,8 @@ class MainWindow(Gtk.Window):
         the about and all the links, including randybarham.com").
         """
         card, inner = self._settings_card(
-            "About greywatch",
-            "AI-enabled endpoint security for the Linux desktop.")
+            "About GreyWatch",
+            "Linux endpoint security, with a local assistant.")
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
         mark = Gtk.Image()
         mark.set_pixel_size(48)          # a pixbuf on its own paints at 16px
@@ -2155,7 +2189,7 @@ class MainWindow(Gtk.Window):
         name = Gtk.Label(xalign=0)
         name.set_xalign(0)
         name.set_markup(f"<span size='13500' font_family='Inter' "
-                        f"weight='700'>greywatch {escape(self._version())}"
+                        f"weight='700'>GreyWatch {escape(self._version())}"
                         "</span>")
         words.append(name)
         why = Gtk.Label(xalign=0)
@@ -2164,7 +2198,7 @@ class MainWindow(Gtk.Window):
         why.set_width_chars(24)          # measure minimum height at a width
         why.set_markup(
             f"<span size='12500' font_family='Inter' "
-            f"color='{pc_muted()}'>Protections watch this machine, the "
+            f"color='{pc_muted()}'>GreyWatch's protections watch this machine, the "
             "event trail stays on this machine, and the assistant's "
             "answers are composed from your own logs by a model that "
             "runs on your own CPU.</span>")
@@ -2195,6 +2229,46 @@ class MainWindow(Gtk.Window):
     def _cfg6(self) -> bool:
         from appfw import config as acfg
         return bool(acfg.load(DATA_DIR).get("ipv6_enabled"))
+
+    def _render_fw_mode_note(self, mode: str | None = None):
+        note = getattr(self, "fw_mode_note", None)
+        if note is None:
+            return
+        if mode is None:
+            combo = getattr(self, "fw_mode", None)
+            mode = (combo.get_active_id() if combo is not None else None) \
+                or "standard"
+        if mode == "whitelist":
+            text = ("Only allowed sites and programs connect. If the worker "
+                    "stops, the app restores fail-open traffic for safety "
+                    "and re-arms whitelist when the worker returns.")
+        elif mode == "learning":
+            text = ("Nothing is blocked. Every new connection is recorded "
+                    "so you can approve it from the list below.")
+        else:
+            text = ("Unknown programs and sites ask once, and your answer "
+                    "is remembered. An unanswered prompt falls back to your "
+                    "headless choice; traffic keeps moving.")
+        note.set_text(text)
+
+    def _on_fw_mode_pick(self, combo):
+        mode = combo.get_active_id() or "standard"
+        from appfw import config as acfg
+        try:
+            cfg = acfg.load(DATA_DIR)
+            cfg["learning_mode"] = (mode == "learning")
+            cfg["strict_mode"] = (mode == "whitelist")
+            cfg["fail_open"] = (mode != "whitelist")
+            acfg.save(DATA_DIR, cfg)      # daemon mtime check re-arms
+        except Exception:
+            pass
+        self._render_fw_mode_note(mode)
+        if hasattr(self, "fw_status"):
+            self._fw_status_hold = time.monotonic() + 3.0
+            self.fw_status.set_text(
+                "Mode saved. The firewall re-arms with it within a few "
+                "seconds.")
+        self._refresh_fw()
 
     def _on_v6_toggle(self, check):
         from appfw import config as acfg
@@ -2572,6 +2646,27 @@ class MainWindow(Gtk.Window):
         learn_row.append(learn_controls)
         fw_inner.append(learn_row)
 
+        from appfw import config as acfg
+        self.fw_mode = Gtk.ComboBoxText()
+        for ident, label in (
+                ("learning", "Learning (record new connections, allow once)"),
+                ("standard", "Standard (ask, then remember; fail-open)"),
+                ("whitelist", "Whitelist only (deny everything unknown)")):
+            self.fw_mode.append(ident, label)
+        self.fw_mode.set_active_id(acfg.mode_of(acfg.load(DATA_DIR)))
+        self.fw_mode.connect("changed", self._on_fw_mode_pick)
+        fw_inner.append(self._settings_row(
+            "Mode", self.fw_mode,
+            "One setting behind three names. Learning records and allows. "
+            "Standard asks, remembers, and keeps traffic moving if the "
+            "helper stalls. Whitelist only lets through what you approved."))
+        self.fw_mode_note = Gtk.Label(xalign=0)
+        self.fw_mode_note.set_xalign(0)
+        self.fw_mode_note.set_wrap(True)
+        self.fw_mode_note.add_css_class("gw-sub")
+        fw_inner.append(self.fw_mode_note)
+        self._render_fw_mode_note()
+
         self.fw_block_title = Gtk.Label(xalign=0)
         self.fw_block_title.set_xalign(0)
         self.fw_block_title.set_markup("<span size='14000' "
@@ -2820,7 +2915,9 @@ class MainWindow(Gtk.Window):
     def _fw_is_on(self) -> bool:
         try:
             snap = daemon_mod.load_status(str(DATA_DIR / "status.json"))
-            return (snap.get("appfw_engine") or "") == "running"
+            # "running (bypassing: queue full)" is still on: the queue's
+            # bypass flag only skips the worker, never the owner's switch.
+            return str(snap.get("appfw_engine") or "").startswith("running")
         except (OSError, ValueError):
             return False
 
@@ -2837,6 +2934,7 @@ class MainWindow(Gtk.Window):
             self.fw_status.set_text(
                 "Waiting for the admin password…" if not was_on else
                 "Stopping the firewall…")
+            self._fw_status_hold = time.monotonic() + 6.0
         try:
             (DATA_DIR / "appfw").mkdir(parents=True, exist_ok=True)
             (DATA_DIR / "appfw" / "enable.json").write_text(
@@ -2996,6 +3094,33 @@ class MainWindow(Gtk.Window):
             f"Blocked: {sel[1]} is never allowed." if ok
             else "That address could not be blocked.")
         self._refresh_trust()
+
+    def _render_appfw_state(self, snap):
+        """Write the engine's own sentence into the tile, verbatim.
+
+        The status file says exactly what the engine is doing — running,
+        bypassing a full queue, re-arming, off (switch), off (failed: …),
+        or suspended by the whitelist safety valve. The last three history
+        entries say how it got there, so "why did it turn off?" has an
+        answer on screen instead of in a root-only log.
+        """
+        text = str(snap.get("appfw_engine") or "").strip()
+        if not text:
+            return
+        if time.monotonic() < getattr(self, "_fw_status_hold", 0.0):
+            return
+        lines = [text]
+        for entry in snap.get("appfw_history") or []:
+            if not isinstance(entry, dict):
+                continue
+            ts = str(entry.get("ts") or "")
+            when = ts[11:16] if len(ts) >= 16 else ""
+            reason = str(entry.get("reason") or "").strip()
+            line = f"{when} {entry.get('event', '')}".strip()
+            lines.append(line + (f" — {reason}" if reason else ""))
+        status = getattr(self, "fw_status", None)
+        if status is not None:
+            status.set_text("\n".join(lines))
 
     def _refresh_fw(self):
         if not hasattr(self, "fw_note"):
@@ -3359,6 +3484,7 @@ class MainWindow(Gtk.Window):
         tools = snap.get("tools", {})
         updated = snap.get("updated")
         self._reconcile_pause_markers(snap)
+        self._render_appfw_state(snap)
         paused_n = sum(1 for t in self.registry
                        if self.paused.is_paused(t["name"]))
         running = sum(1 for t in self.registry
@@ -3538,10 +3664,10 @@ class MainWindow(Gtk.Window):
             return
         rows = (live or {}).get("scanners") or {}
         finds = int((live or {}).get("real_findings") or 0)
-        # On the page itself, "details on the Protections page" tells the
+        # On the page itself, "details on the Security Tools page" tells the
         # reader to go where they already are.
         where = ("below" if self.stack.get_visible_child_name() == "deep"
-                 else "on the Protections page")
+                 else "on the Security Tools page")
         if state == "running":
             running = [SCAN_NAMES.get(k, k) for k, v in rows.items()
                        if (v or {}).get("state") == "running"]
