@@ -1,199 +1,191 @@
 <div align="center">
   <img src="doc/images/greywatch-banner.png" alt="greywatch — running wolf banner" width="600">
-  <p><b>greywatch</b> is an AI-enabled Linux endpoint security suite for the
-  desktop. Every protection on the machine in one dashboard, an assistant
-  that answers from your own logs. No cloud. No account. No telemetry.</p>
+  <p><b>greywatch</b> puts every endpoint protection on a Debian-based Linux
+  desktop into one window, and adds an assistant that answers questions about
+  what it saw. Everything runs on the machine it watches: no cloud, no
+  account, no telemetry.</p>
 </div>
-
-## What it is
-
-greywatch watches the endpoint tools a serious Linux security setup
-already relies on — antivirus, firewall, rootkit scanner, file integrity,
-application firewall and more — and puts all of them, their scans, their
-logs, and every decision they generate into a single desktop app.
-What makes it AI-enabled is the assistant on that dashboard: ask a
-question in plain words and it answers from your machine's real event
-trail, explains the line, and walks you through the fix — while all of
-it, including the model, runs locally.
 
 <div align="center">
-  <img src="doc/images/assistant-chat.png" alt="The greywatch assistant answering a question about a blocked program, with the destination identified as Cloudflare and shown with evidence tiles" width="800">
+<table>
+  <tr>
+    <td><img src="doc/images/assistant-blocked.png" alt="The greywatch assistant answering “What program was blocked?”: the block, the reason, the destination identified as Cloudflare, and evidence tiles for the program and the network" width="520"></td>
+    <td><img src="doc/images/assistant-light.png" alt="The same answer in the light theme" width="520"></td>
+  </tr>
+  <tr>
+    <td align="center"><i>Dark theme</i></td>
+    <td align="center"><i>Light theme</i></td>
+  </tr>
+</table>
 </div>
 
-## The assistant
+## Ask it what happened
 
-The chat panel is a grounded security analyst, not a chatbot. It reads
-the same `0600` event store the daemon writes — nothing else, and no
-network.
+Type a question in plain words. The assistant reads this machine's own event
+log, the same one the background service writes, and answers from it.
 
-* **Real answers from real data.** "What program was blocked?" is
-  answered from your logs, not invented: the newest block, the address,
-  the program field, and what the firewall actually decided.
-* **Who is it talking to?** Each answer carries a picture of the
-  destination — a brand mark for known companies (Cloudflare, Amazon,
-  Google…) or a geoip map tile of the country — plus an evidence strip
-  in the app-firewall identity card naming the program. Everything is
-  drawn locally; no lookups beyond your own logs.
-* **Advice, not facts.** "How do I fix this?" runs a deterministic
-  advice engine: what the line means, why it matters, and numbered
-  steps — copyable commands you run yourself and app actions that show
-  a confirm dialog first. Nothing is ever executed from chat.
-* **A small brain, at home.** A local Qwen3-1.7B model (~1.1 GB, CPU
-  only, no port, thinking disabled) handles the routing and summarizing
-  that pattern matching can't. If it's missing, the chat falls back to
-  docs-only mode and stays useful.
-* **Audited.** Every action it proposes lands in
-  `assistant-actions.jsonl` tagged `via=assistant`, alongside the
-  decision the user confirmed.
+* **Grounded answers.** "What program was blocked?" names the newest block,
+  the program, the time, and what the firewall decided — with the destination
+  identified (Cloudflare, Amazon, Google…) and an evidence strip naming the
+  program binary. Nothing is invented, and no lookup leaves the machine.
+* **Advice, not just facts.** "How do I fix the rootkit scanner?" gives what
+  the line means, why it matters, and numbered steps: copyable commands you
+  run yourself, plus app actions that ask for confirmation first.
+* **It can act, with a confirm gate.** Pause or resume a protection, start a
+  scan, turn the app firewall on, open learning mode, update lists, trust or
+  block a site, switch theme or page. Each action shows a confirm dialog and
+  lands in `assistant-actions.jsonl` tagged `via=assistant`.
+* **Local model, optional.** A Qwen3-1.7B model (~1.1 GB, CPU only, no port,
+  thinking disabled) handles the wording that pattern matching can't. Without
+  the model, every question above still gets a deterministic answer from the
+  advice engine.
 
-## Features
+## Install
 
-* **Fail-open application firewall.** An nftables/NFQUEUE engine with a
-  compiled worker watches outbound and inbound traffic per application.
-  Verdict timeouts and worker stalls trigger a **fail-open** stop:
-  traffic flows, the engine announces the degradation, and status shows
-  the health counters — stability first, enforcement second. Arming is
-  an explicit on-switch via the Setup Wizard; nothing enforces before
-  you fire it. Headless `ask` rules default to **deny-once** — an
-  unknown-program question you never answered blocks rather than
-  silently allows; `allow-once` is the documented availability-first
-  alternative, and whichever is live is labeled `NOT user-approved` in
-  status.
-* **Honesty guarantees.** The event store is append-only and `0600`.
-  The status snapshot the GUI reads is NOT world-readable: it is
-  written `0640` root plus your desktop group, and the machine's real
-  failures are published in it (per-category failure counters and a
-  `degraded` list) rather than silently swallowed. Headless fallback
-  decisions are labeled in status as `NOT user-approved` — nothing is
-  ever advertised as user-approved when it wasn't.
-* **Secure code/state split.** The program is installed to
-  root-owned `/usr/lib/greywatch` (verified free of other-writable
-  files; the root daemon never executes from a user-writable checkout)
-  and all runtime state lives in `/var/lib/greywatch` (`0770`, root
-  and your desktop group only). Root writes to that shared directory
-  land through a private root-only staging dir with exclusive,
-  symlink-refusing creates and fd-applied permissions, then one atomic
-  rename — a group member cannot redirect or substitute a root write.
-  Helper scripts run through a polkit policy that allow-lists exact
-  installed paths.
-* **Whole-tool visibility.** One registry covers 17 standard tools
-  (AIDE, AppArmor, arpwatch, ClamAV, fail2ban, UFW, YARA, Lynis,
-  rkhunter, and more): dashboards, parsers, and log/journal tailers
-  across all of them, plus what each is missing.
-* **One-click full scan, no password.** "Scan everything" asks the
-  background service (already running as root) to run ClamAV, rkhunter,
-  Lynis, AIDE and a YARA sweep of temp folders. Each scanner reports its
-  own progress and findings as they arrive, so scanning is visible rather
-  than a spinner. The window only writes one request file naming one of
-  six fixed scans — it never asks for, holds or needs your password.
-* **Self-contained software.** The application itself is pure Python
-  and installs its own program tree, hardened systemd units, polkit
-  policy, icons, and launcher during setup — it does not lean on a
-  preexisting toolchain of ours. (The protections it *manages* on your
-  machine are the tools already listed above, which you control.)
+greywatch targets Debian-based Linux (Debian 12+, Ubuntu 24.04+, Mint 22+).
+You need GTK4, PyGObject and systemd — the desktop stack a Debian install
+already has.
 
-## Architecture
+**From the .deb (recommended):**
 
-<div align="center">
-  <img src="doc/images/arch-layers.svg" alt="Three layers: root daemon, CLI, desktop app" width="420">
-</div>
-
-**Layer 1 — Root daemon.** A hardened Python daemon (`greywatch_daemon.py`,
-run by systemd as `Type=notify` with a resource-capped unit and a
-watchdog) tails every managed tool's logs and journals in real time,
-parses each line into a structured event (severity, NIST function, CVE
-links), and appends the result to an `0600` append-only event store. It
-also runs the application-firewall engine and publishes a live status
-snapshot for the desktop UI. The bundled assistant model and the map
-assets used for identity tiles ship with the app, so an offline machine
-still gets pictures and complete answers.
-
-**Layer 2 — CLI.** A pure-Python control plane (`cli.py`, or `gw` when
-installed from the wheel): query events, tail the live feed, answer
-decisions, inspect firewall rules, and run the doctor. It reads the
-same event store the daemon writes, so the CLI is exactly as current as
-the machine is.
-
-```text
-greywatch status — updated 2026-10-26T09:06:20+00:00
-🟢 aide          GREEN  — AIDE (integrity check)
-🟢 appfw         GREEN  — App Firewall
-🟢 arpwatch      GREEN   last:2026-10-25 — Arpwatch (ARP monitor)
-🟢 clamav        GREEN   last:2026-10-26T06:54 — ClamAV (antivirus)
-🟢 fail2ban      GREEN  — Fail2ban (bans)
-🟢 ufw           GREEN  — UFW (firewall)
-🟢 yara-watch    GREEN  — YARA Watch (realtime scanner)
+```bash
+sudo apt install ./greywatch_0.1.5_amd64.deb
 ```
 
-**Layer 3 — Desktop app.** A GTK4 app (`ui/app.py`, launcher
-`greywatch.desktop`) that puts every protection, scan, firewall rule,
-and pending decision — including hardening changes, which stay
-reversible — under buttons you control, with the assistant beside them.
+The package installs the root service, polkit policy, icons and launcher,
+starts `greywatch.service`, and binds it to your desktop account. Then launch
+**greywatch** from the applications menu, or:
 
-<div align="center">
-  <table>
-    <tr>
-      <td><img src="doc/images/screens-security.png" alt="Security dashboard: overview, assistant panel, recent activity, and the protection rail" width="480"></td>
-      <td><img src="doc/images/screens-tools.png" alt="Tools page: scan buttons, baseline wizard card, and the protection grid" width="480"></td>
-    </tr>
-  </table>
-</div>
+```bash
+python3 /usr/lib/greywatch/ui/app.py
+```
 
-## Installation
-
-Three ways, pick one.
-
-**1. From a checkout (recommended — read the script first):**
+**From a checkout:**
 
 ```bash
 git clone https://github.com/greyok00/greywatch.git
 cd greywatch
-sudo ./install.sh          # installs to /usr/lib/greywatch + /var/lib/greywatch
+sudo ./install.sh
+sudo ./install.sh --check     # verify the installed tree
 python3 cli.py status
 ```
 
-With sudo it installs the hardened program tree, systemd unit, polkit
-policy, state directory, icons, launcher, and the assistant model.
-Without sudo it installs only the icons and launcher. You can rehearse
-the full install in a sandbox with `./install.sh --root <dir>` and
-verify either install afterward with `sudo ./install.sh --check`.
-Uninstall reverses the install but deliberately keeps your history:
-`sudo ./install.sh --uninstall`.
+`install.sh` accepts `--root <dir>` to rehearse the whole install in a
+throwaway tree, and `--uninstall` to reverse it while keeping your history.
 
-**2. Debian package from the Releases page:**
+**Wheel (CLI only):**
 
 ```bash
-sudo apt install ./greywatch_0.1.3_amd64.deb
-```
-
-**3. Python wheel from the Releases page:**
-
-```bash
-pip install https://github.com/greyok00/greywatch/releases/download/v0.1.3/greywatch-0.1.3-py3-none-any.whl
+pip install https://github.com/greyok00/greywatch/releases/download/v0.1.5/greywatch-0.1.5-py3-none-any.whl
 gw --version
+gw status
 ```
 
-The wheel installs a `gw` command (and the CLI with it) but does not
-wire the systemd units, polkit policy, or icons — use the .deb or
-`install.sh` for the hardened system-level install.
+The wheel ships the `gw` command and the same code; it does not install the
+systemd units, polkit policy or icons. Use the .deb or `install.sh` for the
+system-level install.
 
-## Security model and testing
+## What it watches
 
-Every hardening change and firewall rule is dry-run first, applied
-through explicit user decisions, and recorded. The test battery
-(`python3 -m pytest tests/ -q`, 1116 passing + 2 that skip on machines
-without optional hardware) covers the event model,
-parsers, status permissions, install-script staging (`--root` rehearses
-into a throwaway tree and `--check` rejects other-writable files), the
-single-instance GUI lock, the scan-all helper, the assistant's routing
-and advice engines, and regression tests for each hardened surface.
-Real root/VM-level behavior — polkit enforcement, NFQUEUE traffic,
-worker-stall recovery — belongs in its own isolated verification.
+Seventeen protections, one registry. The app reads each one's state and logs,
+runs its scans, and can pause or resume it — all without a terminal.
+
+| In the app | Under it | What greywatch does with it |
+|---|---|---|
+| Antivirus | ClamAV | Runs full and quick scans, shows files scanned and any hit |
+| Virus definitions | freshclam | Shows freshness; updates on request |
+| Rootkit scanner | rkhunter | Runs rootkit scans, surfaces warnings and hidden files |
+| Security auditor | Lynis | Runs the audit, lists warnings with their test IDs |
+| File integrity | AIDE | Runs the integrity check, lists what changed since the baseline |
+| On-access scanner | YARA Watch | Realtime scan of files as they are touched |
+| Scheduled scanner | YARA temp scan | Sweeps `/tmp` and `/var/tmp` every 15 minutes |
+| Firewall | UFW | Shows state and blocked-connection events |
+| App firewall | greywatch's own | Per-program allow/deny for outbound and inbound traffic |
+| Network watcher | greywatch's own | Light IDS on connection events |
+| Intrusion blocker | fail2ban | Shows bans and unbans as events |
+| Program jail | AppArmor | Shows policy denials (AVC) |
+| System event log | auditd | Parses audit records, including crashes and exec events |
+| Auto-responder | greywatch's own | Quarantines or kills a flagged process on request |
+| Program watcher | Tetragon | Kernel eBPF process and network events |
+| WiFi watcher | arpwatch | New devices and address changes on the LAN |
+| Update checker | greywatch's own | Tracks CVEs for installed packages |
+
+Six scans run on demand from the **Protections** page: Scan everything, Quick
+scan, Full antivirus scan, Rootkit scan, Security audit, File-integrity check.
+The root service runs them, so closing the window never loses a scan. They run
+**one at a time, in the order listed** — each scanner is a separate systemd
+unit, so a service restart no longer kills a running scan.
+
+## The rest of the app
+
+<div align="center">
+  <img src="doc/images/protections.png" alt="The Protections page: live per-scanner progress bars and logs, findings with Review and fix actions, folded routine notices, recent scans, and one row per protection with its state and pause control" width="900">
+</div>
+
+The Protections page is the control room. Every protection gets one full-width
+row with its live state, last scan result and a pause control. The five
+scanners add a horizontal progress bar and the last lines the scanner itself
+printed, and each row is edged in the colour of its scan state — blue while
+working, grey while queued, green when finished, red when it needs a look.
+
+Findings sit above the rows, newest first. Each one names the severity in
+plain words, the tool that found it, and the file when there is one; click it
+and you get what the line means, numbered steps, and **Quarantine** or
+**Delete** for infected files (the helper asks for your password and refuses
+system paths). Expected noise — baseline drift, package debris, tool
+suggestions — folds into a "routine notices — expected, not errors" expander
+so a real finding is never buried.
+
+**Other features:**
+
+* **App firewall.** An nftables/NFQUEUE engine watches traffic per program and
+  asks before allowing a new connection. If a verdict times out or the worker
+  stalls it **fails open**: traffic flows, the degradation is announced in
+  status, and the health counters say why. Enforcement only starts when you
+  arm it in the Setup Wizard.
+* **Trusted sites and trusted programs.** Allow or block domains, programs or
+  folders from Settings or from the assistant; the app firewall consults both.
+* **Learning mode.** New connections pass once and are recorded, so you can see
+  what a program needs before you allow it.
+* **Setup Wizard.** Checks the machine against a hardening baseline, previews
+  every change, applies them with one password prompt, then verifies or
+  undoes. Nothing changes without your confirmation.
+* **Logs.** Every event, newest first, filterable by tool, with severity and a
+  plain-English rendering of the raw line.
+* **Settings.** Appearance, app firewall, connections, this computer,
+  diagnostics, updates, trusted sites, trusted programs.
+* **Two themes.** Obsidian (dark) and Swiss (light) — a switch in Settings, or
+  just ask the assistant.
+* **CLI.** `gw status`, `gw events`, `gw tail`, `gw log`, `gw decisions`,
+  `gw doctor` — the same store the desktop app reads.
+
+## Architecture
+
+![Three layers: root daemon, CLI, desktop app](doc/images/arch-layers.svg)
+
+A root daemon tails each managed tool's journal and log files, parses every
+line into a structured event, and appends it to an `0600` append-only store.
+It also runs the app firewall and publishes the status snapshot the UI reads.
+The GTK4 app and the `gw` CLI are both read-only clients of that store: the
+window never needs root, and no scan ever asks for your password.
+
+## Security model
+
+The program lives in root-owned `/usr/lib/greywatch`; runtime state lives in
+`/var/lib/greywatch` (`0770`, root plus your desktop group). Root writes into
+that shared directory go through a private staging dir with exclusive,
+symlink-refusing creates and one atomic rename. Helper scripts run through a
+polkit policy that allow-lists exact installed paths. The assistant has no
+network access and executes nothing on its own — every command it offers is
+text you run, and every action pauses at a confirm dialog.
+
+Tests: `python3 -m pytest tests/ -q` (1128 passing, 2 skipped on machines
+without the optional hardware). `ruff check .` is clean.
 
 ## About
 
 greywatch is built and maintained by
-[Randy Barham](https://www.randybarham.com). The source, issue tracker,
-and release downloads live on
-[GitHub](https://github.com/greyok00/greywatch). The software is free
-to run on your own machines; the event trail it writes belongs to you.
+[Randy Barham](https://www.randybarham.com). Source, issues and releases:
+[github.com/greyok00/greywatch](https://github.com/greyok00/greywatch).
+The software is free to run on your own machines; the event trail it writes
+belongs to you.

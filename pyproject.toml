@@ -4,7 +4,7 @@
 # --version reads this file.
 [project]
 name = "greywatch"
-version = "0.1.3"
+version = "0.1.5"
 description = "AI-enabled Linux endpoint security suite"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,7 +15,7 @@ license-files = ["LICENSE"]
 [project.optional-dependencies]
 dev = ["pytest==9.1.1", "ruff==0.17.2"]
 build = ["cython==3.2.9", "setuptools==78.1.1"]
-# Optional, metadata-only: the in-process 360M chat brain. The app rules
+# Optional, metadata-only: the in-process 1.7B chat brain. The app rules
 # say "runtime has no pip dependencies" — every import is guarded and the
 # chat degrades to docs-only when this is absent.
 assistant = ["llama-cpp-python>=0.3.0"]

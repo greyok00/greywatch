@@ -1,18 +1,25 @@
-"""The Scans page: what the background service is doing, as it happens.
+"""Scan results: findings with their fixes, and the last scans.
 
-Read-only by design. The daemon writes scan-live.json, scan-findings.jsonl
-and scans/<id>.json; this module renders them and holds no scan state, so
-closing the window loses nothing.
+The daemon writes scan-live.json, scan-findings.jsonl and scans/<id>.json;
+this module only renders them. It holds no scan state, so closing the
+window loses nothing.
+
+The per-scanner progress rows that used to live here moved into the
+Protections page (2026-10-30): the owner saw the same scan twice — once
+bare on a Scans page and once as "0" on the Tools page — and asked for one
+page with full-width rows, a progress bar each, and a small log beneath.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import pathlib
+import re
 
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Pango  # noqa: E402
+from gi.repository import GLib, Gtk, Pango  # noqa: E402
 
 SCANNER_ORDER = ("clamav", "rkhunter", "lynis", "aide", "yara-tmp-scan")
 NAMES = {"clamav": "Antivirus", "rkhunter": "Rootkit", "lynis": "Audit",
@@ -25,7 +32,43 @@ STATE_WORDS = {"queued": "Queued", "running": "Scanning", "done": "Done",
                "failed": "Failed", "interrupted": "Interrupted"}
 STATE_INK = {"queued": "#8b9bb0", "running": "#5b8def", "done": "#4dd07a",
              "failed": "#ff5a52", "interrupted": "#ffc940"}
+SEVERITY_INK = {"HIGH": "#ff5a52", "CRITICAL": "#ff5a52",
+                "MEDIUM": "#ffc940", "LOW": "#8b9bb0", "INFO": "#8b9bb0"}
 MUTED = "#8b9bb0"
+
+# Severity words mean nothing without a sentence beside them; the owner
+# read a lone red "HIGH" and asked what it was for (2026-10-30).
+SEVERITY_MEANING = {
+    "HIGH": "needs your attention now",
+    "CRITICAL": "needs your attention now",
+    "MEDIUM": "review when you have a moment",
+    "LOW": "noted, usually nothing to do",
+    "INFO": "for the record",
+}
+
+# Tools whose findings name a file that the user may actually act on.
+_FILE_TOOLS = ("clamav", "yara-tmp-scan")
+_PATH_RE = re.compile(r"(?<![\w:.])(/[^\s()\[\],;'\"]+)")
+
+
+def finding_path(text: str) -> str | None:
+    """The absolute file a finding talks about, or None."""
+    for m in _PATH_RE.finditer(str(text or "")):
+        path = m.group(1).rstrip(".")
+        if 1 < len(path) <= 400:
+            return path
+    return None
+
+
+def when_label(raw: str) -> str:
+    """A history chip reads as a local moment, not raw ISO text."""
+    try:
+        when = _dt.datetime.fromisoformat(raw)
+    except (TypeError, ValueError):
+        return (raw or "")[:16]
+    if when.tzinfo is not None:
+        when = when.astimezone()
+    return when.strftime("%b %d, %H:%M")
 
 
 def read_live(data_dir):
@@ -71,9 +114,8 @@ def read_history(data_dir, limit=8):
     return out
 
 
-# The Tools grid gives each protection a narrow status cell, so the counter
+# The protection row gives each scan a short status line, so the counter
 # label is shortened there ("12,844 files", not "12,844 files scanned …").
-# The Scans page keeps the full label.
 _GRID_WORD = {"files scanned": "files", "checks completed": "checks",
               "tests completed": "tests", "differences listed": "diffs",
               "temp folders swept": "folders"}
@@ -93,7 +135,8 @@ def card_text(tool: str, live) -> str:
     label = _GRID_WORD.get(sc.get("counter_label") or "checks",
                            sc.get("counter_label") or "checks")
     if state == "queued":
-        return "Queued"
+        wait = sc.get("waiting_for")
+        return f"Queued — starts after {wait}" if wait else "Queued"
     if state == "running":
         out = f"Scanning · {n:,} {label}"
         return out + (f" · {finds} finding{'s' if finds != 1 else ''}"
@@ -107,12 +150,14 @@ def card_text(tool: str, live) -> str:
         (f" · {finds} found" if finds else " · clean")
 
 
-class ScanView(Gtk.Box):
-    """Per-scanner rows, a growing findings list, and the last scans."""
+class ScanConsole(Gtk.Box):
+    """The findings list, its legend, and recent scans — the actionable half
+    of the merged Protections page."""
 
-    def __init__(self, data_dir):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+    def __init__(self, data_dir, on_explain=None):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.data_dir = pathlib.Path(data_dir)
+        self.on_explain = on_explain
         self._pinned = None
         self._find_key = None
         self._history_key = None
@@ -121,34 +166,27 @@ class ScanView(Gtk.Box):
         self.headline = Gtk.Label(xalign=0)
         self.headline.set_xalign(0)
         self.headline.set_wrap(True)
+        self.headline.add_css_class("gw-h2")
         self.append(self.headline)
 
-        self.rows_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
-                                spacing=4)
-        self.row_widgets = {}
-        for key in SCANNER_ORDER:
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-            row.set_margin_top(2)
-            row.set_margin_bottom(2)
-            name = Gtk.Label(label=NAMES[key], xalign=0)
-            name.set_xalign(0)
-            name.set_size_request(116, -1)
-            state = Gtk.Label(xalign=0)
-            state.set_xalign(0)
-            state.set_size_request(86, -1)
-            count = Gtk.Label(xalign=0)
-            count.set_xalign(0)
-            count.set_size_request(200, -1)
-            current = Gtk.Label(xalign=0)
-            current.set_xalign(0)
-            current.set_hexpand(True)
-            current.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
-            for w in (name, state, count, current):
-                row.append(w)
-            self.rows_box.append(row)
-            self.row_widgets[key] = {"state": state, "count": count,
-                                     "current": current}
-        self.append(self.rows_box)
+        self.legend = Gtk.Label(xalign=0)
+        self.legend.set_xalign(0)
+        self.legend.set_wrap(True)
+        self.legend.add_css_class("gw-page-meta")
+        self.legend.set_markup(
+            "High findings need a decision now; medium findings are worth a "
+            "look. Click any finding to read what it means and quarantine, "
+            "delete or ask the assistant about it.")
+        self.append(self.legend)
+
+        self.findings_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                                    spacing=4)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_propagate_natural_height(True)
+        scroll.set_max_content_height(260)
+        scroll.set_child(self.findings_box)
+        self.append(scroll)
 
         self.routine_expander = Gtk.Expander()
         self.routine_expander.set_visible(False)
@@ -157,27 +195,14 @@ class ScanView(Gtk.Box):
         self.routine_expander.set_child(self.routine_body)
         self.append(self.routine_expander)
 
-        self.findings_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
-                                    spacing=4)
-        # The findings list is as tall as it needs to be, up to a cap: a
-        # fixed 170px pane left a dead gap between the last finding and
-        # "Recent scans" on a short scan.
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_propagate_natural_height(True)
-        scroll.set_max_content_height(240)
-        scroll.set_child(self.findings_box)
-        self.append(scroll)
-
         hist_head = Gtk.Label(xalign=0)
         hist_head.set_xalign(0)
-        hist_head.set_markup(
-            f"<span size='12000' font_family='Inter' color='{MUTED}'>"
-            "Recent scans</span>")
+        hist_head.add_css_class("gw-eyebrow")
+        hist_head.set_text("RECENT SCANS")
         self.append(hist_head)
         self.history = Gtk.FlowBox()
         self.history.set_selection_mode(Gtk.SelectionMode.NONE)
-        self.history.set_max_children_per_line(4)
+        self.history.set_max_children_per_line(5)
         self.history.set_homogeneous(False)
         self.append(self.history)
         self.refresh()
@@ -190,7 +215,6 @@ class ScanView(Gtk.Box):
         return read_findings(self.data_dir, limit=200)
 
     def pin(self, scan_id):
-        """Show one finished scan instead of the live state."""
         self._pinned = scan_id
         self._find_key = None
         self._history_key = None
@@ -217,12 +241,9 @@ class ScanView(Gtk.Box):
         if not live:
             self.headline.set_markup(
                 f"<span size='13000' font_family='Inter' color='{MUTED}'>"
-                "No scan yet. Press a scan button above; progress appears "
-                "here as each program works.</span>")
-            for w in self.row_widgets.values():
-                w["state"].set_text("—")
-                w["count"].set_text("")
-                w["current"].set_text("")
+                "No scan yet. Press a scan button above — each protection "
+                "below shows its own progress and log while it runs."
+                "</span>")
             self._paint_findings([])
             self._paint_history()
             return
@@ -239,25 +260,9 @@ class ScanView(Gtk.Box):
         if live.get("note"):
             extra += f" · {live['note']}"
         self.headline.set_markup(
-            f"<span size='14000' font_family='Inter' weight='600'>{line}"
+            f"<span size='15000' font_family='Inter' weight='650'>{line}"
             f"</span><span size='12000' font_family='Inter' "
             f"color='{MUTED}'>{extra}</span>")
-        scanners = live.get("scanners") or {}
-        for key, w in self.row_widgets.items():
-            sc = scanners.get(key)
-            if not sc:
-                w["state"].set_text("—")
-                w["count"].set_text("")
-                w["current"].set_text("")
-                continue
-            st = sc.get("state") or "queued"
-            w["state"].set_markup(
-                f"<span color='{STATE_INK.get(st, MUTED)}'>"
-                f"{STATE_WORDS.get(st, st)}</span>")
-            w["count"].set_text(
-                f"{int(sc.get('count') or 0):,} "
-                f"{sc.get('counter_label', '')}".strip())
-            w["current"].set_text(sc.get("detail") or sc.get("current") or "")
         self._paint_findings(findings)
         self._paint_history()
 
@@ -273,9 +278,6 @@ class ScanView(Gtk.Box):
         real = [f for f in findings if not f.get("routine")]
         routine = [f for f in findings if f.get("routine")]
         if not real:
-            # Routine notices are not silence: the owner read a page of
-            # folded baseline drift under "Nothing to report yet" as either
-            # a contradiction or a hidden error (2026-10-30).
             said = ("Nothing needs attention." if routine
                     else "Nothing to report yet.")
             quiet = Gtk.Label(label=said, xalign=0)
@@ -283,25 +285,7 @@ class ScanView(Gtk.Box):
             quiet.set_markup(f"<span color='{MUTED}'>{said}</span>")
             self.findings_box.append(quiet)
         for f in real:
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            chip = Gtk.Label()
-            sev = str(f.get("severity", "INFO"))
-            ink = {"HIGH": "#ff5a52", "CRITICAL": "#ff5a52",
-                   "MEDIUM": "#ffc940"}.get(sev, MUTED)
-            chip.set_markup(f"<span color='{ink}'>{sev}</span>")
-            chip.set_size_request(76, -1)
-            who = Gtk.Label(label=NAMES.get(f.get("tool"), f.get("tool", "")),
-                            xalign=0)
-            who.set_xalign(0)
-            who.set_size_request(96, -1)
-            text = Gtk.Label(label=str(f.get("text", "")), xalign=0)
-            text.set_xalign(0)
-            text.set_hexpand(True)
-            text.set_ellipsize(Pango.EllipsizeMode.END)
-            text.set_tooltip_text(str(f.get("text", "")))
-            for w in (chip, who, text):
-                row.append(w)
-            self.findings_box.append(row)
+            self.findings_box.append(self._finding_row(f))
         for f in routine:
             row = Gtk.Label(label=f"· {f.get('text', '')}", xalign=0)
             row.set_xalign(0)
@@ -312,13 +296,161 @@ class ScanView(Gtk.Box):
         self.routine_expander.set_label(
             f"{count} routine notice{'s' if count != 1 else ''} "
             f"— expected, not errors")
-        # The label is the only thing the owner sees while the list is
-        # folded, so it has to say why these rows are here at all.
         self.routine_expander.set_tooltip_text(
             "Background noise the app recognises: baseline drift, package "
             "debris, and tool suggestions. Nothing to act on. Open to read "
             "the exact files.")
         self.routine_expander.set_visible(bool(routine))
+
+    def _finding_row(self, f) -> Gtk.Button:
+        sev = str(f.get("severity", "INFO")).upper()
+        ink = SEVERITY_INK.get(sev, MUTED)
+        btn = Gtk.Button()
+        btn.add_css_class("gw-finding")
+        btn.add_css_class("sev-" + sev.lower())
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        chip = Gtk.Label(label=sev)
+        chip.add_css_class("gw-sev")
+        chip.set_markup(f"<span color='{ink}' weight='700'>{sev}</span>")
+        chip.set_size_request(64, -1)
+        who = Gtk.Label(label=NAMES.get(f.get("tool"), f.get("tool", "")),
+                        xalign=0)
+        who.set_xalign(0)
+        who.set_size_request(92, -1)
+        text = Gtk.Label(label=str(f.get("text", "")), xalign=0)
+        text.set_xalign(0)
+        text.set_hexpand(True)
+        text.set_ellipsize(Pango.EllipsizeMode.END)
+        meaning = SEVERITY_MEANING.get(sev, "")
+        hint = Gtk.Label(label="Review and fix →", xalign=1)
+        hint.set_xalign(1)
+        hint.add_css_class("gw-fixhint")
+        for w in (chip, who, text, hint):
+            row.append(w)
+        btn.set_child(row)
+        btn.set_tooltip_text(f"{sev} — {meaning}\n{f.get('text', '')}")
+        btn.connect("clicked", lambda *_a, row=f: self._open_finding(row))
+        return btn
+
+    # ---- one finding: meaning + real actions -------------------------
+    def _open_finding(self, f):
+        sev = str(f.get("severity", "INFO")).upper()
+        tool = str(f.get("tool", ""))
+        text = str(f.get("text", ""))
+        dialog = Gtk.Dialog(title=f"{sev} finding — {NAMES.get(tool, tool)}",
+                            transient_for=self.get_root(), modal=True)
+        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        body = dialog.get_content_area()
+        body.set_margin_top(14)
+        body.set_margin_bottom(14)
+        body.set_margin_start(18)
+        body.set_margin_end(18)
+        body.set_spacing(10)
+
+        head = Gtk.Label(xalign=0)
+        head.set_xalign(0)
+        head.set_wrap(True)
+        head.set_markup(
+            f"<span size='15000' weight='650'>{sev}</span> "
+            f"<span color='{SEVERITY_INK.get(sev, MUTED)}'>"
+            f"{SEVERITY_MEANING.get(sev, '')}</span>")
+        body.append(head)
+        what = Gtk.Label(label=text, xalign=0)
+        what.set_xalign(0)
+        what.set_wrap(True)
+        what.set_selectable(True)
+        body.append(what)
+
+        advice = Gtk.Label(xalign=0)
+        advice.set_xalign(0)
+        advice.set_wrap(True)
+        advice.set_selectable(True)
+        advice.add_css_class("gw-advice")
+        try:
+            from assistant.advice import advise_event
+            advice.set_text(advise_event({"tool": tool, "severity": sev,
+                                          "text": text}))
+        except Exception:
+            advice.set_text("")
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_propagate_natural_height(True)
+        scroller.set_max_content_height(300)
+        scroller.set_child(advice)
+        body.append(scroller)
+
+        status = Gtk.Label(xalign=0)
+        status.set_xalign(0)
+        status.set_wrap(True)
+        body.append(status)
+
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        path = finding_path(text) if tool in _FILE_TOOLS else None
+        if path:
+            for label, action in (("Quarantine file", "quarantine"),
+                                  ("Delete file", "delete")):
+                b = Gtk.Button(label=label)
+                b.add_css_class("gw-quiet")
+                b.connect("clicked", self._file_action, action, path,
+                          dialog, status)
+                actions.append(b)
+        ask = Gtk.Button(label="Ask the assistant")
+        ask.add_css_class("gw-primary")
+        ask.connect("clicked", self._explain, text, dialog)
+        actions.append(ask)
+        body.append(actions)
+        dialog.present()
+
+    def _explain(self, _btn, text, dialog):
+        dialog.destroy()
+        if callable(self.on_explain):
+            self.on_explain(
+                f"How do I fix this scan finding? {text}")
+
+    def _file_action(self, btn, action, path, dialog, status):
+        warn = ("Quarantine" if action == "quarantine" else "Delete")
+        confirm = Gtk.Dialog(title=f"{warn} this file?",
+                             transient_for=dialog, modal=True)
+        confirm.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        confirm.add_button(warn, Gtk.ResponseType.OK)
+        box = confirm.get_content_area()
+        box.set_margin_top(12)
+        box.set_margin_bottom(12)
+        box.set_margin_start(18)
+        box.set_margin_end(18)
+        lbl = Gtk.Label(xalign=0)
+        lbl.set_xalign(0)
+        lbl.set_wrap(True)
+        verb = ("moved into the greywatch quarantine" if action ==
+                "quarantine" else "deleted permanently")
+        lbl.set_text(f"{path}\n\nThis file will be {verb}. "
+                     "You will be asked for your password.")
+        box.append(lbl)
+
+        def _go(dlg, rid, *_a):
+            dlg.destroy()
+            if rid != Gtk.ResponseType.OK:
+                return
+            status.set_text(f"{warn}ing {path}…")
+            btn.set_sensitive(False)
+
+            def work():
+                from wiz import common
+                try:
+                    rc = common.run_helper("file-action", [action, path],
+                                           timeout=120)
+                    msg = (f"{warn}: done." if rc == 0
+                           else f"{warn}: the helper exited {rc}.")
+                except Exception as e:
+                    msg = f"{warn}: failed ({type(e).__name__})."
+                GLib.idle_add(status.set_text, msg)
+
+            import threading
+            threading.Thread(target=work, daemon=True,
+                             name="gw-file-action").start()
+
+        confirm.connect("response", _go)
+        confirm.present()
 
     def _paint_history(self):
         docs = read_history(self.data_dir, limit=8)
@@ -331,12 +463,15 @@ class ScanView(Gtk.Box):
         if not docs:
             return
         live_b = Gtk.Button(label="Live")
+        live_b.add_css_class("gw-chip")
         live_b.connect("clicked", lambda *_a: self.show_live())
         self.history.append(live_b)
         for doc in docs:
-            when = (doc.get("ended_at") or doc.get("started_at") or "")[:16]
+            when = when_label(doc.get("ended_at") or doc.get("started_at")
+                              or "")
             label = f"{TITLES.get(doc.get('key'), 'Scan')} · {when}"
             b = Gtk.Button(label=label)
+            b.add_css_class("gw-chip")
             b.connect("clicked",
                       lambda _b, sid=doc.get("scan_id"): self.pin(sid))
             self.history.append(b)

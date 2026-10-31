@@ -59,9 +59,12 @@ def test_deb_packages_the_program():
         for placeholder in ("__GW_HOME__", "__GW_LIB__", "__GW_DATA__",
                             "__GW_UI_USER__"):
             assert placeholder not in unit
-        assert ("Environment=GREYWATCH_UI_USER=grey"   # build-time default;
-                in unit)                               # postinst persists the
-                                                       # desktop identity
+        # The package must not bake a personal account name in: the field
+        # ships empty and postinst persists the desktop identity it finds.
+        ui_line = next(ln for ln in unit.splitlines()
+                       if ln.startswith("Environment=GREYWATCH_UI_USER="))
+        assert ui_line == "Environment=GREYWATCH_UI_USER="
+        assert "grey" not in ui_line
         assert ("ExecStart=/usr/bin/python3 "
                 "/opt/greywatch/greywatch_daemon.py "
                 "--data-dir /var/lib/greywatch") in unit

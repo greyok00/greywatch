@@ -23,7 +23,8 @@ from ui.themes import (ThemeStore, dark_default, load_setting,
                        THEME_CHOICES)
 from ui.cards import SCAN_MODES, quiet_note
 from ui.scanview import NAMES as SCAN_NAMES
-from ui.scanview import ScanView, card_text, read_live
+from ui.scanview import (ScanConsole, SCANNER_ORDER, card_text,
+                         read_live)
 from ui.assistant import AssistantPanel
 from ui.toolicons import icon_name as tool_icon
 from ui.settings import (TrustList, PausedStore, LearningStore,
@@ -122,11 +123,16 @@ class MainWindow(Gtk.Window):
         self._glib_ids = []
         self._glib_ids.append(
             GLib.timeout_add_seconds(5, self._periodic_refresh))
-        # The Scans page redraws once a second while it is visible: the
-        # daemon rewrites scan-live.json at 1 Hz, so anything faster would
-        # repaint identical text.
+        # The scan half of the Protections page redraws once a second while
+        # it is visible: the daemon rewrites scan-live.json at 1 Hz, so
+        # anything faster would repaint identical text.
         self._glib_ids.append(
             GLib.timeout_add_seconds(1, self._scan_tick))
+        # The bar moves far more often than the counter changes. A running
+        # scanner reports no total, so the bar is indeterminate and every
+        # pulse() call steps it; without this it stayed an empty trough and
+        # the owner read that as "stuck at 0" (2026-10-30).
+        self._tick_id(self._pulse_bars, 160)
         self.connect("destroy", self._kill_timers)
 
     def _tick_id(self, fn, ms=200, seconds=False):
@@ -198,8 +204,7 @@ class MainWindow(Gtk.Window):
         self._rail_btns = {}
         for key, icon, label in (
                 ("tools", "security-high-symbolic", "Security"),
-                ("deep", "applications-system-symbolic", "Tools"),
-                ("scans", "system-run-symbolic", "Scans"),
+                ("deep", "applications-system-symbolic", "Protections"),
                 ("logs", "document-open-recent-symbolic", "Logs"),
                 ("settings", "preferences-system-symbolic", "Settings"),
                 ("help", "help-about-symbolic", "Help")):
@@ -262,9 +267,12 @@ class MainWindow(Gtk.Window):
         self._views = {}
         # "harden" is deliberately absent: baseline hardening is a task in
         # the Wizard hub, not a top-level page duplicating the wizard.
+        # One page owns every protection and every scan (owner 2026-10-30:
+        # Tools and Scans showed the same scan as "running" and as "0", and
+        # neither page could be understood on its own).
         self._builders = {"tools": self._security_view,
-                          "deep": self._tools_view,
-                          "scans": self._scan_page, "logs": self._logs_view,
+                          "deep": self._protections_view,
+                          "logs": self._logs_view,
                           "help": self._help_view,
                           "settings": self._settings_view}
         self._add_view("tools", self._builders["tools"]())
@@ -894,110 +902,161 @@ class MainWindow(Gtk.Window):
             self.chat_retry.set_visible(not ok)
         return False
 
-    def _tools_view(self):
-        """Every protection on one screen.
+    def _protections_view(self):
+        """Every protection and every scan, on one page (owner 2026-10-30).
 
-        This page used to be seventeen tall cards in a scroller: two cards
-        were visible and the rest lived below the fold. A protection is
-        one line of facts — name, real tool, live state, the two actions
-        that apply — so it is built as a compact row, two or three per
-        line depending on width. The page now fits the 720px minimum
-        window without scrolling.
+        Two pages used to split one job: the Tools page said "0" in every
+        scanner row and the Scans page was bare until something happened.
+        Now there is one page — scan buttons, live findings, then one
+        full-width row per protection. The five scanners carry a
+        horizontal progress bar and the last lines of that scanner's own
+        log underneath, and the queue order is printed, so "everything at
+        once, nothing to track" cannot happen again.
         """
-        tools = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        tools.set_margin_top(metrics.PAGE_TOP)
-        tools.set_margin_start(metrics.PAGE_X)
-        tools.set_margin_end(metrics.PAGE_X)
-        tools.set_margin_bottom(metrics.PAGE_BOTTOM)
-        tools.append(self._h1("Your protections"))
+        page = self._page_box(8)
+        page.append(self._h1("Protections"))
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
         intro.set_wrap(True)
         intro.set_markup(
             f"<span size='13000' font_family='Inter' color='{pc_muted()}'>"
-            "Each row shows the plain name, the real tool behind it and its "
-            "live state. Configure anything without typing a command."
+            "One row per protection: what it is, whether it is running, "
+            "and what to do about it. Scans run one at a time in the order "
+            "listed; each scanner shows its own progress and log."
             "</span>")
-        tools.append(intro)
-        tools.append(self._scan_strip())
-        tools.append(self._baseline_card())
+        page.append(intro)
+        page.append(self._scan_strip())
 
-        grid = Gtk.Grid()
-        grid.set_column_spacing(8)
-        grid.set_row_spacing(2)
-        grid.set_column_homogeneous(True)
-        grid.set_hexpand(True)
-        grid.set_vexpand(False)
-        self.cards_flow = grid
+        self.scanconsole = ScanConsole(self.data_dir,
+                                       on_explain=self._ask_assistant)
+        page.append(self.scanconsole)
+
+        sec = Gtk.Label(xalign=0)
+        sec.set_xalign(0)
+        sec.add_css_class("gw-eyebrow")
+        sec.set_text("ALL PROTECTIONS")
+        page.append(sec)
+
+        rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        self.cards_flow = rows
         self.card_widgets = {}
-        self._card_order = [t["name"] for t in self.registry]
-        for t in self.registry:
-            self.card_widgets[t["name"]] = self._tool_card(t)
-        # Start in the three-column shape: it is the shortest, so the page's
-        # minimum height is right from the first layout. _flow upgrades to
-        # two columns once there is room.
-        cols = {"n": 3}
-        for i, name in enumerate(self._card_order):
-            grid.attach(self.card_widgets[name], i % 3, i // 3, 1, 1)
+        self._card_order = self._protection_order()
+        for name in self._card_order:
+            tool = self.by_name.get(name) or {"name": name}
+            self.card_widgets[name] = self._tool_card(tool)
+            rows.append(self.card_widgets[name])
+        # The baseline is one action among the protections, not a banner
+        # above them: the scanner rows have to start in the first screenful
+        # or the live progress is what gets buried (owner 2026-10-30).
+        rows.append(self._baseline_card())
 
-        def _flow(_widget, _clock):
-            width = grid.get_width()
-            if width <= 0:
-                return True
-            # The mono tool id is a fact, not decoration, but at the 1100px
-            # minimum it costs the name the room it needs to stay readable.
-            # Show it whenever the page can afford it; the tooltip always
-            # has it either way.
-            show_tool = width >= 1240
-            for widget in self.card_widgets.values():
-                widget._tool.set_visible(show_tool)
-            want = 3 if width >= 1420 else 2
-            if want == cols["n"]:
-                return True
-            cols["n"] = want
-            for widget in self.card_widgets.values():
-                if widget.get_parent() is grid:
-                    grid.remove(widget)
-            for i, name in enumerate(self._card_order):
-                grid.attach(self.card_widgets[name], i % want, i // want,
-                            1, 1)
-            return True
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_vexpand(True)
+        scroller.set_child(rows)
+        page.append(scroller)
+        return page
 
-        grid.add_tick_callback(_flow)
-        tools.append(grid)
-        fill = Gtk.Box()
-        fill.set_vexpand(True)
-        tools.append(fill)
-        return tools
-
-    def _scan_page(self):
-        """Everything the daemon is scanning, as it happens."""
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        box.set_margin_top(metrics.PAGE_TOP)
-        box.set_margin_start(metrics.PAGE_X)
-        box.set_margin_end(metrics.PAGE_X)
-        box.set_margin_bottom(metrics.PAGE_BOTTOM)
-        box.append(self._h1("Scans"))
-        intro = Gtk.Label(xalign=0)
-        intro.set_xalign(0)
-        intro.set_wrap(True)
-        intro.set_markup(
-            f"<span size='13000' font_family='Inter' color='{pc_muted()}'>"
-            "The background service runs every scan, so closing this window "
-            "cannot lose one. Progress and findings appear here as they "
-            "land.</span>")
-        box.append(intro)
-        self.scanview = ScanView(self.data_dir)
-        self.scanview.set_vexpand(True)
-        box.append(self.scanview)
-        return box
+    def _protection_order(self):
+        """Scanners first, in the order a scan runs them; then the rest."""
+        names = [t["name"] for t in self.registry]
+        head = [k for k in SCANNER_ORDER if k in names]
+        return head + [n for n in names if n not in head]
 
     def _scan_tick(self):
-        """Redraw the Scans page while it is the visible page."""
-        view = self._views.get("scans")
-        if view is not None and self.stack.get_visible_child_name() == "scans":
-            self.scanview.refresh()
+        """Redraw the live scan half while the Protections page is shown."""
+        if self.stack.get_visible_child_name() != "deep":
+            return True
+        console = getattr(self, "scanconsole", None)
+        if console is None or console.get_root() is None:
+            return True
+        console.refresh()
+        self._scan_live = read_live(self.data_dir)
+        self._paint_scan_rows()
         return True
+
+    def _ask_assistant(self, question: str):
+        """Open Security and put a real question in the composer."""
+        panel = getattr(self, "assistant_panel", None)
+        if panel is None:
+            return
+        self._show("tools")
+        panel.ask(question)
+
+    def _pulse_bars(self):
+        """Step the indeterminate block on every bar whose scanner runs."""
+        if self.stack.get_visible_child_name() != "deep":
+            return True
+        for frame in (getattr(self, "card_widgets", {}) or {}).values():
+            bar = getattr(frame, "_bar", None)
+            if (bar is not None and bar.get_visible()
+                    and bar.has_css_class("busy")):
+                bar.pulse()
+        return True
+
+    def _paint_scan_rows(self):
+        """Paint the per-scanner progress bar and log into each row."""
+        live = getattr(self, "_scan_live", None)
+        scanners = (live or {}).get("scanners") or {}
+        total = len(scanners)
+        for name, frame in (getattr(self, "card_widgets", {}) or {}).items():
+            bar = getattr(frame, "_bar", None)
+            if bar is None:
+                continue
+            sc = scanners.get(name)
+            line = getattr(frame, "_scanline", None)
+            log = getattr(frame, "_log", None)
+            if not sc:
+                for w in (bar, line, log):
+                    if w is not None:
+                        w.set_visible(False)
+                for cls in ("scan-run", "scan-queued", "scan-ok",
+                            "scan-fail"):
+                    frame.remove_css_class(cls)
+                continue
+            st = sc.get("state") or "queued"
+            for cls in ("ok", "fail", "idle", "busy"):
+                bar.remove_css_class(cls)
+            # A scanner row wears its scan state on the left edge, so the
+            # page reads at a glance: accent = working now, grey = waiting,
+            # green = finished, red = needs a look.
+            for cls in ("scan-run", "scan-queued", "scan-ok", "scan-fail"):
+                frame.remove_css_class(cls)
+            frame.add_css_class({
+                "running": "scan-run", "done": "scan-ok",
+                "failed": "scan-fail", "interrupted": "scan-fail",
+            }.get(st, "scan-queued"))
+            if st == "running":
+                # No scanner reports a total, so a pulse is the honest
+                # glyph for "working"; the counter beside it is the fact.
+                bar.set_fraction(0.0)
+                bar.add_css_class("busy")
+            elif st == "done":
+                bar.set_fraction(1.0)
+                bar.add_css_class("ok")
+            elif st in ("failed", "interrupted"):
+                bar.set_fraction(1.0)
+                bar.add_css_class("fail")
+            else:
+                bar.set_fraction(0.0)
+                bar.add_css_class("idle")
+            position = ""
+            if total > 1:
+                position = f" · step {int(sc.get('order') or 0)} of {total}"
+            text = card_text(name, live) or ""
+            if st == "failed" and sc.get("detail"):
+                text = f"Failed — {sc['detail']}"
+            if st == "queued" and sc.get("waiting_for"):
+                text = f"Queued — starts after {sc['waiting_for']}"
+            line.set_text((text + position).strip(" ·"))
+            lines = [str(x) for x in (sc.get("log") or []) if str(x).strip()]
+            log.set_text("\n".join(lines[-3:]) if lines else "")
+            # A queued scanner shows no bar at all: an empty trough reads
+            # as "stuck at 0", which is the reading the owner rejected.
+            bar.set_visible(st in ("running", "done", "failed",
+                                   "interrupted"))
+            line.set_visible(True)
+            log.set_visible(bool(lines))
 
     def _baseline_card(self):
         """The baseline pass lives in the wizard, so this is the doorway.
@@ -1194,11 +1253,49 @@ class MainWindow(Gtk.Window):
         click.connect("released", _row_clicked)
         frame.add_controller(click)
 
-        frame.set_child(box)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        outer.append(box)
+        scanline = bar = log = None
+        if name in SCANNER_ORDER:
+            # The scan half of the row: one sentence, a horizontal bar, and
+            # the last lines the scanner itself printed. Indented to the
+            # name so the eye reads it as part of this protection.
+            scanline = Gtk.Label(xalign=0)
+            scanline.set_xalign(0)
+            scanline.set_wrap(True)
+            scanline.add_css_class("gw-scanline")
+            scanline.set_margin_start(31)
+            scanline.set_margin_end(8)
+            scanline.set_margin_bottom(2)
+            outer.append(scanline)
+            bar = Gtk.ProgressBar()
+            bar.add_css_class("gw-scanbar")
+            bar.set_show_text(False)
+            bar.set_size_request(-1, 6)
+            bar.set_margin_start(31)
+            bar.set_margin_end(8)
+            bar.set_visible(False)
+            outer.append(bar)
+            log = Gtk.Label(xalign=0)
+            log.set_xalign(0)
+            log.set_wrap(True)
+            log.set_lines(3)
+            log.set_ellipsize(Pango.EllipsizeMode.END)
+            log.add_css_class("gw-scanlog")
+            log.set_margin_start(31)
+            log.set_margin_end(8)
+            log.set_margin_bottom(5)
+            log.set_visible(False)
+            outer.append(log)
+
+        frame.set_child(outer)
         frame.set_tooltip_text(f"{friendly_name(name)} — {what_is(name)}")
         frame._sub = sub
         frame._tool = tool_name
         frame._pause_btn = pause
+        frame._scanline = scanline
+        frame._bar = bar
+        frame._log = log
         return frame
 
     def _request_scan(self, mode) -> tuple[bool, str]:
@@ -1238,12 +1335,11 @@ class MainWindow(Gtk.Window):
             self.scan_status.set_markup(
                 f"<span size='13000' font_family='Inter'>"
                 f"{escape(mode['title'])}: "
-                f"{'asked for — progress is on the Scans page' if ok else 'not started: ' + escape(msg)}"
+                f"{'asked for — progress below' if ok else 'not started: ' + escape(msg)}"
                 f"</span>")
         if not ok:
             return
-        self._ensure_view("scans")
-        self._show("scans")
+        self._show("deep")
 
     def _open_scan_for(self, _btn, tool_name):
         key = "yara-tmp-scan" if tool_name == "yara-watch" else tool_name
@@ -1251,7 +1347,7 @@ class MainWindow(Gtk.Window):
         if mode:
             self._start_scan(None, mode)
         else:
-            self._show("scans")
+            self._show("deep")
 
     def _pause_selected(self):
         if self._selected_tool:
@@ -1836,8 +1932,7 @@ class MainWindow(Gtk.Window):
         for row, (name, what) in enumerate((
                 ("Wizard", "Guided setup, one task at a time."),
                 ("Security", "State of every protection at a glance."),
-                ("Tools", "Every protection, its scans and progress."),
-                ("Scans", "Live progress and findings while scans run."),
+                ("Protections", "Every protection, its scan progress and log."),
                 ("Logs", "The raw record, newest first."),
                 ("Settings", "Theme, app firewall, trusted items, updates."),
                 ("Help", "What each protection does, in plain words."))):
@@ -1858,7 +1953,7 @@ class MainWindow(Gtk.Window):
             guide.attach(right, 1, row, 1, 1)
         card, inner = self._settings_card(
             "How to use it",
-            "Seven pages, one job each. Nothing here needs a command.")
+            "Six places, one job each. Nothing here needs a command.")
         inner.append(guide)
         return self._settings_section(card)
 
@@ -3290,7 +3385,8 @@ class MainWindow(Gtk.Window):
                 pill = f"{paused_n} paused"
                 pill_state = "warn"
             else:
-                lead = f"{attention} need attention"
+                lead = f"{attention} {'needs' if attention == 1 else 'need'}" \
+                       f" attention"
                 if paused_n:
                     lead += f" · {paused_n} paused"
                 pill = lead
@@ -3311,7 +3407,8 @@ class MainWindow(Gtk.Window):
                 "waiting for the monitor"
                 if known == 0 and not self._state_override
                 else f"{running} running · {paused_n} paused · "
-                     f"{attention} need attention")
+                     f"{attention} {'needs' if attention == 1 else 'need'}"
+                     f" attention")
 
         now = _dt.datetime.now(_dt.timezone.utc)
         # Rank by what needs a human, not by registry order: anything failed
@@ -3367,6 +3464,14 @@ class MainWindow(Gtk.Window):
                 info = tools.get(name, {})
                 state = self._display_state(name, info, updated)
                 paused = self.paused.is_paused(name)
+                for cls in ("red", "warn", "ok"):
+                    frame.remove_css_class(cls)
+                stripe = {"RED": "red", "YELLOW": "warn",
+                          "GREEN": "ok"}.get(state)
+                if stripe is None and paused:
+                    stripe = "warn"
+                if stripe:
+                    frame.add_css_class(stripe)
                 ev = next((e for e in reversed(events)
                            if e.get("from_tool") == name
                            and not str(e.get("text", "")).startswith(
@@ -3396,14 +3501,9 @@ class MainWindow(Gtk.Window):
                         detail += f" · {age}"
                 else:
                     detail = quiet_note(name, None)
-                # The row's sub-line says what the scan is doing right now,
-                # then what the last one found; the state sentence above it
-                # still describes the service, not the scan.
-                scanned = card_text(name, self._scan_live)
-                if scanned:
-                    head = (f"<span size='11000' font_family='Inter' "
-                            f"color='{state_color}'>● "
-                            f"{escape(scanned)}</span>")
+                # The sub-line describes the service. The scan's own
+                # sentence, bar and log sit beneath it, painted by
+                # _paint_scan_rows from the same live document.
                 frame._sub.set_markup(head)
                 frame.set_tooltip_text(
                     f"{friendly_name(name)} — {what_is(name)}"
@@ -3411,6 +3511,7 @@ class MainWindow(Gtk.Window):
                 frame._pause_btn.set_label("Resume" if paused else "Pause")
                 if hasattr(frame, "_pause_btn") and t.get("unit"):
                     frame._pause_btn.set_sensitive(True)
+            self._paint_scan_rows()
 
         if self._detail_dialog and self._detail_dialog.get_visible() and \
                 self._selected_tool:
@@ -3437,6 +3538,10 @@ class MainWindow(Gtk.Window):
             return
         rows = (live or {}).get("scanners") or {}
         finds = int((live or {}).get("real_findings") or 0)
+        # On the page itself, "details on the Protections page" tells the
+        # reader to go where they already are.
+        where = ("below" if self.stack.get_visible_child_name() == "deep"
+                 else "on the Protections page")
         if state == "running":
             running = [SCAN_NAMES.get(k, k) for k, v in rows.items()
                        if (v or {}).get("state") == "running"]
@@ -3444,14 +3549,14 @@ class MainWindow(Gtk.Window):
                 else "Finishing the scan…"
             if finds:
                 msg += f" · {finds} finding{'s' if finds != 1 else ''}"
-            msg += ". Details on the Scans page."
+            msg += f". Details {where}."
         elif state == "done":
             msg = ("Last scan finished"
                    + (f" · {finds} finding{'s' if finds != 1 else ''}"
                       if finds else " · clean")
-                   + ". Details on the Scans page.")
+                   + f". Details {where}.")
         elif state in ("failed", "interrupted"):
-            msg = f"Last scan {state}. Details on the Scans page."
+            msg = f"Last scan {state}. Details {where}."
         else:
             return
         owned = self.scan_status.get_text() == getattr(

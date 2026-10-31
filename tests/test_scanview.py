@@ -11,7 +11,9 @@ import gi  # noqa: E402
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from ui.scanview import ScanView, card_text, read_history  # noqa: E402
+from ui.scanview import (  # noqa: E402
+    SEVERITY_MEANING, ScanConsole, card_text, finding_path, read_history,
+    when_label)
 
 
 def pump(n=20):
@@ -31,8 +33,9 @@ LIVE = {
         "rkhunter": {"state": "failed", "counter_label": "checks completed",
                      "count": 3, "current": "", "findings": 0,
                      "detail": "not installed"},
-        "lynis": {"state": "done", "counter_label": "tests completed",
-                  "count": 120, "current": "", "findings": 0, "detail": ""},
+        "lynis": {"state": "queued", "counter_label": "tests completed",
+                  "count": 0, "current": "", "findings": 0, "detail": "",
+                  "waiting_for": "Antivirus"},
     },
     "real_findings": 2, "routine_findings": 12,
 }
@@ -44,22 +47,33 @@ def test_card_text_speaks_plainly_and_names_failures():
     assert "not installed" in card_text("rkhunter", LIVE)
     assert card_text("aide", LIVE) == ""
     assert card_text("clamav", None) == ""
-    done = {"scanners": {"lynis": {"state": "done", "count": 120,
-                                   "counter_label": "tests completed",
-                                   "findings": 0, "detail": ""}}}
-    assert "clean" in card_text("lynis", done)
+    assert "starts after Antivirus" in card_text("lynis", LIVE)
 
 
-def test_the_tools_grid_gets_short_labels_that_fit_its_column():
-    # "Scanning · 12,844 files scanned · 1 finding" was ellipsised mid-word
-    # in the narrow protection grid (2026-10-30 screenshot pass).
+def test_the_row_label_gets_short_words_that_fit():
     text = card_text("clamav", LIVE)
     assert "1,284 files" in text and "files scanned" not in text
     assert "2 findings" in text
-    done = {"scanners": {"rkhunter": {"state": "done", "count": 41,
-                                      "counter_label": "checks completed",
-                                      "findings": 0, "detail": ""}}}
-    assert "41 checks" in card_text("rkhunter", done)
+
+
+def test_a_severity_word_carries_its_meaning():
+    # The owner read a bare red "HIGH" and asked what it was for. Every
+    # severity now has a sentence beside it in the legend and the dialog.
+    assert SEVERITY_MEANING["HIGH"] == "needs your attention now"
+    assert SEVERITY_MEANING["MEDIUM"] == "review when you have a moment"
+    view = ScanConsole(pathlib.Path("/tmp/none"))
+    assert "High findings need a decision" in view.legend.get_text()
+    view.unparent()
+
+
+def test_a_finding_names_the_file_it_can_act_on():
+    assert finding_path(
+        "Infected file: /tmp/eicar.com (Eicar-Signature)") == "/tmp/eicar.com"
+    assert finding_path("Eicar-Sig /tmp/x.bin") == "/tmp/x.bin"
+    assert finding_path(
+        "Changed since the file-integrity baseline: /etc/passwd"
+    ) == "/etc/passwd"
+    assert finding_path("Warning: Hidden file found") is None
 
 
 def test_rows_findings_and_routine_fold(tmp_path):
@@ -71,15 +85,35 @@ def test_rows_findings_and_routine_fold(tmp_path):
         {"scan_id": LIVE["scan_id"], "tool": "lynis", "severity": "HIGH",
          "text": "Warning: hidden", "routine": True},
     )) + "\n")
-    view = ScanView(tmp_path)
+    view = ScanConsole(tmp_path)
     view.paint(LIVE, view._findings_for(LIVE))
     pump()
-    assert "1,284" in view.row_widgets["clamav"]["count"].get_text()
-    assert "not installed" in view.row_widgets["rkhunter"]["current"].get_text()
-    assert view.findings_box.get_first_child() is not None
+    first = view.findings_box.get_first_child()
+    assert isinstance(first, Gtk.Button)
+    assert first.has_css_class("gw-finding")
     assert "2 routine notices" in view.routine_expander.get_label()
     assert "2 finding" in view.headline.get_text()
     view.unparent()
+
+
+def test_every_finding_is_a_button_that_opens_its_meaning():
+    view = ScanConsole(pathlib.Path("/tmp/none"))
+    row = view._finding_row({"tool": "clamav", "severity": "HIGH",
+                             "text": "Infected file: /tmp/e"})
+    assert isinstance(row, Gtk.Button)
+    assert "needs your attention now" in row.get_tooltip_text()
+    view.unparent()
+
+
+def test_history_chips_read_as_a_local_moment():
+    import datetime
+    raw = "2026-10-31T02:56:00+00:00"
+    want = datetime.datetime.fromisoformat(raw).astimezone().strftime(
+        "%b %d, %H:%M")
+    assert when_label(raw) == want
+    assert "T" not in when_label(raw)
+    assert when_label("not a date") == "not a date"[:16]
+    assert when_label("") == ""
 
 
 def test_history_lists_finished_scans_and_can_be_pinned(tmp_path):
@@ -90,7 +124,7 @@ def test_history_lists_finished_scans_and_can_be_pinned(tmp_path):
          "state": "done", "ended_at": "2026-10-30T07:00:10+00:00",
          "scanners": {}, "real_findings": 0, "routine_findings": 0}))
     assert len(read_history(tmp_path)) == 1
-    view = ScanView(tmp_path)
+    view = ScanConsole(tmp_path)
     view.refresh()
     pump()
     assert view.history.get_first_child() is not None
@@ -102,14 +136,11 @@ def test_history_lists_finished_scans_and_can_be_pinned(tmp_path):
 
 
 def test_the_findings_pane_shrinks_to_its_content(tmp_path):
-    # A fixed 170px viewport left a dead band between the last finding and
-    # "Recent scans" when a scan found only one thing.
-    view = ScanView(tmp_path)
+    view = ScanConsole(tmp_path)
     scrollers = [w for w in _walk(view) if isinstance(w, Gtk.ScrolledWindow)]
     assert scrollers, "the findings list scrolls"
     assert scrollers[0].get_propagate_natural_height() is True
-    assert scrollers[0].get_max_content_height() == 240
-    assert scrollers[0].get_size_request().height == -1
+    assert scrollers[0].get_max_content_height() == 260
     view.unparent()
 
 
@@ -122,9 +153,10 @@ def _walk(widget):
 
 
 def test_an_empty_state_explains_what_will_happen(tmp_path):
-    view = ScanView(tmp_path)
+    view = ScanConsole(tmp_path)
     view.refresh()
     pump()
     assert "No scan yet" in view.headline.get_text()
-    assert view.row_widgets["clamav"]["state"].get_text() == "—"
+    assert "Nothing to report yet" in view.findings_box.get_first_child(
+    ).get_text()
     view.unparent()

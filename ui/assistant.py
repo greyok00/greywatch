@@ -2134,6 +2134,11 @@ if GIOMM_OK:
             adj.set_value(bottom - page + 4)
             return False
 
+        def ask(self, question: str):
+            """Ask a question from outside the composer (a finding row)."""
+            self.entry.set_text(question)
+            self._send()
+
         def _send(self, *_a):
             question = self.entry.get_text().strip()
             if not question:

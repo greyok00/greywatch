@@ -37,6 +37,8 @@ python3 "$GW/packaging/strip-source.py" "$TREE"
 # compiled sibling goes; everything run by path survives.
 python3 "$GW/packaging/drop_fallbacks.py" "$TREE"
 
-tar czf "$OUT/$NAME" -C "$TREE" .
+# Archive the VERSIONED directory, not its contents: extracting used to
+# dump the whole program tree into the current directory.
+tar czf "$OUT/$NAME" -C "$STAGE" "greywatch-v$VER"
 ( cd "$OUT" && sha256sum "$NAME" > "$NAME.sha256" )
 echo "built: $OUT/$NAME"

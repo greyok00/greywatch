@@ -483,6 +483,55 @@ frame.gw-prow {{
 }}
 frame.gw-prow > box, .gw-prow box {{ background-color: {panel}; }}
 .gw-prow button box {{ background-color: transparent; }}
+/* Same missing tint as the rail rows: symbolic glyphs otherwise fall back
+   to the system icon colour (white), which vanishes on light themes. */
+.gw-prow image {{ color: {ink_soft}; }}
+/* The merged Protections page (2026-10-30): every protection is a
+   full-width row. A 3px stripe carries the live state at a glance; the
+   scan half adds a sentence, a bar and the scanner's own last lines. */
+frame.gw-prow.red {{ border-left: 3px solid {fail}; }}
+frame.gw-prow.warn {{ border-left: 3px solid {warn}; }}
+frame.gw-prow.ok {{ border-left: 3px solid {ok}; }}
+frame.gw-prow:hover {{
+  border-color: {hair2};
+  box-shadow: 0 1px 0 {card_hi} inset, 0 6px 18px rgba(0,0,0,0.12);
+}}
+.gw-scanline {{ font-size: 12px; color: {ink_soft}; }}
+/* Scan state on the row edge: working now, waiting, finished, needs a
+   look. The bar beside it moves; the stripe tells the page at a glance. */
+frame.gw-prow.scan-run {{ border-left: 3px solid {accent}; }}
+frame.gw-prow.scan-queued {{ border-left: 3px solid {line_strong}; }}
+frame.gw-prow.scan-ok {{ border-left: 3px solid {ok}; }}
+frame.gw-prow.scan-fail {{ border-left: 3px solid {fail}; }}
+.gw-scanlog {{
+  font-family: {mono}; font-size: 10.5px; color: {mute};
+  background-color: {panel2}; border-radius: 6px; padding: 4px 8px;
+}}
+progressbar.gw-scanbar, progressbar.gw-scanbar trough,
+progressbar.gw-scanbar progress {{ min-height: 6px; }}
+progressbar.gw-scanbar trough {{
+  background-color: {line}; border: none; border-radius: 99px;
+}}
+progressbar.gw-scanbar progress {{
+  background-color: {accent}; border-radius: 99px;
+}}
+progressbar.gw-scanbar.ok progress {{ background-color: {ok}; }}
+progressbar.gw-scanbar.fail progress {{ background-color: {fail}; }}
+progressbar.gw-scanbar.idle progress {{ background-color: {line_strong}; }}
+/* A finding is a button: clicking it opens the meaning and the actions. */
+button.gw-finding {{
+  background-color: transparent; border: 1px solid {hair};
+  border-radius: 8px; padding: 6px 10px; min-height: 28px;
+}}
+button.gw-finding:hover {{ background-color: {hover}; border-color: {hair2}; }}
+button.gw-finding.sev-high {{ border-left: 3px solid {fail}; }}
+button.gw-finding.sev-critical {{ border-left: 3px solid {fail}; }}
+button.gw-finding.sev-medium {{ border-left: 3px solid {warn}; }}
+button.gw-finding.sev-low, button.gw-finding.sev-info {{
+  border-left: 3px solid {line_strong};
+}}
+.gw-fixhint {{ font-size: 11.5px; color: {accent}; }}
+.gw-advice {{ font-size: 12.5px; color: {ink}; }}
 /* Settings index: a quiet list of sections, the selected one on the accent
    tint. No borders — the rows are the navigation, not a table. */
 .gw-index {{ background-color: transparent; }}
@@ -499,6 +548,7 @@ frame.gw-prow > box, .gw-prow box {{ background-color: {panel}; }}
 /* Help protection rows: quiet, one line each, hover like a list. */
 .gw-help-row {{ padding: 3px 8px; border-radius: 8px; }}
 .gw-help-row:hover {{ background-color: {hover}; }}
+.gw-help-row image {{ color: {ink_soft}; }}
 button.gw-mini {{
   padding: 1px 6px; min-height: 22px; border-radius: 7px;
   font-size: 11.5px; font-weight: 550;
@@ -597,7 +647,12 @@ switch:checked slider {{ background-color: #ffffff; }}
 }}
 .gw-rail-rows button:hover {{ background-color: {hover}; border-color: transparent; }}
 .gw-rail-rows button image {{ color: {ink_soft}; }}
+/* Symbolic icons take their tint from CSS `color`; without a rule here
+   GTK falls back to the system icon colour, which is white — so in the
+   light theme every protection row drew a white glyph on a white card. */
+.gw-rail-rows row image {{ color: {ink_soft}; }}
 .gw-rail-rows row:selected label {{ color: {ink}; }}
+.gw-rail-rows row:selected image {{ color: {accent}; }}
 listview, list {{ background-color: transparent; }}
 .gw-segmented button {{
   border-radius: 0; border-right-width: 0; margin: 0;

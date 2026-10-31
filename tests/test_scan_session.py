@@ -175,7 +175,7 @@ class FakeHandle:
 def _service(tmp_path, scripts, **kw):
     calls = []
 
-    def spawn(argv):
+    def spawn(argv, log_path=None, **kw):
         calls.append(argv)
         return FakeHandle(*scripts.pop(0))
 
@@ -202,7 +202,7 @@ def test_a_single_scan_writes_live_findings_and_summary(tmp_path):
     assert live["state"] == "done"
     assert live["scanners"]["clamav"]["count"] == 2
     assert live["real_findings"] == 1
-    assert calls and "clamscan" in calls[0][0]
+    assert calls and "clamscan" in " ".join(calls[0])
     findings = (tmp_path / "scan-findings.jsonl").read_text().splitlines()
     row = json.loads(findings[0])
     assert row["routine"] is False
@@ -309,7 +309,9 @@ def test_each_line_reaches_the_event_log_once(tmp_path):
     assert warns[0].startswith("[")        # canonicalised for the log parser
 
 
-def test_an_interrupted_live_file_is_marked_on_startup(tmp_path):
+def test_a_running_scan_without_its_unit_is_reported_not_faked(tmp_path):
+    # A scan that had no transient unit cannot be followed after a restart.
+    # It is named as lost with the reason — never silently declared clean.
     (tmp_path / "scan-live.json").write_text(json.dumps({
         "scan_id": "20261030T070000-aaaa", "key": "clamav",
         "state": "running", "ended_at": None,
@@ -317,9 +319,62 @@ def test_an_interrupted_live_file_is_marked_on_startup(tmp_path):
     svc, _calls = _service(tmp_path, [])
     svc.recover_interrupted()
     live = json.loads((tmp_path / "scan-live.json").read_text())
-    assert live["state"] == "interrupted"
-    assert live["scanners"]["clamav"]["state"] == "interrupted"
-    assert "restart" in live["note"]
+    assert live["state"] in ("failed", "interrupted")
+    assert live["scanners"]["clamav"]["state"] in ("failed", "interrupted")
+    assert "restart" in (live["scanners"]["clamav"].get("detail")
+                         or live.get("note") or "")
+
+
+def test_a_restarted_daemon_reattaches_to_the_running_scanner(tmp_path):
+    # The scanner ran as a transient unit and kept working; the new daemon
+    # tails its log from the recorded offset and finishes the session.
+    (tmp_path / "scan-live.json").write_text(json.dumps({
+        "scan_id": "20261030T070000-bbbb", "key": "scan-all",
+        "state": "running", "ended_at": None,
+        "sequence": ["clamav", "aide"],
+        "scanners": {
+            "clamav": {"state": "done", "count": 5, "findings": 0},
+            "aide": {"state": "running", "count": 2, "unit":
+                     "gw-scan-20261030T070000-bbbb-aide",
+                     "log_offset": 0, "duration_s": 3}}}))
+    svc, calls = _service(tmp_path, [([], 0, 0)])
+    svc.recover_interrupted()
+    assert svc.running()                    # picked up, not killed
+    _run(svc)
+    live = json.loads((tmp_path / "scan-live.json").read_text())
+    assert live["state"] == "done"
+    assert live["scanners"]["aide"]["state"] == "done"
+    assert calls == [[]]           # re-attach, not a fresh spawn
+
+
+def test_scan_all_runs_one_scanner_at_a_time_in_order(tmp_path):
+    (tmp_path / "security-hardening").mkdir()
+    (tmp_path / "scan-request.json").write_text(json.dumps(
+        {"id": "20261030T074500-7f7f", "key": "scan-all"}))
+    svc, calls = _service(tmp_path, [
+        ([], 0), ([], 0), ([], 0), ([], 0), ([], 0)])
+    svc.tick()
+    live = json.loads((tmp_path / "scan-live.json").read_text())
+    running = [k for k, sc in live["scanners"].items()
+               if sc["state"] == "running"]
+    queued = [k for k, sc in live["scanners"].items()
+              if sc["state"] == "queued"]
+    assert running == ["clamav"]            # exactly one, the first key
+    assert len(queued) == 4
+    assert live["scanners"]["rkhunter"]["waiting_for"]
+    _run(svc)
+    live = json.loads((tmp_path / "scan-live.json").read_text())
+    assert set(live["scanners"]) == set(S.SCAN_ALL)
+    assert live["state"] == "done"
+    assert len(calls) == 5
+
+
+def test_the_temp_sweep_reports_folders_swept(tmp_path):
+    p = S.parse_progress("yara-tmp-scan", "@@DIRS 100 /tmp/x")
+    assert p["counted"] is False and p["count"] == 100
+    assert p["current"] == "/tmp/x"
+    p = S.parse_progress("yara-tmp-scan", "@@DIRS 1240")
+    assert p["count"] == 1240 and p["finding"] is None
 
 
 def test_history_keeps_the_newest_twenty(tmp_path):

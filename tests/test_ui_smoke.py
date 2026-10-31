@@ -68,7 +68,7 @@ def test_unknown_view_key_cannot_grey_the_app(win):
 
 
 def test_every_rail_button_switches(win):
-    for key in ("tools", "scans", "deep", "settings", "logs", "help"):
+    for key in ("tools", "deep", "settings", "logs", "help"):
         win._rail_pick(None, key)
         pump(5)
         assert win.stack.get_visible_child_name() == key
@@ -97,7 +97,9 @@ def test_scan_buttons_write_a_request_the_daemon_picks_up(win):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_a_scan_button_opens_the_scans_page(win):
+def test_a_scan_button_opens_the_protections_page(win):
+    # One page now: the progress rows and the findings live together
+    # (owner 2026-10-30 — two pages showed the same scan twice).
     from ui.cards import SCAN_MODES
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="gw-scan-test-"))
     old = win.data_dir
@@ -106,8 +108,8 @@ def test_a_scan_button_opens_the_scans_page(win):
         mode = next(m for m in SCAN_MODES if m["key"] == "yara-tmp-scan")
         win._start_scan(None, mode)
         pump(10)
-        assert win.stack.get_visible_child_name() == "scans"
-        assert "Scans" in win.scan_status.get_text() or \
+        assert win.stack.get_visible_child_name() == "deep"
+        assert "Protections" in win.scan_status.get_text() or \
             "asked" in win.scan_status.get_text()
     finally:
         win.data_dir = old

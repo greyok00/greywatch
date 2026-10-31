@@ -40,6 +40,9 @@ tar -C "$GW" -cf - \
     --exclude='./.claude' --exclude='./.mypy_cache' \
     --exclude='./.pre-commit*' --exclude='./.gitignore' \
     . | tar -C "$PAYLOAD" -xf -
+# The systemd unit's Documentation= line points at this file, and the
+# installed machine should carry the same guide the release page shows.
+install -Dm 0644 "$GW/README.md" "$PAYLOAD/README.md"
 
 # --- ship code without commentary: the compiled modules carry no
 # --- docstrings (build-cython.sh), and the .py fallbacks plus the
@@ -57,17 +60,17 @@ STATE_DIR=/var/lib/greywatch
 install -d -m 0770 "$STAGE$STATE_DIR"
 install -Dm 0644 /dev/null "$STAGE/etc/systemd/system/greywatch.service"
 sed -e "s|__GW_LIB__|$PREFIX|g" -e "s|__GW_DATA__|$STATE_DIR|g" \
-    -e "s|__GW_UI_USER__|grey|g" "$GW/doc/greywatch.service" > "$STAGE/etc/systemd/system/greywatch.service"
+    -e "s|__GW_UI_USER__|${GREYWATCH_UI_USER:-}|g" "$GW/doc/greywatch.service" > "$STAGE/etc/systemd/system/greywatch.service"
 for unit in greywatch-cve.service greywatch-cve.timer \
             greywatch-watchdog.service greywatch-watchdog.timer; do
     [ -f "$GW/doc/$unit" ] || continue
     mkdir -p "$STAGE/etc/systemd/system"
     sed -e "s|__GW_LIB__|$PREFIX|g" -e "s|__GW_DATA__|$STATE_DIR|g" \
-        -e "s|__GW_UI_USER__|grey|g" "$GW/doc/$unit" > "$STAGE/etc/systemd/system/$unit"
+        -e "s|__GW_UI_USER__|${GREYWATCH_UI_USER:-}|g" "$GW/doc/$unit" > "$STAGE/etc/systemd/system/$unit"
 done
 install -Dm 0644 /dev/null "$STAGE/usr/share/polkit-1/actions/greywatch.apply.policy"
 sed -e "s|__GW_LIB__|$PREFIX|g" -e "s|__GW_DATA__|$STATE_DIR|g" \
-    -e "s|__GW_UI_USER__|grey|g" \
+    -e "s|__GW_UI_USER__|${GREYWATCH_UI_USER:-}|g" \
     "$GW/apply/polkit/greywatch.apply.policy" \
     > "$STAGE/usr/share/polkit-1/actions/greywatch.apply.policy"
 

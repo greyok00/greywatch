@@ -44,6 +44,12 @@
     <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
     <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/harden.sh</annotate>
   </action>
+  <action id="com.greywatch.apply.file-action">
+    <description>greywatch quarantine or delete a file named by a scan finding</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/file-action.sh</annotate>
+  </action>
   <action id="com.greywatch.apply.tool-control">
     <description>greywatch tool on/off helper (start-all, stop-all, scan-all)</description>
     <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>

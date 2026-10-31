@@ -196,7 +196,8 @@ def build_pack(status: dict, events: list[dict], question: str,
         for row in search_events(words) + load_event_tail():
             if row not in history:
                 history.append(row)
+    needs = "needs" if warn == 1 else "need"
     return {"status_line":
-            f"{green} of {total} protections green, {warn} need attention",
+            f"{green} of {total} protections green, {warn} {needs} attention",
             "tools": pack_tools, "snippets": snippets, "recent": recent,
             "history": history}
