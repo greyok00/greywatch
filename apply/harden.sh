@@ -571,8 +571,73 @@ if [ "$MODE" = "apply" ]; then
                 [ "$step_rc" -eq 0 ] || rc=2
                 ;;
             pkg-upgrade)
-                env DEBIAN_FRONTEND=noninteractive apt-get -y full-upgrade >/dev/null 2>&1
+                # upgrade, never full-upgrade: nothing is removed, and
+                # --force-confold keeps local config files in place.
+                env DEBIAN_FRONTEND=noninteractive \
+                    apt-get -y -o Dpkg::Options::=--force-confold \
+                    upgrade >/dev/null 2>&1
                 step_rc=$?
+                echo "APPLY $id $step_rc"
+                [ "$step_rc" -eq 0 ] || rc=2
+                ;;
+            pkg-install)
+                pkg=$(get "$efile" package)
+                if [[ ! "$pkg" =~ ^[a-z0-9.+-]+$ ]]; then
+                    echo "BAD-PKG $id" >&2
+                    rc=2
+                    printf '%s\n' "$(basename -- "$efile")" >> "$TD/skip.list"
+                    continue
+                fi
+                env DEBIAN_FRONTEND=noninteractive \
+                    apt-get -y install -- "$pkg" >/dev/null 2>&1
+                step_rc=$?
+                echo "APPLY $id $step_rc"
+                [ "$step_rc" -eq 0 ] || rc=2
+                ;;
+            pending-restarts)
+                REBOOT_FILE="${GREYWATCH_TEST_REBOOT_REQUIRED:-/var/run/reboot-required}"
+                REBOOT_PKGS="${REBOOT_FILE}.pkgs"
+                python3 - "$REBOOT_FILE" "$REBOOT_PKGS" <<'PY'
+import json, os, sys
+reboot, pkgs = sys.argv[1], sys.argv[2]
+doc = {"reboot_required": os.path.exists(reboot), "packages": [],
+       "services": [], "needrestart": False}
+if os.path.exists(pkgs):
+    try:
+        doc["packages"] = [ln.strip() for ln in
+                           open(pkgs, encoding="utf-8") if ln.strip()]
+    except OSError:
+        pass
+print(json.dumps(doc, separators=(",", ":")))
+PY
+                step_rc=$?
+                echo "APPLY $id $step_rc"
+                ;;
+            restart-units)
+                units=$(get "$efile" units)
+                if [ -z "$units" ]; then
+                    echo "BAD-UNITS $id" >&2
+                    rc=2
+                    printf '%s\n' "$(basename -- "$efile")" >> "$TD/skip.list"
+                    continue
+                fi
+                step_rc=0
+                IFS=',' read -r -a ulist <<< "$units"
+                for u in "${ulist[@]}"; do
+                    if [[ ! "$u" =~ ^[A-Za-z0-9@._-]+$ ]]; then
+                        echo "BAD-UNITS $id" >&2
+                        step_rc=2
+                        break
+                    fi
+                done
+                if [ "$step_rc" -ne 0 ]; then
+                    rc=2
+                    printf '%s\n' "$(basename -- "$efile")" >> "$TD/skip.list"
+                    continue
+                fi
+                for u in "${ulist[@]}"; do
+                    systemctl restart -- "$u" >/dev/null 2>&1 || step_rc=$?
+                done
                 echo "APPLY $id $step_rc"
                 [ "$step_rc" -eq 0 ] || rc=2
                 ;;
@@ -594,7 +659,7 @@ if [ "$MODE" = "apply" ]; then
         id=$(get "$efile" id)
         verb=$(get "$efile" verb)
         case "$verb" in
-            sh|unit-install|sysctl-set|service-off|pkg-upgrade) ;;
+            sh|unit-install|sysctl-set|service-off|pkg-upgrade|pkg-install|pending-restarts|restart-units) ;;
             *) continue ;;
         esac
         ok_id "$id" || continue
@@ -608,7 +673,7 @@ if [ "$MODE" = "apply" ]; then
             probe_rc=$?
             echo "VERBIFY $id $probe_rc"
             case "$verb" in
-                sh|pkg-upgrade)
+                sh|pkg-upgrade|pkg-install|pending-restarts|restart-units)
                     echo "ROLLBACK-SKIP $id" >&2
                     worse_rc 4
                     ;;

@@ -15,11 +15,13 @@ from hardening.detector import cve_note
 from hardening.journal import read_latest
 from ui.models import MARK_BY_SEVERITY  # noqa: F401  (severity tags)
 from ui.plain import (escape, ink as pc_ink, soft as pc_soft,
-                      muted as pc_muted, warn as pc_warn)
+                      muted as pc_muted, warn as pc_warn,
+                      ok as pc_ok, fail as pc_fail)
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 from gwpaths import data_dir as _gw_data
-DATA_DIR = _gw_data()
+DATA_DIR = _gw_data()          # state: journal, CVE cache
+CONTROL_DIR = ROOT / "data"    # the control definitions ship with the app
 JOURNAL_PATH = DATA_DIR / "hardening-journal.jsonl"
 
 
@@ -40,8 +42,12 @@ def verby_args(fix) -> dict:
         return {"verb": "sysctl-set", "key": args[0], "value": args[1]}
     if verb == "service-off" and len(args) >= 1:
         return {"verb": "service-off", "unit": args[0]}
-    if verb == "pkg-upgrade":
-        return {"verb": "pkg-upgrade"}
+    if verb in ("pkg-upgrade", "pending-restarts"):
+        return {"verb": verb}
+    if verb == "pkg-install" and len(args) >= 1:
+        return {"verb": "pkg-install", "package": args[0]}
+    if verb == "restart-units" and len(args) >= 1:
+        return {"verb": "restart-units", "units": args[0]}
     if verb == "unit-install" and len(args) >= 2:
         if "{{unit}}" in args[0] or "{{unit}}" in args[1] \
                 or args[1] == "TRANCHE":
@@ -101,7 +107,7 @@ class HardenView(Gtk.Box):
         self._dead = False
         self.connect("destroy", self._on_dead)
 
-        self.append(self._h1("Harden the endpoint"))
+        self.append(self._h1("Endpoint Hardening"))
         intro = Gtk.Label(xalign=0)
         intro.set_xalign(0)
         intro.set_wrap(True)
@@ -120,6 +126,7 @@ class HardenView(Gtk.Box):
         self.status.set_hexpand(True)
         self.status.set_wrap(True)
         self.status.set_max_width_chars(64)
+        self.status.set_text("Not run yet.")
         row.append(self.status)
         self.scan_btn = Gtk.Button(label="Run baseline checks")
         self.scan_btn.add_css_class("gw-cta")
@@ -135,12 +142,26 @@ class HardenView(Gtk.Box):
         row.append(self.undo_btn)
         self.append(row)
 
+        # Until a scan runs, the card area is empty; a blank half-screen
+        # read as a broken page (owner 2026-10-30). One sentence says what
+        # will appear here.
+        self.empty = Gtk.Label(xalign=0)
+        self.empty.set_xalign(0)
+        self.empty.set_wrap(True)
+        self.empty.set_valign(Gtk.Align.START)
+        self.empty.add_css_class("gw-meta")
+        self.empty.set_text(
+            "Each setting this computer is checked against gets a card "
+            "here: what it is, where it stands now, and what applying it "
+            "would change. Press Run baseline checks to fill them in.")
+        self.append(self.empty)
+
         self.cards = Gtk.FlowBox()
         self.cards.set_max_children_per_line(3)
         self.cards.set_min_children_per_line(2)
         self.cards.set_selection_mode(Gtk.SelectionMode.NONE)
         self.cards.set_hexpand(True)
-        self.cards.set_vexpand(True)
+        self.cards.set_vexpand(False)
         self.append(self.cards)
         self.append(self._h2("Verification"))
         self.verify_label = Gtk.Label(xalign=0)
@@ -187,7 +208,12 @@ class HardenView(Gtk.Box):
                 controls = list(self._controls)
             else:
                 from hardening.controls import load_controls
-                controls = load_controls(DATA_DIR)
+                # The definitions are part of the program, not of the
+                # state directory: reading them from /var/lib found an
+                # empty list on every real install and the page reported
+                # "0 checks done" (owner 2026-10-30).
+                controls = load_controls(CONTROL_DIR) \
+                    or load_controls(DATA_DIR)
         except Exception:
             controls = []
         if self._cve_cache is None:
@@ -231,6 +257,7 @@ class HardenView(Gtk.Box):
             return False
         self._findings = findings
         self._scanned = True
+        self.empty.set_visible(not bool(findings))
         self._scanned_controls = list(controls)
         by_id = {getattr(c, "id", ""): c for c in controls}
         while True:
@@ -239,51 +266,75 @@ class HardenView(Gtk.Box):
                 break
             self.cards.remove(child)
         cant = [f for f in findings if f.state == detector.CANT]
-        # An unknown state is never applied — but advisory cards are
-        # never applied at anything, so when ONLY advisory checks came
-        # back uncheckable they must not hold the whole panel hostage.
+        # Advisory cards are information only. build_plan never applies
+        # them, so they must not count as gaps or hold Apply open:
+        # counting them made Apply look broken on a machine whose only
+        # "gaps" were advisory (owner 2026-10-30). An unknown state is
+        # likewise never applied, but an advisory one going unknown must
+        # not hold the whole panel hostage.
         advisory_ids = {getattr(c, "id", "") for c in controls
                         if bool(getattr(c, "advisory", False))}
         gating = [f for f in cant if f.control_id not in advisory_ids]
+        gaps = [f for f in findings if f.state == detector.GAP
+                and f.control_id not in advisory_ids]
         manual_ids = set()
-        for f in findings:
-            if f.state == detector.GAP:
-                got = verby_args(getattr(by_id.get(f.control_id), "fix", []))
-                if not got or got.get("unresolvable"):
-                    manual_ids.add(f.control_id)
+        for f in gaps:
+            got = verby_args(getattr(by_id.get(f.control_id), "fix", []))
+            if not got or got.get("unresolvable"):
+                manual_ids.add(f.control_id)
         for fnd in findings:
             self.cards.append(self._card(
                 fnd, by_id.get(fnd.control_id),
                 manual=fnd.control_id in manual_ids))
         n = len(findings)
-        gaps = sum(1 for f in findings if f.state == detector.GAP)
-        auto = gaps - len(manual_ids)
+        n_gap = len(gaps)
+        n_manual = len(manual_ids)
+        auto = n_gap - n_manual
         if gating:
-            self.status.set_text(
-                f"{n} checks: {gaps} gap(s) to tighten, {len(cant)} could "
-                f"NOT be checked. Applying stays off until every check "
-                f"can run.")
-        elif cant:
-            self.status.set_text(
-                f"{n} checks: {gaps} gap(s) to tighten, {len(cant)} could "
-                f"NOT be checked (advisory-only; nothing is applied from "
-                f"them). Review the cards, then Apply if you agree.")
+            text = (f"{n} checks: {n_gap} gap(s) to tighten, {len(cant)} "
+                    f"could NOT be checked. Applying stays off until every "
+                    f"check can run.")
         else:
-            lead = (f"{n} checks done: {auto} gap(s) would be tightened."
-                    if auto else f"{n} checks done: every gap needs a "
-                    f"manual change.")
-            extra = (f" {len(manual_ids)} more need(s) a change the "
-                     f"helper cannot make." if manual_ids else "")
-            self.status.set_text(
-                lead + extra + " Review the cards, then Apply if you "
-                "agree.")
+            if not n_gap:
+                text = (f"{n} checks done: every changeable check already "
+                        "passes.")
+            elif auto and n_manual:
+                text = (f"{n} checks done: {auto} gap(s) would be "
+                        f"tightened, {n_manual} need(s) a change the helper "
+                        "cannot make.")
+            elif auto:
+                text = f"{n} checks done: {auto} gap(s) would be tightened."
+            else:
+                text = (f"{n} checks done: {n_manual} gap(s) each need a "
+                        "change the helper cannot make.")
+            if advisory_ids:
+                adv_n = len(advisory_ids)
+                adv_words = ("card reports" if adv_n == 1
+                             else "cards report")
+                text += (f" {adv_n} advisory-only {adv_words} "
+                         "information and are never applied")
+                if cant:
+                    text += (f"; {len(cant)} of them could NOT be checked "
+                             "on this computer")
+                text += "."
+            if auto:
+                text += " Review the cards, then Apply if you agree."
+        self.status.set_text(text)
         if gating:
             self.apply_btn.set_tooltip_text(
                 "Off because some checks could not run. An unknown state "
                 "is never applied.")
+        elif not auto:
+            # Nothing here is the app's to change: either every check
+            # already passes or the gaps need a person. A live Apply
+            # button that can only report "nothing to apply" was read as
+            # a failure (owner 2026-10-30).
+            self.apply_btn.set_tooltip_text(
+                "Off because there is nothing the app can change: every "
+                "changeable check already passes.")
         else:
             self.apply_btn.set_tooltip_text("")
-        self.apply_btn.set_sensitive(not gating)
+        self.apply_btn.set_sensitive(not gating and auto > 0)
         return False
 
     def _load_cve_cache(self) -> dict:
@@ -306,9 +357,14 @@ class HardenView(Gtk.Box):
         # check that already passes is good news and reads green; red is
         # reserved for a check that actually failed. Severity lives in the
         # tag line at the bottom of the card.
-        mark = ("📄" if bool(getattr(control, "advisory", False)) else
-                {detector.PASS: "🟢", detector.GAP: "🟡",
-                 detector.FAIL: "🔴", detector.CANT: "⚪"}.get(fnd.state, "⚪"))
+        # A drawn dot in the theme's status ink, not an emoji: emoji
+        # ignore the theme and render differently on every machine.
+        advisory_flag = bool(getattr(control, "advisory", False))
+        dot_ink = (pc_muted() if advisory_flag else
+                   {detector.PASS: pc_ok(), detector.GAP: pc_warn(),
+                    detector.FAIL: pc_fail(),
+                    detector.CANT: pc_muted()}.get(fnd.state, pc_muted()))
+        mark = f"<span foreground='{dot_ink}'>●</span>"
         words = {detector.PASS: "already at baseline",
                  detector.GAP: "NOT at baseline (would be tightened)",
                  detector.FAIL: "failed the check",
@@ -321,6 +377,7 @@ class HardenView(Gtk.Box):
                                  "fix this one)"}
         frame = Gtk.Frame()
         frame.add_css_class("gw-card")
+        frame.dot_ink = dot_ink           # read by the UI tests
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         box.set_margin_top(12); box.set_margin_bottom(12)
         box.set_margin_start(12); box.set_margin_end(12)
@@ -383,13 +440,36 @@ class HardenView(Gtk.Box):
             entries, skipped = planfile_entries(plan, self._scanned_controls)
             if not entries:
                 self.apply_btn.set_sensitive(False)
-                self.apply_btn.set_tooltip_text(
-                    "Each gap needs a manual change the helper cannot "
-                    "make.")
-                self.status.set_text(
-                    "Nothing to apply: every gap needs a manual change. "
-                    "None was attempted. Run the checks again or review "
-                    "the cards.")
+                advisory_ids = {c.id for c in self._scanned_controls
+                                if bool(getattr(c, "advisory", False))}
+                gaps = [f for f in self._findings
+                        if f.state == detector.GAP
+                        and f.control_id not in advisory_ids]
+                advisories = [f for f in self._findings
+                              if f.control_id in advisory_ids]
+                if not gaps:
+                    # Nothing is wrong: saying "every gap needs a manual
+                    # change" here read as nine failures (owner
+                    # 2026-10-30).
+                    self.apply_btn.set_tooltip_text(
+                        "Off because there is nothing to change: every "
+                        "mechanical check already passes.")
+                    self.status.set_text(
+                        "Nothing to apply: every changeable check already "
+                        "passes. "
+                        + (f"The {len(advisories)} ADVISORY cards are "
+                           "information only and are never changed "
+                           "automatically. " if advisories else "")
+                        + "Run the checks again after a system update.")
+                else:
+                    self.apply_btn.set_tooltip_text(
+                        "Each gap needs a manual change the helper cannot "
+                        "make.")
+                    self.status.set_text(
+                        f"Nothing the app can apply: {len(gaps)} gap(s) "
+                        "each need a manual change, so none was "
+                        "attempted. The cards name the change for each "
+                        "one.")
                 return False
             planfile = pathlib.Path(tempfile.mkstemp(
                 prefix="harden-plan-", suffix=".json")[1])

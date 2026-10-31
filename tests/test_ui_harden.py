@@ -180,6 +180,12 @@ def test_verby_args_maps_the_helper_contract():
     assert verby_args([["service-off", "ssh"]]) == {
         "verb": "service-off", "unit": "ssh"}
     assert verby_args([["pkg-upgrade"]]) == {"verb": "pkg-upgrade"}
+    assert verby_args([["pkg-install", "clamav"]]) == {
+        "verb": "pkg-install", "package": "clamav"}
+    assert verby_args([["pending-restarts"]]) == {
+        "verb": "pending-restarts"}
+    assert verby_args([["restart-units", "ssh,avahi-daemon"]]) == {
+        "verb": "restart-units", "units": "ssh,avahi-daemon"}
     assert verby_args([["unit-install", "{{unit}}", "TRANCHE"]]) == {
         "verb": "unit-install", "unresolvable": True}
 
@@ -328,18 +334,60 @@ def test_apply_stays_enabled_when_only_advisory_checks_cant():
     broken_advisory = Control(
         "advisory-broken", "docs", "Probing not runnable on this box",
         probe="EXPLODE", severity="INFO", advisory=True)
-    view = HardenView(controls=[CONTROLS[0], broken_advisory],
+    # A fixable gap plus an uncheckable advisory: the advisory must not
+    # hold Apply hostage, so it stays live.
+    view = HardenView(controls=[CONTROLS[1], broken_advisory],
                       runner=fake_runner)
     view._on_scan(None)
     pump()
     assert view.apply_btn.get_sensitive()
     assert "advisory-only" in view.status.get_text()
-    # a regular (non-advisory) unknown still gates:
-    gated = HardenView(controls=[CONTROLS[0], CONTROLS[2]],
+    # With nothing changeable the button is off (that is not a failure,
+    # it means there is nothing to apply):
+    idle = HardenView(controls=[CONTROLS[0], broken_advisory],
+                      runner=fake_runner)
+    idle._on_scan(None)
+    pump()
+    assert not idle.apply_btn.get_sensitive()
+    assert "nothing the app can change" in idle.apply_btn.get_tooltip_text()
+    # a regular (non-advisory) unknown still gates even when a gap exists:
+    gated = HardenView(controls=[CONTROLS[1], CONTROLS[2]],
                        runner=fake_runner)
     gated._on_scan(None)
     pump()
     assert not gated.apply_btn.get_sensitive()
+
+
+def test_advisory_gaps_are_never_counted_as_applicable():
+    # Advisory checks can probe as GAP (pending updates, for example).
+    # build_plan refuses to act on them, so Apply must stay off and the
+    # summary must not claim a gap is waiting to be tightened.
+    from hardening.controls import Control
+    advisory_gap = Control(
+        "advisory-gap", "docs", "Advisory: update when you choose",
+        probe="false", severity="INFO", advisory=True)
+    view = HardenView(controls=[CONTROLS[0], advisory_gap],
+                      runner=fake_runner)
+    view._on_scan(None)
+    pump()
+    assert not view.apply_btn.get_sensitive()
+    text = view.status.get_text()
+    assert "every changeable check already passes" in text
+    assert "would be tightened" not in text
+    assert "manual change" not in text
+    view._on_apply(None)
+    assert "every changeable check already passes" in view.status.get_text()
+    assert "ADVISORY" in view.status.get_text()
+
+
+def _card_dot_inks(view):
+    """The head dot's ink colour for each card."""
+    out = []
+    child = view.cards.get_first_child()
+    while child is not None:
+        out.append(getattr(child.get_child(), "dot_ink", ""))
+        child = child.get_next_sibling()
+    return out
 
 
 def test_card_marks_follow_the_result_not_severity():
@@ -349,10 +397,16 @@ def test_card_marks_follow_the_result_not_severity():
     view._on_scan(None)
     pump()
     joined = "\n".join(_find_card_texts(view))
-    assert "🟢 already at baseline" in joined, joined
-    assert "🟡 NOT at baseline" in joined, joined
-    assert "📄 ADVISORY (never applied)" in joined, joined
-    assert not any(t.startswith("🔴") for t in _find_card_texts(view)), joined
+    # Drawn dots in the theme's ink, never emoji: emoji ignore the theme
+    # and render differently on every machine (design pass 2026-10-30).
+    assert "● already at baseline" in joined, joined
+    assert "● NOT at baseline" in joined, joined
+    assert "● ADVISORY (never applied)" in joined, joined
+    assert "🟢" not in joined and "🟡" not in joined and "📄" not in joined
+    assert not any(t.startswith("● failed") for t in _find_card_texts(view)), \
+        joined
+    inks = _card_dot_inks(view)
+    assert len(set(inks)) >= 2, inks            # pass and gap differ in ink
 
 
 def test_apply_success_rescans_the_cards():

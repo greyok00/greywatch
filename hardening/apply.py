@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 ALLOWED_VERBS = frozenset(
-    {"sh", "unit-install", "sysctl-set", "service-off", "pkg-upgrade"})
+    {"sh", "unit-install", "sysctl-set", "service-off", "pkg-upgrade",
+     "pkg-install", "pending-restarts", "restart-units"})
 
 GREEN, RED, AMBER = "GREEN", "RED", "AMBER"
 

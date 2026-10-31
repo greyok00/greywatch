@@ -71,6 +71,8 @@ class Harness:
             GW_SHIM_STATE=str(self.state),
             GREYWATCH_DATA_DIR=str(self.data),
             GREYWATCH_TEST_SYSCTL_CONF=str(self.conf),
+            GREYWATCH_TEST_REBOOT_REQUIRED=str(
+                self.tmp / "reboot-required"),
         )
         (self.state / "unit-enabled").touch()    # fake unit: enabled+active
         (self.state / "unit-active").touch()
@@ -85,6 +87,9 @@ class Harness:
         p.write_text(json.dumps({"entries": entries}) + "\n",
                      encoding="utf-8")
         return str(p)
+
+    def apply(self, entries):
+        return self.run(["apply", self.planfile(entries)])
 
 
 @pytest.fixture()
@@ -533,3 +538,50 @@ def test_symlinked_rollback_journal_refused(h):
         p.stdout + p.stderr
     assert outj.read_text(encoding="utf-8").strip() == \
         '{"id":"set-knob","before":{},"plan":[]}'    # never read+undone
+
+
+def test_pkg_upgrade_never_removes_and_keeps_local_config(h):
+    p = h.apply([{"id": "up-1", "verb": "pkg-upgrade", "probe": ""}])
+    log = (h.state / "apt-get.log").read_text()
+    assert "upgrade" in log and "full-upgrade" not in log
+    assert "--force-confold" in log
+    assert p.returncode == 0, (p.stdout, p.stderr)
+
+
+def test_pkg_install_validates_the_package_name(h):
+    for bad in ("../etc/passwd", "clamav;id", "cla mav", ""):
+        p = h.apply([{"id": "pi-1", "verb": "pkg-install",
+                      "package": bad, "probe": ""}])
+        assert p.returncode != 0, bad
+        assert "BAD-PKG" in p.stderr, bad
+    log = h.state / "apt-get.log"
+    assert not log.exists() or not log.read_text().strip()
+    p = h.apply([{"id": "pi-2", "verb": "pkg-install",
+                  "package": "clamav", "probe": ""}])
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    log = (h.state / "apt-get.log").read_text()
+    assert "install" in log and "clamav" in log
+
+
+def test_pending_restarts_is_read_only(h):
+    (h.tmp / "reboot-required").write_text("")
+    (h.tmp / "reboot-required.pkgs").write_text(
+        "linux-image-1\nlibc6\n")
+    p = h.apply([{"id": "pr-1", "verb": "pending-restarts", "probe": ""}])
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    assert '"reboot_required":true' in p.stdout
+    assert "linux-image-1" in p.stdout
+    log = h.state / "apt-get.log"
+    assert not log.exists() or not log.read_text().strip()
+
+
+def test_restart_units_rejects_injection(h):
+    p = h.apply([{"id": "ru-1", "verb": "restart-units",
+                  "units": "ssh;id", "probe": ""}])
+    assert p.returncode != 0
+    assert "BAD-UNITS" in p.stderr
+    p = h.apply([{"id": "ru-2", "verb": "restart-units",
+                  "units": "ssh,avahi-daemon", "probe": ""}])
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    log = (h.state / "systemctl.log").read_text()
+    assert "restart -- ssh" in log and "restart -- avahi-daemon" in log
