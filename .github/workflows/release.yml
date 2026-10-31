@@ -84,14 +84,14 @@ jobs:
               "dist/${DEB}" "dist/${DEB}.sha256" \
               "dist/${WHEEL}" "dist/${WHEEL}.sha256" --clobber
             gh release edit "${{ github.ref_name }}" \
-              --title "greywatch ${{ github.ref_name }}"
+              --title "GreyWatch ${{ github.ref_name }}"
           else
             gh release create "${{ github.ref_name }}" \
               "dist/${ARTIFACT}" "dist/${ARTIFACT}.sha256" \
               "dist/${DEB}" "dist/${DEB}.sha256" \
               "dist/${WHEEL}" "dist/${WHEEL}.sha256" \
               --generate-notes \
-              --title "greywatch ${{ github.ref_name }}"
+              --title "GreyWatch ${{ github.ref_name }}"
           fi
 
       - name: Push the container image (ghcr.io — the Packages registry)
