@@ -180,7 +180,8 @@ def _service(tmp_path, scripts, **kw):
         return FakeHandle(*scripts.pop(0))
 
     svc = S.ScanService(tmp_path, spawn=spawn, home="/home/grey",
-                        ui_user="grey", log=lambda *_: None, **kw)
+                        ui_user="grey", log=lambda *_: None,
+                        which=lambda name: "/usr/bin/" + name, **kw)
     return svc, calls
 
 

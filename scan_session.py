@@ -474,18 +474,38 @@ def subprocess_spawner(argv, log_path=None, *, unit=None, runtime_max=None,
                           start_offset=start_offset)
 
 
+def _absolute_home(home, ui_user):
+    """A real scan root, never a literal "~name".
+
+    ``os.path.expanduser`` leaves the tilde in place when the account does
+    not exist here, and scanners were then asked to scan a directory named
+    ``~grey`` relative to the daemon's working directory.
+    """
+    for candidate in (home, "~" + ui_user if ui_user else None, "~"):
+        if not candidate:
+            continue
+        got = os.path.expanduser(candidate)
+        if os.path.isabs(got):
+            return got
+    return "/"
+
+
 class ScanService:
     """Owns at most one scan session. Ticked from the daemon's main loop."""
 
     def __init__(self, data_dir, *, consume=None, gid=None, ui_user="grey",
                  home=None, spawn=subprocess_spawner, clock=time.monotonic,
-                 log=None, use_systemd=None):
+                 log=None, use_systemd=None, which=shutil.which):
         self.dir = pathlib.Path(data_dir)
         self.consume = consume
         self.gid = gid
         self.ui_user = ui_user
-        self.home = home or os.path.expanduser("~" + ui_user)
+        # ``~user`` only expands for an account this machine has; a daemon
+        # told about a user that is not here (a container, CI) would hand
+        # the scanners a literal "~grey" as a scan root.
+        self.home = _absolute_home(home, ui_user)
         self.spawn = spawn
+        self.which = which
         self.clock = clock
         self.log = log or (lambda _m: None)
         self.session = None            # dict while running
@@ -595,7 +615,7 @@ class ScanService:
     def _launch(self, key: str) -> bool:
         child = self.children[key]
         argv = (commands_for(key, self.home, self.ui_user) or [None])[0]
-        if argv is None or key in self._missing or not shutil.which(argv[0]):
+        if argv is None or key in self._missing or not self.which(argv[0]):
             child.update(state="failed", detail="not installed",
                          ended_at=_now_iso())
             return False
