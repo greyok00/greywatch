@@ -22,11 +22,11 @@ Everything stays on your computer: no cloud, no account, no telemetry.
 greywatch targets Debian 12+, Ubuntu 24.04+ and Linux Mint 22+. It needs GTK4,
 PyGObject and systemd, which those releases already ship.
 
-Download `greywatch_0.1.5_amd64.deb` from the
+Download `greywatch_0.1.6_amd64.deb` from the
 [releases page](https://github.com/greyok00/greywatch/releases), then install it:
 
 ```bash
-sudo apt install ./greywatch_0.1.5_amd64.deb
+sudo apt install ./greywatch_0.1.6_amd64.deb
 ```
 
 The package installs under `/opt/greywatch`, enables `greywatch.service`, binds
@@ -42,7 +42,7 @@ To upgrade, install the newer `.deb` the same way. To remove it,
 Each release includes a checksum file, so you can verify the download first:
 
 ```bash
-sha256sum -c greywatch_0.1.5_amd64.deb.sha256
+sha256sum -c greywatch_0.1.6_amd64.deb.sha256
 ```
 
 If you would rather build from a checkout, this route installs under
@@ -61,7 +61,7 @@ python3 cli.py status
 The wheel is for the command line only:
 
 ```bash
-pip install https://github.com/greyok00/greywatch/releases/download/v0.1.5/greywatch-0.1.5-py3-none-any.whl
+pip install https://github.com/greyok00/greywatch/releases/download/v0.1.6/greywatch-0.1.6-py3-none-any.whl
 gw --version
 gw status
 ```
@@ -164,18 +164,23 @@ runs its scans, and can pause or resume it without a terminal.
 ## The rest of the app
 
 The app firewall decides per program and asks before a new connection is
-allowed. If a verdict times out or the worker stalls it fails open: traffic
-flows, the degradation is announced in status, and the health counters say
-why. Enforcement starts only when you arm it in the setup wizard.
+allowed. It has three modes. Standard asks once about an unknown program or
+site and remembers your answer; an unanswered prompt follows your headless
+choice and traffic keeps moving. Learning blocks nothing and records every
+new connection, so you can see what a program needs before you allow it.
+Whitelist connects only what you have allowed; if its worker is unavailable
+for more than a few seconds it restores fail-open traffic so the machine
+keeps its network, then re-arms when the worker returns.
 
 Trusted sites and trusted programs can be set in Settings or by asking the
-assistant, and the firewall consults both. Learning mode lets new connections
-pass once and records them, so you can see what a program needs before you
-allow it.
+assistant, and the firewall consults both.
 
-The setup wizard checks the machine against a hardening baseline, previews
-every change, applies them with one password prompt, then verifies or undoes
-them. Nothing changes without your confirmation.
+Endpoint Hardening checks the machine against a hardening baseline, shows the
+real value behind each gap, and previews every change before anything is
+applied. Applying takes one password prompt. Service changes are staged and
+the page offers a restart when one is needed, so you keep working and restart
+on your schedule. Controls marked advisory — a package backlog, the
+firewall's front-end role — are explained and never applied for you.
 
 Logs show every event newest first, filterable by tool, with the raw line
 beside its plain reading. Settings covers appearance, the app firewall,
