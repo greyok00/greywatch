@@ -97,3 +97,44 @@ def test_probe_binaries_missing_name_the_tool():
                     runner=prod_runner)
     assert findings[0].state == "CANT-CHECK"
     assert "gw-absent-prober" in findings[0].note
+
+
+def test_detail_supplies_the_current_line():
+    calls = []
+
+    def runner(line):
+        calls.append(line)
+        if line == "check":
+            return 0, "ok"
+        if line == "show value":
+            return 0, "  0\n"
+        raise AssertionError(line)
+
+    controls = [{"id": "c", "group": "g", "what": "w", "severity": "LOW",
+                 "probe": "check", "detail": "show value"}]
+    got = scan(controls, runner=runner)
+    assert got[0].state == "PASS"
+    assert got[0].current == "0"
+    assert calls == ["check", "show value"]
+
+
+def test_detail_failure_falls_back_to_probe_text():
+    def runner(line):
+        if line == "check":
+            return 1, "probe said no"
+        raise RuntimeError("detail unavailable")
+
+    controls = [{"id": "c", "group": "g", "what": "w", "severity": "LOW",
+                 "probe": "check", "detail": "detail-cmd"}]
+    got = scan(controls, runner=runner)
+    assert got[0].state == "GAP"
+    assert got[0].current == "probe said no"
+
+
+def test_detail_never_changes_the_state():
+    def runner(line):
+        return (0, "good") if line == "check" else (1, "detail failed")
+
+    controls = [{"id": "c", "group": "g", "what": "w", "severity": "LOW",
+                 "probe": "check", "detail": "detail-cmd"}]
+    assert scan(controls, runner=runner)[0].state == "PASS"

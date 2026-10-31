@@ -63,6 +63,21 @@ def prod_runner(line: str) -> tuple[int, str]:
     return proc.returncode, out
 
 
+def _detail_text(ctrl, runner) -> str:
+    """Read-only display text: the detail command's stdout, trimmed.
+    A failure here is cosmetic only and must never move the state."""
+    line = _get(ctrl, "detail", "") or ""
+    if not line:
+        return ""
+    try:
+        rc, out = runner(line)
+    except Exception:  # noqa: BLE001 - display text is optional
+        return ""
+    if rc != 0:
+        return ""
+    return out.strip()[:400]
+
+
 def scan(controls, runner=prod_runner) -> list[Finding]:
     findings: list[Finding] = []
     for ctrl in controls:
@@ -74,18 +89,19 @@ def scan(controls, runner=prod_runner) -> list[Finding]:
         except Exception as exc:  # noqa: BLE001 - honesty over crash
             findings.append(Finding(cid, CANT, "", f"probe failed: {exc}"))
             continue
+        current = _detail_text(ctrl, runner) or out.strip()
         if rc != 0:
             if not invert and rc >= 2:
                 findings.append(Finding(
-                    cid, FAIL, out.strip(),
+                    cid, FAIL, current,
                     "the check itself failed (rc=%d) — no baseline "
                     "comparison was possible" % rc))
                 continue
             findings.append(Finding(cid, GAP if not invert else PASS,
-                                    out.strip(), ""))
+                                    current, ""))
             continue
         findings.append(Finding(cid, GAP if invert else PASS,
-                                out.strip(), ""))
+                                current, ""))
     return findings
 
 
