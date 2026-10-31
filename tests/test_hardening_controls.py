@@ -187,6 +187,38 @@ def test_bad_action_descriptors_are_dropped_not_guessed(tmp_path):
     assert got["d"].detail == ""                            # never escalate
 
 
+def test_shipped_probes_test_values_not_exit_codes():
+    root = pathlib.Path(__file__).resolve().parents[1]
+    got = {c.id: c for c in load_controls(root / "data")}
+    userns = got["sysctl-userns"]
+    assert userns.probe == \
+        'test "$(sysctl -n kernel.unprivileged_userns_clone)" = "0"'
+    bpf = got["sysctl-bpf"]
+    assert bpf.probe == \
+        'test "$(sysctl -n kernel.unprivileged_bpf_disabled)" -ge 1'
+    assert "sysctl -n kernel.unprivileged_bpf_disabled" in bpf.detail
+    for cid, unit in (("sshd-running", "ssh"),
+                      ("avahi-running", "avahi-daemon")):
+        probe = got[cid].probe
+        assert probe.startswith("!")
+        assert f"is-enabled --quiet {unit}" in probe
+        assert f"is-active --quiet {unit}" in probe
+        assert got[cid].probe_invert is False
+        assert "disabled at boot" in got[cid].baseline.lower()
+    assert "{{unit}}" not in got["gw-unit-hardening"].detail
+
+
+def test_every_advisory_has_an_action_or_a_reason():
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for ctrl in load_controls(root / "data"):
+        if not ctrl.advisory:
+            continue
+        assert ctrl.advisory_action or ctrl.baseline, ctrl.id
+        assert ctrl.fix == [], ctrl.id     # advisories never enter a plan
+        if ctrl.advisory_action and ctrl.advisory_action["kind"] == "install":
+            assert ctrl.advisory_action["package"] == "clamav"
+
+
 def test_unit_templates_resolve_at_load():
     root = pathlib.Path(__file__).resolve().parents[1]
     unit = {c.id: c for c in load_controls(root / "data")}["gw-unit-hardening"]

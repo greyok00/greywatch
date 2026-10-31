@@ -139,6 +139,8 @@ def _resolve_templates(entry: dict) -> dict:
     treated as unresolvable by the apply pipeline (honest skip)."""
     entry["probe"] = str(entry.get("probe", "") or "").replace(
         "{{unit}}", "greywatch")
+    if entry.get("detail"):
+        entry["detail"] = str(entry["detail"]).replace("{{unit}}", "greywatch")
     steps = []
     for step in entry.get("fix", []) or []:
         if isinstance(step, list) and step and step[0] == "unit-install":
