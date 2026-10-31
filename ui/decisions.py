@@ -256,7 +256,7 @@ def _decision_dialog(spec, modal=False, eyebrow="Protection", on_learn=None):
     detail underneath.
     """
     opts = spec.get("options", [])
-    dlg = Gtk.Dialog(title="Greywatch", modal=modal)
+    dlg = Gtk.Dialog(title="GreyWatch", modal=modal)
     dlg.set_default_size(560, -1)
     dlg.add_css_class("gw-popup")
     area = dlg.get_content_area()
@@ -585,7 +585,7 @@ class DecisionBroker:
                     _NotifyModule.init("greywatch"))
             if DecisionBroker._notify_ready:
                 note = _NotifyModule.Notification.new(
-                    "Greywatch",
+                    "GreyWatch",
                     f"Learning mode is on for {minutes} minutes. Unknown "
                     "programs are let through and recorded under Settings "
                     "→ App firewall.")
