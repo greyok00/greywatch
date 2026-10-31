@@ -68,7 +68,7 @@ def test_unknown_view_key_cannot_grey_the_app(win):
 
 
 def test_every_rail_button_switches(win):
-    for key in ("tools", "deep", "settings", "logs", "help"):
+    for key in ("tools", "deep", "harden", "settings", "logs", "help"):
         win._rail_pick(None, key)
         pump(5)
         assert win.stack.get_visible_child_name() == key
@@ -109,7 +109,7 @@ def test_a_scan_button_opens_the_protections_page(win):
         win._start_scan(None, mode)
         pump(10)
         assert win.stack.get_visible_child_name() == "deep"
-        assert "Protections" in win.scan_status.get_text() or \
+        assert "Security Tools" in win.scan_status.get_text() or \
             "asked" in win.scan_status.get_text()
     finally:
         win.data_dir = old
@@ -863,7 +863,7 @@ def test_no_gtk3_only_api_survives_in_the_ui_sources():
     import re
     ui_dir = pathlib.Path(ROOT) / "ui"
     banned = [
-        r"show_all\(", r"set_position\(", r"\.run\(\)",
+        r"show_all\(", r"set_position\(", r"(?<!loop)\.run\(\)",
         r"Gtk\.MessageDialog", r"pack_start\(", r"pack_end\(",
         r"set_border_width\(", r"set_relief\(", r"get_style_context\(\)",
         r"set_line_wrap\(", r"get_action_area\(", r"set_no_show_all\(",
@@ -947,11 +947,16 @@ def test_appfw_choice_builds_appfw_pages_not_the_ufw_ones():
     w.destroy()
 
 
-def test_baseline_is_not_a_rail_page_anymore(win):
-    assert "harden" not in win._builders
-    assert "harden" not in win._rail_btns
-    # the doorway survives as a card on the Tools page
-    assert hasattr(win, "_baseline_card")
+def test_baseline_has_its_own_rail_page(win):
+    # Owner 2026-10-30: the baseline pass belongs in the rail, named
+    # Endpoint Hardening — not a card at the bottom of the tool list.
+    assert "harden" in win._builders
+    assert "harden" in win._rail_btns
+    assert not hasattr(win, "_baseline_card")
+    win._rail_pick(None, "harden")
+    pump(5)
+    assert win.stack.get_visible_child_name() == "harden"
+    assert isinstance(win.harden_view, Gtk.Box)
 
 
 def test_tool_card_shows_plain_name_and_real_tool_name(win):
