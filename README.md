@@ -4,9 +4,9 @@
   **One window for every security tool already on your Linux desktop.**
 
   [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-  [![Release](https://img.shields.io/badge/release-v0.1.19-green)](https://github.com/greyok00/greywatch/releases)
+  [![Release](https://img.shields.io/badge/release-v0.1.20-green)](https://github.com/greyok00/greywatch/releases)
   [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](pyproject.toml)
-  [![Tests](https://img.shields.io/badge/tests-1544%20passing-brightgreen)](#build-and-test)
+  [![Tests](https://img.shields.io/badge/tests-1566%20passing-brightgreen)](#build-and-test)
   [![CI](https://img.shields.io/badge/CI-github%20actions-blueviolet)](https://github.com/greyok00/greywatch/actions)
 </div>
 
@@ -18,7 +18,7 @@ GreyWatch collects the security tools already installed on a Debian-based deskto
 
 On top of the suite sits a threat hunter: a separate, unprivileged process that runs its own hunt cycles every few minutes over what is already on the machine (detections, finished scans, the Downloads folder and startup automation, browser download history, and imported HAR captures). It reports findings in plain language with a suggested next step, and hands them back to the suite rather than acting on its own. A local assistant answers questions from the same event log: the deterministic advice engine and app actions come first, and every chat-initiated action pauses at a confirm dialog and lands in the audit trail.
 
-Endpoint Hardening checks the machine against a hardening baseline, shows the real value behind each gap, and previews every change before anything is applied. The app firewall decides per program and asks before a new connection is allowed; trusted sites, trusted programs and a learning mode are one password prompt away.
+Endpoint Hardening checks the machine against a hardening baseline, shows the real value behind each gap, and previews every change before anything is applied. The app firewall decides per program and asks before a new connection is allowed; trusted sites, trusted programs and a learning mode are one password prompt away. Its popup always carries a picture (the destination's map, the program's icon, or a shield) and a place, names what it could not identify honestly, and can be snoozed for thirty minutes or quieted per lane from Settings.
 
 ## Features
 
@@ -36,10 +36,10 @@ Endpoint Hardening checks the machine against a hardening baseline, shows the re
 
 ## Install
 
-Debian 13, Parrot 7.4 and Ubuntu 25.10 (Python 3.13): download `greywatch_0.1.19_amd64.deb` from the [releases page](https://github.com/greyok00/greywatch/releases) and install it:
+Debian 13, Parrot 7.4 and Ubuntu 25.10 (Python 3.13): download `greywatch_0.1.20_amd64.deb` from the [releases page](https://github.com/greyok00/greywatch/releases) and install it:
 
 ```bash
-sudo apt install ./greywatch_0.1.19_amd64.deb
+sudo apt install ./greywatch_0.1.20_amd64.deb
 ```
 
 Each release includes a `sha256` checksum. The package installs under `/opt/greywatch`, enables `greywatch.service`, binds the service to your desktop account and adds the menu entry. State (events, scans, logs) lives in `/var/lib/greywatch`; `sudo apt remove greywatch` keeps it.
@@ -56,7 +56,7 @@ sudo ./install.sh --check  # verify
 For the command line only, the wheel from a release gives you the `gw` command:
 
 ```bash
-pip install https://github.com/greyok00/greywatch/releases/download/v0.1.19/greywatch-0.1.19-py3-none-any.whl
+pip install https://github.com/greyok00/greywatch/releases/download/v0.1.20/greywatch-0.1.20-py3-none-any.whl
 gw --version
 ```
 
