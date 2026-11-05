@@ -259,12 +259,26 @@ def run_whois(host: str, timeout: float = WHOIS_TIMEOUT) -> str:
         return ""
 
 
+def _addr_only(host: str) -> str:
+    """The bare address: an event host may carry its port, the table wants
+    the address alone ("1.2.3.4:443" or "[v6]:443" or a bare "v6")."""
+    h = str(host or "").strip()
+    if h.startswith("[") and "]" in h:            # [v6]:port
+        return h[1:h.index("]")]
+    if h.count(":") == 1:                         # v4:port (a bare v6 has several)
+        head = h.split(":", 1)[0]
+        if head.count(".") == 3:
+            return head
+    return h
+
+
 def geoip_country(host: str) -> tuple[str, str]:
     """(code, name) from the local GeoIP.dat — offline, last resort."""
     try:
         import GeoIP                                   # Debian python3-geoip
     except ImportError:
         return "", ""
+    addr = _addr_only(host)
     global _geo
     try:
         _geo
@@ -277,11 +291,11 @@ def geoip_country(host: str) -> tuple[str, str]:
     if _geo is None:
         return "", ""
     try:
-        if ":" in host:
-            return (_geo.country_code_by_addr_v6(host) or "",
-                    _geo.country_name_by_addr_v6(host) or "")
-        return (_geo.country_code_by_addr(host) or "",
-                _geo.country_name_by_addr(host) or "")
+        if ":" in addr:
+            return (_geo.country_code_by_addr_v6(addr) or "",
+                    _geo.country_name_by_addr_v6(addr) or "")
+        return (_geo.country_code_by_addr(addr) or "",
+                _geo.country_name_by_addr(addr) or "")
     except Exception:
         return "", ""
 
