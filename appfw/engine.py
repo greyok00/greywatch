@@ -72,6 +72,7 @@ class Engine:
         self._watchdog_thread = None
         self._log_last = 0.0
         self._log_suppressed = 0
+        self._miss_last = {}               # miss class → last noted stamp
         self._backlog_fails = 0            # watchdog measurement failures
         self._last_backlog = None          # last measured verdict backlog
         self._whitelist_suspended = False
@@ -560,6 +561,22 @@ class Engine:
                 self.state = "running"
         return True
 
+    def _miss_note(self, conn) -> None:
+        """An unnamed connection is a fact worth one journal line per
+        class per minute: the resolver says WHY it could not name the
+        process (resolver.connect sets conn.attribution), and the popup
+        that follows calls it what it is — an unidentified program."""
+        conn_attribution = getattr(conn, "attribution", "unknown")
+        if conn.process_path:
+            return
+        now = time.monotonic()
+        if now - self._miss_last.get(conn_attribution, 0.0) < 60.0:
+            return
+        self._miss_last[conn_attribution] = now
+        self.on_event(
+            f"appfw attribution miss ({conn_attribution}): "
+            f"{conn.protocol} → {conn.dst_ip}:{conn.dst_port} unnamed")
+
     def _decide_line(self, line: str, ctl: socket.socket) -> None:
         parts = line.split()
         _, pid = parts[0], int(parts[1])
@@ -575,6 +592,7 @@ class Engine:
         action, duration, note, host_op = decide(conn, self.policy,
                                                  store=self.store,
                                                  ask=self.ask)
+        self._miss_note(conn)
         if duration in ("always", "until restart"):
             # host_op is either a mode ("trust", "block-host", …) or the
             # destination itself. Passing the mode through as the rule

@@ -501,6 +501,36 @@ def program_tile(icon_name: str, title: str, size: int = 44,
     return pixbuf
 
 
+def local_tile(size: int = 48) -> GdkPixbuf.Pixbuf | None:
+    """A drawn tile marking a destination on the local network."""
+    return glyph_tile("⌂", size, "#31404f")
+
+
+def shield_tile(size: int = 48) -> GdkPixbuf.Pixbuf | None:
+    """A plain shield: nothing is known about where this connection goes."""
+    key = ("shield", size)
+    if key in _tiles:
+        return _tiles[key]
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
+    ctx = cairo.Context(surface)
+    _rounded(ctx, size, size, size * 0.22)
+    ctx.set_source_rgb(*_rgb("#2c3642"))
+    ctx.fill()
+    s = float(size)
+    ctx.move_to(s * 0.50, s * 0.18)             # a simple shield silhouette
+    ctx.line_to(s * 0.76, s * 0.27)
+    ctx.line_to(s * 0.74, s * 0.52)
+    ctx.curve_to(s * 0.72, s * 0.68, s * 0.58, s * 0.78, s * 0.50, s * 0.82)
+    ctx.curve_to(s * 0.42, s * 0.78, s * 0.28, s * 0.68, s * 0.26, s * 0.52)
+    ctx.line_to(s * 0.24, s * 0.27)
+    ctx.close_path()
+    ctx.set_source_rgba(1, 1, 1, 0.85)
+    ctx.fill()
+    pixbuf = _surface_to_pixbuf(surface)
+    _tiles[key] = pixbuf
+    return pixbuf
+
+
 def glyph_tile(glyph: str, size: int = 44,
                accent: str = "#2c3642") -> GdkPixbuf.Pixbuf | None:
     key = ("glyph", glyph, size, accent)

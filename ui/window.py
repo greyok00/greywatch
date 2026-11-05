@@ -80,9 +80,14 @@ _SETTINGS_RELATED = {
              ("Tools", "Every protection, its row in the suite", "tools"),
              ("Threat Hunter", "The findings desk", "thunter")),
     "firewall": (("Connections", "Add trusted sites or programs", "connections"),
+                 ("Notifications", "Snooze popups or quiet a lane",
+                  "alerts"),
                  ("Protections", "Its row in the suite, with its last events",
                   "protect"),
                  ("Logs", "Decisions recorded as events via=appfw", "logs")),
+    "alerts": (("App firewall", "The decisions that raise a deny popup",
+                "firewall"),
+               ("Logs", "The deny rows the popups came from", "logs")),
     "connections": (("App firewall", "Learning answers move to the "
                      "firewall's lists", "firewall"),
                     ("Trusted sites", "The sites list the firewall consults",
@@ -2557,6 +2562,92 @@ class MainWindow(Gtk.Window):
         row.append(control)
         return row
 
+    def _settings_alerts(self):
+        """Desktop notifications: the master silence, the 30-minute
+        snooze and a permanent switch per lane (GW-189). Quieting is a
+        chosen state, so the controls write the keys the notify lane
+        reads; a file it cannot read fails open and popups keep showing."""
+        from ui.notify_alert import read_alert_prefs
+        prefs = read_alert_prefs()
+        card, inner = self._settings_card(
+            "Desktop notifications",
+            "What may pop up on screen while the tools work. Scans and "
+            "events stay recorded even when their popups are quiet.")
+
+        master = Gtk.Switch()
+        master.set_active(prefs["alerts"])
+        master.connect("notify::active",
+                       lambda w, _p: self._on_alerts_master(w))
+        inner.append(self._settings_row(
+            "All desktop notifications", master,
+            "The total switch: off silences every lane at once."))
+
+        snooze_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                             spacing=12)
+        snooze_btn = Gtk.Button(label="Snooze 30 minutes")
+        snooze_btn.connect("clicked", self._on_alerts_snooze)
+        snooze_btn.set_valign(Gtk.Align.CENTER)
+        self._alerts_snooze_status = Gtk.Label(xalign=0)
+        self._alerts_snooze_status.set_xalign(0)
+        self._alerts_snooze_status.set_markup(
+            self._alerts_snooze_words(prefs["alerts_snooze_until"]))
+        snooze_box.append(snooze_btn)
+        snooze_box.append(self._alerts_snooze_status)
+        snooze_row = self._settings_row(
+            "Snooze", snooze_box,
+            "Thirty minutes without popups, then they come back by "
+            "themselves.")
+        inner.append(snooze_row)
+
+        for label, key, hint in (
+                ("Firewall deny popups", "deny_popups",
+                 "The ⛔ square that names what a blocked connection "
+                 "tried."),
+                ("Critical event popups", "critical_popups",
+                 "The ⚠ square for HIGH and CRITICAL tool findings.")):
+            lane = Gtk.Switch()
+            lane._alerts_key = key
+            lane.set_active(prefs[key])
+            lane.connect("notify::active",
+                         lambda w, _p: self._on_alerts_lane(w))
+            inner.append(self._settings_row(label, lane, hint))
+        return self._settings_section(card)
+
+    @staticmethod
+    def _alerts_snooze_words(stamp) -> str:
+        """What the snooze row says right now, in plain words."""
+        stamp = float(stamp or 0.0)
+        if stamp <= time.time():
+            return "<span size='12000' font_family='Inter' " \
+                   f"color='{pc_muted()}'>Popups are showing.</span>"
+        when = time.strftime("%H:%M", time.localtime(stamp))
+        return ("<span size='12000' font_family='Inter' "
+                f"color='{pc_muted()}'>Quiet until {when}, then popups "
+                "come back.</span>")
+
+    def _on_alerts_master(self, switch):
+        """The master silence switch: one key, every lane obeys."""
+        from ui.notify_alert import write_alert_prefs
+        write_alert_prefs(alerts=bool(switch.get_active()))
+        return True
+
+    def _on_alerts_lane(self, switch):
+        """A per-lane switch: deny popups and critical popups quiet
+        independently."""
+        from ui.notify_alert import write_alert_prefs
+        key = getattr(switch, "_alerts_key", "")
+        if key:
+            write_alert_prefs(**{key: bool(switch.get_active())})
+        return True
+
+    def _on_alerts_snooze(self, _btn):
+        """The one-click 30-minute snooze; the row says when it ends."""
+        from ui.notify_alert import snooze_alerts
+        stamp = snooze_alerts(30)
+        self._alerts_snooze_status.set_markup(
+            self._alerts_snooze_words(stamp))
+        return True
+
     def _settings_view(self):
         """Settings as an index and a pane, the way macOS settings work.
 
@@ -2614,6 +2705,8 @@ class MainWindow(Gtk.Window):
              self._settings_look),
             ("firewall", "security-high-symbolic", "App firewall",
              self._settings_firewall),
+            ("alerts", "preferences-desktop-notification-symbolic",
+             "Notifications", self._settings_alerts),
             ("connections", "network-wireless-symbolic", "Connections",
              self._settings_connections),
             ("computer", "computer-symbolic", "This computer",
@@ -2688,6 +2781,7 @@ class MainWindow(Gtk.Window):
     _INDEX_METAS = {
         "look": "the two looks · workspace · the pick is remembered",
         "firewall": "on/off · its modes · per-program decisions",
+        "alerts": "snooze 30 minutes · per-lane switches · master silence",
         "connections": "trusted lists · learning mode · what the firewall "
                        "consults",
         "computer": "the host's real name, OS and where state lives",

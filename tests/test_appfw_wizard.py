@@ -82,6 +82,21 @@ def test_parse_deny_engine_lines():
     assert na.parse_deny("") is None
 
 
+def test_parse_deny_verdict_first_lines():
+    # the daemon's verdict-first rows (2026-11-05 stream: every deny row
+    # spoke this shape, so a _DRE-only parser saw a busy firewall as silence)
+    assert na.parse_deny(
+        "deny <unknown> → 192.168.0.28:139 "
+        "(headless: deny (no answer arrived))") == \
+        {"app": "<unknown>", "host": "192.168.0.28:139", "action": "deny"}
+    assert na.parse_deny(
+        "deny chrome → 10.0.0.5:443 (headless: deny (no dashboard open))") \
+        == {"app": "chrome", "host": "10.0.0.5:443", "action": "deny"}
+    assert na.parse_deny(
+        "allow curl → good.example:443 (answered: allow)") == \
+        {"app": "curl", "host": "good.example:443", "action": "allow"}
+
+
 def test_one_square_replaces_itself_and_never_stacks(tmp_path, monkeypatch):
     settings = tmp_path / "greywatch-ui-settings.json"
     settings.write_text('{"alerts": true}')
@@ -113,13 +128,19 @@ def test_one_square_replaces_itself_and_never_stacks(tmp_path, monkeypatch):
 
     q = na.BlockedQueue(pathlib.Path("/tmp"))
     alert = na.NotifyAlert(q, notifier=FakeNotify)
-    t1 = alert.handle_deny("/usr/bin/curl", "bad.example")
+    t1 = alert.handle_deny("/usr/bin/curl", "bad.example", now=1000.0)
     assert "Blocked" in t1 and "curl" in t1
-    t2 = alert.handle_deny("/usr/bin/python3", "tracker.example")
-    assert "2" in t2 and "python3" in t2
+    # the SAME pair repeats: the count replaces the story (re-presented
+    # at most once per REPEAT_REFRESH_S to keep bursts quiet)
+    t2 = alert.handle_deny("/usr/bin/curl", "bad.example", now=1150.0)
+    assert "2 blocked" in t2
+    t3 = alert.handle_deny("/usr/bin/curl", "bad.example", now=1180.0)
+    assert t3 == ""                          # quiet: already on screen
+    t4 = alert.handle_deny("/usr/bin/python3", "tracker.example", now=1181.0)
+    assert "python3" in t4                   # a new pair pops fresh
     assert len(FakeNotification.instances) == 1   # ONE square, replaced
     first = FakeNotification.instances[0]
-    assert first.shown >= 2 and first.updates     # updated in place
+    assert first.shown >= 3 and first.updates     # updated in place
     assert [a[0] for a in first.actions[:2]] == ["unblock-all", "review"]
 
 

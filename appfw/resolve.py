@@ -167,6 +167,7 @@ class Resolver:
                     p, lip, lport, rip, rport):
                 inode, sock_uid = ino, uid
                 break
+        had_row = inode is not None     # the flow itself was in the table
         found = None
         snap_found = False
         if inode:
@@ -199,6 +200,19 @@ class Resolver:
                     self._dst_recent.pop(k, None)
         found = found or (0, "", [])
         conn.pid, conn.process_path, conn.process_args = found
+        # Why the process is (still) unknown, for the engine's honest note:
+        # the flow's own socket row is missing from /proc/net (a flow that
+        # closed before its packet was decided), or the row exists but no
+        # open fd still owns its socket (the connecting process has
+        # already exited). The table itself never explains this on its own.
+        if found[0]:
+            conn.attribution = "resolved"
+        elif snap_found:
+            conn.attribution = "recent"
+        elif had_row:
+            conn.attribution = "row-found-no-owner"
+        else:
+            conn.attribution = "row-missing"
         # A snap attribution is an inference (the live table missed this
         # flow); it expires fast and re-verifies on the next packet, so a
         # wrong guess self-corrects instead of pinning for a minute.

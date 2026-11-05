@@ -32,6 +32,11 @@ class Conn:
     pid: int = 0
     process_path: str = ""
     process_args: list = field(default_factory=list)
+    # Why a process_path stayed empty (set by Resolver.resolve): "unknown",
+    # "resolved", "recent" (an inferred snap), "row-found-no-owner" (the
+    # flow's socket row exists but its process has exited) or "row-missing"
+    # (the flow itself is not in /proc/net any more).
+    attribution: str = "unknown"
 
     @property
     def host(self) -> str:
