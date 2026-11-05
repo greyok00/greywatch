@@ -56,7 +56,7 @@ def win():
         os.environ["GREYWATCH_DATA_DIR"] = old
 
 
-PANES = ("look", "firewall", "connections", "computer",
+PANES = ("look", "firewall", "alerts", "connections", "computer",
          "diagnostics", "updates", "sites", "programs")
 
 
@@ -66,6 +66,8 @@ def test_every_index_row_says_whats_inside(win):
     assert texts["look"] == "the two looks · workspace · the pick is" \
                             " remembered"
     assert texts["firewall"] == "on/off · its modes · per-program decisions"
+    assert texts["alerts"] == "snooze 30 minutes · per-lane switches ·" \
+                            " master silence"
     for key, text in texts.items():
         assert text.strip(), key
 
@@ -121,7 +123,8 @@ def test_firewall_footer_says_the_approved_words(win):
                     wheres.append(lab.get_text())
                 elif "gw-rel-what" in lab.get_css_classes():
                     whats.append(lab.get_text())
-    assert wheres == ["Connections", "Protections", "Logs"]
+    assert wheres == ["Connections", "Notifications", "Protections",
+                      "Logs"]
 
 
 def test_footer_open_moves_inside_settings(win):

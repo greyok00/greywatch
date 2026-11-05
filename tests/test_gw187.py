@@ -338,6 +338,11 @@ def win():
     w.destroy()
     if old:
         os.environ["GREYWATCH_DATA_DIR"] = old
+    else:
+        # an unset var must stay unset: leaving the sandbox path set made
+        # every later reader (updates.cve_cache(), the daemon module) look
+        # into the empty tempdir (order-dependent, full-suite only)
+        os.environ.pop("GREYWATCH_DATA_DIR", None)
 
 
 def test_notifications_group_is_in_the_settings_index(win):
