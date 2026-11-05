@@ -1,0 +1,36 @@
+# greywatch — metadata + tool config. Runtime has no pip dependencies
+# (stdlib + system PyGObject/GTK4); requirements-*.txt pin the dev and
+# build toolchains. THE version lives here and only here: cli.py
+# --version reads this file.
+[project]
+name = "greywatch"
+version = "0.1.19"
+description = "Linux endpoint monitoring and hardening suite"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "greywatch contributors" }]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+
+[project.scripts]
+gw = "cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "ruff==0.17.2"]
+# Optional, metadata-only: the in-process local chat assistant. Every
+# import is guarded and the chat degrades to the deterministic advice
+# engine when this is absent.
+assistant = ["llama-cpp-python>=0.3.0"]
+
+[tool.setuptools]
+packages = []  # the wheel is built by packaging/build-wheel.sh; see that script
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Floor for CI: real syntax-level defects, not style.
+# E9 = pycodestyle runtime errors, F = pyflakes (unused/undefined names,
+# f-string issues, star-arg misuse).
+select = ["E9", "F"]

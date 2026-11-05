@@ -1,0 +1,48 @@
+/* Two theme voices only: agency-mono-plate (light), aperture-motion (dark).
+   One frozen cream/brass value set shared by the app; the older designer
+   kit that predated them is retired. GTK cannot parse
+   color-mix() or var(), so the colour-mixed values below are pre-mixed
+   rgba equivalents of the source voices:
+     agency accent-soft = ink 7% over transparent (ink #171715)
+     agency focus-ring  = ink 50%
+     aperture accent-soft = accent 13% (accent #ff7a1a)
+     aperture focus-ring  = accent 62%
+*/
+[data-theme="agency"] {
+  --el-bg: #f4f4f2; --el-panel: #fbfbf9; --el-panel-2: #ececea; --el-panel-3: #e1e1dc;
+  --el-line: #d9d9d4; --el-line-2: #c3c3bc; --el-line-strong: #171715;
+  --el-ink: #171715; --el-ink-soft: #4c4c46; --el-mute: #63625a;
+  --el-on-accent: #f4f4f2;
+  --el-accent: #171715; --el-accent-hover: #000000; --el-accent-soft: rgba(23,23,21,0.07);
+  --el-ok: #41684b; --el-warn: #8a5d14; --el-fail: #a83a2a;
+  --el-info: #4e5d68; --el-live: #9c4018; --el-teal: #2f6b62;
+  --el-overlay: rgba(23,23,21,0.50);
+  --el-focus-ring: rgba(23,23,21,0.50);
+  --el-radius: 4px;
+  --el-r-sm: 2px; --el-r-md: 2px; --el-r-lg: 4px; --el-r-xl: 6px;
+  --el-font-body: 'Inter', system-ui, sans-serif;
+  --el-font-display: 'General Sans', 'Inter', system-ui, sans-serif;
+  --el-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --el-font-serif: 'Instrument Serif', 'Georgia', serif;
+}
+
+/* aperture-motion: graphite field, warm ink, one burnt-orange mark.
+   The accent never bleeds into the light voice; the light voice's ink-as-
+   accent never appears here. Dark theme logo = exact inversion of the
+   original wolf badge bytes (see ui/plain.py / the logo helpers). */
+[data-theme="aperture"] {
+  --el-bg: #131313; --el-panel: #1a1a1a; --el-panel-2: #212121; --el-panel-3: #2b2b2b;
+  --el-line: #2c2c2c; --el-line-2: #242424; --el-line-strong: #404040;
+  --el-ink: #f4f1eb; --el-ink-soft: #aba49a; --el-mute: #948b7d;
+  --el-on-accent: #131313;
+  --el-accent: #ff7a1a; --el-accent-hover: #ff9a45; --el-accent-soft: rgba(255,122,26,0.13);
+  --el-ok: #4fd083; --el-warn: #ffc53d; --el-fail: #ff4a33;
+  --el-info: #7aa2ff; --el-live: #ff7a1a; --el-teal: #48c5ac;
+  --el-overlay: rgba(10,9,8,0.70);
+  --el-focus-ring: rgba(255,122,26,0.62);
+  --el-radius: 4px;
+  --el-r-sm: 2px; --el-r-md: 3px; --el-r-lg: 4px; --el-r-xl: 6px;
+  --el-font-body: 'Inter', system-ui, sans-serif;
+  --el-font-display: 'Unbounded', 'Inter', system-ui, sans-serif;
+  --el-font-mono: 'Inter Tight', 'SF Mono', Menlo, Consolas, monospace;
+}

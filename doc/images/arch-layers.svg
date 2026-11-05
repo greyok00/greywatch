@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="560" viewBox="0 0 860 560" role="img" aria-label="greywatch architecture: L1 root daemon, L2 CLI, L3 GTK GUI">
+  <rect width="860" height="560" fill="#0d1117"/>
+  <text x="430" y="42" text-anchor="middle" font-family="Segoe UI, DejaVu Sans, sans-serif"
+        font-size="22" font-weight="700" fill="#e6edf3">greywatch — three boring, reliable layers</text>
+
+  <g font-family="Segoe UI, DejaVu Sans, sans-serif">
+    <!-- L3 GUI -->
+    <rect x="60" y="70" width="740" height="120" rx="12" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+    <text x="90" y="108" font-size="19" font-weight="700" fill="#58a6ff">L3 · The GUI</text>
+    <text x="90" y="138" font-size="15" fill="#c9d1d9">GTK 4 desktop app + tray: Security, Tools, Harden,</text>
+    <text x="90" y="162" font-size="15" fill="#c9d1d9">Settings, Logs, Wizard. Reads status.json and digests.</text>
+
+    <!-- arrows -->
+    <path d="M430 250 L430 205" stroke="#8b949e" stroke-width="2" marker-end="url(#arr)"/>
+    <path d="M430 310 L430 355" stroke="#8b949e" stroke-width="2" marker-end="url(#arr)"/>
+
+    <!-- L2 CLI -->
+    <rect x="60" y="215" width="740" height="120" rx="12" fill="#161b22" stroke="#4dd07a" stroke-width="2"/>
+    <text x="90" y="253" font-size="19" font-weight="700" fill="#4dd07a">L2 · The CLI</text>
+    <text x="90" y="283" font-size="15" fill="#c9d1d9">Pure Python standard library, zero third-party deps.</text>
+    <text x="90" y="307" font-size="15" fill="#c9d1d9">status · events · tail · log · decisions · rules · answer</text>
+
+    <!-- L1 daemon -->
+    <rect x="60" y="360" width="740" height="130" rx="12" fill="#161b22" stroke="#f0883e" stroke-width="2"/>
+    <text x="90" y="398" font-size="19" font-weight="700" fill="#f0883e">L1 · The root daemon (greywatch.service)</text>
+    <text x="90" y="428" font-size="15" fill="#c9d1d9">inotify + journalctl followers on 17 protections; one</text>
+    <text x="90" y="452" font-size="15" fill="#c9d1d9">status.json + an append-only, root-owned 0600 event store.</text>
+    <text x="90" y="476" font-size="15" fill="#c9d1d9">Hard resource caps keep it cheap (50% CPU, 768M memory).</text>
+
+    <text x="430" y="525" text-anchor="middle" font-size="13" fill="#8b949e">arrows = each layer reads the layer below; the daemon writes, the others never do</text>
+  </g>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
+    </marker>
+  </defs>
+</svg>

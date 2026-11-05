@@ -1,0 +1,2 @@
+# REAL — sampled from ~/security-hardening/tetragon-events.jsonl (tetra-relay) 2026-10-22
+{"ts": "2026-10-22 18:46:52", "raw_time": "2026-10-23T01:46:51.914676024Z", "binary": "/bin/bash", "pid": 869948, "uid": null, "parent": "claude", "args": "-c \"echo hi\""}

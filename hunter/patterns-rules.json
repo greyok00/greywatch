@@ -1,0 +1,138 @@
+{
+ "version": 3,
+ "rules": [
+  {
+   "id": "pat-fake-captcha",
+   "title": "A page asked for a fake human check",
+   "severity": "HIGH",
+   "confidence": "medium",
+   "what": "The page told you to \u201cverify you are human\u201d in a way real web forms do not. Fake captchas and press-and-hold prompts are how clipboard-hijack kits talk a person into pasting an attacker's command.",
+   "next": "Close the page. Never run a command a page asked you to run; the phrase for the assistant is the page address.",
+   "match": {
+    "title": [
+     "verify you are human",
+     "are you a robot",
+     "press & hold",
+     "press and hold",
+     "confirm you are not",
+     "human verification"
+    ]
+   },
+   "window_hours": 24
+  },
+  {
+   "id": "pat-tech-support-scam",
+   "title": "A page looked like a tech-support scam",
+   "severity": "HIGH",
+   "confidence": "medium",
+   "what": "The page carries the shape of fake-support pages: a toll-free number pattern or support wording in the address or title.",
+   "next": "Close it and do not call any number it showed. Real vendors do not post emergency numbers on random pages.",
+   "match": [
+    {
+     "url": [
+      "tech-support",
+      "1-800",
+      "1-888",
+      "1-877",
+      "pc-support",
+      "support-call",
+      "help-desk"
+     ]
+    },
+    {
+     "title": [
+      "your pc is infected",
+      "windows defender warning",
+      "virus alert from",
+      "call the number below",
+      "call our toll-free"
+     ]
+    }
+   ],
+   "window_hours": 24
+  },
+  {
+   "id": "pat-fake-update",
+   "title": "A page prompted a fake browser or player update",
+   "severity": "HIGH",
+   "confidence": "medium",
+   "what": "The page advertises an update path in its own address - an update page no vendor ships. Real update prompts never arrive inside a random web page's address.",
+   "next": "Do not download anything from it. Updates belong to the browser's own settings page.",
+   "match": {
+    "url": [
+     "update-required",
+     "update-browser",
+     "player-update",
+     "flash-update",
+     "browser-update"
+    ]
+   },
+   "window_hours": 24
+  },
+  {
+   "id": "pat-fake-update-page",
+   "title": "A page demanded an update in its own words",
+   "severity": "MEDIUM",
+   "confidence": "low",
+   "what": "The page's text insists the browser or a player is out of date and must be updated now. On their own these lines can be carelessly-written advice; from a page you reached from elsewhere they are the fake-update pitch.",
+   "next": "Do not download anything from it. Updates belong to the browser's own settings page.",
+   "match": {
+    "title": [
+     "update required",
+     "outdated browser",
+     "browser is out of date",
+     "update your browser",
+     "flash player update",
+     "chrome is out of date"
+    ]
+   },
+   "window_hours": 24
+  },
+  {
+   "id": "pat-registry-mimic",
+   "title": "A site name imitated a well-known service",
+   "severity": "MEDIUM",
+   "confidence": "low",
+   "what": "The host's name imitates a familiar brand with look-alike spelling. Imitators bank on a fast read passing the misspelling.",
+   "next": "Check the address character by character before signing in to anything.",
+   "match": {
+    "host": [
+     "googgle",
+     "g00gle",
+     "gooogle",
+     "micros0ft",
+     "microoft",
+     "arnazon",
+     "amaz0n",
+     "paypa1",
+     "app1e",
+     "faceb00k",
+     "netfIix",
+     "wellsfarg0"
+    ]
+   },
+   "window_hours": 168
+  },
+  {
+   "id": "pat-risky-tld",
+   "title": "A download or link used a hazard address ending",
+   "severity": "MEDIUM",
+   "confidence": "low",
+   "what": "The address ends in a suffix heavily abused by throwaway delivery pages (.zip, .mov, .top, .gq, .tk, .cf). The suffix alone often means nothing; grouped with other signs it matters.",
+   "next": "Treat links from it with suspicion and do not open downloads from pages you cannot name honestly.",
+   "match": {
+    "url": [
+     ".zip/",
+     ".mov/",
+     ".top/",
+     ".gq/",
+     ".tk/",
+     ".cf/",
+     ".zip?",
+     ".mov?"
+    ]
+   },
+   "window_hours": 24
+  }
+ ]
+}
