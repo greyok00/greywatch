@@ -46,3 +46,29 @@ def normalize_event(tool: str, line: str) -> Optional[Event]:
     if parser is None or not line.strip():
         return None
     return parser(line)
+
+
+# 2026-11-06, owner directive: greywatch is two systems - threats and
+# tools - each with its own voice and controls. Every event sorts into a
+# lane at read time so the whole stored history classifies without any
+# daemon change. Tool state is enumerated; anything else that carries
+# HIGH weight defaults to a threat, never to silence.
+TOOL_MARKERS = ("NOT RUNNING", "needs attention", "not installed", "paused",
+                "exited", "timed out", "updated", "updater", "healer")
+THREAT_TOOLS = frozenset({"responderd", "appfw", "netwatch", "tetragon"})
+THREAT_MARKERS = ("quarantine", "deny", "ban", "drop", "alert", "credential")
+
+
+def lane_for(event: dict) -> str:
+    if not isinstance(event, dict):
+        return "tool"
+    tool = str(event.get("from_tool", ""))
+    text = str(event.get("text", ""))
+    if text.startswith("check-in:") or any(m in text for m in TOOL_MARKERS):
+        return "tool"
+    if isinstance(event.get("interaction"), dict):
+        return "threat"
+    if tool in THREAT_TOOLS and any(m in text for m in THREAT_MARKERS):
+        return "threat"
+    return "threat" if event.get("severity") in ("HIGH",
+                                                 "CRITICAL") else "tool"
