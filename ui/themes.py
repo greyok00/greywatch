@@ -820,16 +820,16 @@ button.gw-send:hover {{ background-color: {accent_hover}; }}
    never the badges. */
 .gw-rail {{
   background-color: {panel}; border-right: 1px solid {hair};
-  padding: 10px 6px;
+  padding: 8px 4px;
 }}
 .gw-rail-head {{
-  font-size: 10px; font-weight: 700; letter-spacing: 1.4px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
   text-transform: uppercase; font-family: {mono}; color: {mute};
-  margin: 10px 6px 2px 8px;
+  margin: 8px 6px 2px 6px;
 }}
 .gw-rail button {{
   background-color: transparent; border: none; border-radius: {radius};
-  padding: 7px 8px; min-height: 26px; margin: 0;
+  padding: 5px 6px; min-height: 26px; margin: 0;
 }}
 .gw-rail button:hover {{ background-color: {hover}; }}
 .gw-rail button.gw-active {{
@@ -837,7 +837,7 @@ button.gw-send:hover {{ background-color: {accent_hover}; }}
 }}
 .gw-rail button:focus, .gw-rail button:focus-visible {{ outline: none; }}
 .gw-rail .gw-rail-label {{
-  font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: {ink};
+  font-size: 11px; font-weight: 600; letter-spacing: 0.2px; color: {ink};
 }}
 .gw-rail button.gw-active .gw-rail-label {{
   color: {accent}; font-weight: 700;

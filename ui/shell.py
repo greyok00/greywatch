@@ -25,7 +25,7 @@ RAIL_KEYS = tuple(key for _g, rows in RAIL for key, _l in rows)
 # (deep links, assistant words) through the pane stack, just not listed.
 HIDDEN_KEYS = ("diagnostics",)
 
-WIDE_RAIL = 152        # label + glyph column
+WIDE_RAIL = 120        # label + glyph column
 NARROW_RAIL = 52       # icons only, the window got too tight
 
 
@@ -47,8 +47,8 @@ def build_rail(win):
         bar.append(head)
         for key, label in rows:
             b = Gtk.Button()
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            sym = win_glyph(key)
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            sym = win_glyph(key, 18)
             sym.set_halign(Gtk.Align.CENTER)
             sym.set_valign(Gtk.Align.CENTER)
             row.append(sym)
@@ -56,7 +56,10 @@ def build_rail(win):
             lb = Gtk.Label(label=label)
             lb.xalign = 0.0
             lb.add_css_class("gw-rail-label")
-            lb.set_hexpand(True)
+            # No hexpand here: an expanding label makes THIS bar compute as
+            # expanding, and the page stack's body then hands it half the
+            # spare width ( GTK walks descendants for expansion). Rows span
+            # the bar without it; the badge simply follows the name.
             row.append(lb)
             badge = Gtk.Label(label="0")
             badge.add_css_class("gw-badge")
