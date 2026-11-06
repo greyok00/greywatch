@@ -24,6 +24,10 @@ if not mine:
     sys.exit(65)                     # never quarantined here
 if mine[-1].get("action") == "deleted":
     sys.exit(0)                      # already purged: idempotent
+if mine[-1].get("action") == "restored":
+    # the owner put this file back; there is nothing locked away to purge
+    print(f"nothing to delete: {orig} was put back", file=sys.stderr)
+    sys.exit(65)
 copy = pathlib.Path(mine[-1]["file"])
 copy.unlink(missing_ok=True)
 now = datetime.datetime.now(datetime.timezone.utc).isoformat(

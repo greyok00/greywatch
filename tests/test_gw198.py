@@ -56,6 +56,22 @@ def test_delete_twice_is_clean_but_unknown_path_errors(tmp_path, monkeypatch):
     assert alien.returncode == 65, "a path that was never quarantined errors"
 
 
+def test_delete_after_restore_refuses_because_nothing_is_locked_away(tmp_path,
+                                                                     monkeypatch):
+    """2026-11-06 deb-verification probe: after Put it back the
+    quarantined copy no longer exists (restore moves it home), so a purge
+    must refuse instead of writing a false 'deleted' record."""
+    man = tmp_path / "quarantine.jsonl"
+    man.write_text(json.dumps(
+        {"ts": "t1", "orig": "/tmp/Docs.zip",
+         "file": str(tmp_path / "gone.quar"),
+         "action": "restored"}) + "\n")
+    monkeypatch.setenv("GW_QUAR_MANIFEST", str(man))
+    out = _run_helper("delete-quarantine", "/tmp/Docs.zip")
+    assert out.returncode == 65, out.stderr
+    assert "put back" in out.stderr
+
+
 def test_delete_uses_the_newest_matching_copy(tmp_path, monkeypatch):
     old = tmp_path / "quar" / "Docs.zip.20261101-010101.quar"
     new = tmp_path / "quar" / "Docs.zip.20261102-010101.quar"
