@@ -17,6 +17,7 @@ FILE_RE = re.compile(r"/[\w./-]{1,200}")
 HELPERS = frozenset({
     "drop-listener", "allow-listener",          # host listener decisions
     "restore-quarantine", "keep-quarantine",    # responderd quarantine
+    "delete-quarantine", "file-action",         # purge (owner 2026-11-06)
     "unban-ip", "keep-scan-ban", "widen-scan-ban",  # scanner-ban / fail2ban
     "none",                                     # investigate/no-op
 })
@@ -52,14 +53,18 @@ def interaction_for(ev) -> dict | None:
                 "eyebrow": "Threat found",
                 "subject": f"“{name}” was quarantined",
                 "detail": f"{sig} · {target or 'location unknown'}",
-                "question": "Keep it locked away, or put it back?",
+                "question": "Keep it locked away, put it back, or "
+                            "delete it for good?",
                 "options": [
                     {"id": "keep", "label": "Keep quarantined",
                      "tone": "primary",
                      "helper": "keep-quarantine", "args": [target]},
                     {"id": "restore", "label": "Put it back",
-                     "tone": "danger",
+                     "tone": "neutral",
                      "helper": "restore-quarantine", "args": [target]},
+                    {"id": "delete", "label": "Delete permanently",
+                     "tone": "danger",
+                     "helper": "delete-quarantine", "args": [target]},
                 ]}
 
     # Ban prompts get the same treatment: name the file or address, quote what
