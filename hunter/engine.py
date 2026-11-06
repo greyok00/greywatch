@@ -362,6 +362,47 @@ def h_intel_join(_events, home, data_dir) -> list[dict]:
     return intel.join_findings(data_dir, _web_docs(data_dir, home))
 
 
+def h_cve_watch(events, _home, data_dir) -> list[dict]:
+    """Wave C: events that name a flaw the active-rule engine tracks.
+
+    The CVE cache is not just metadata - every HIGH+ flaw for a managed
+    tool is an active rule, so an event mentioning the same CVE id gets
+    the rule's severity, subject and next step joined onto it, instead of
+    surfacing as an unlabeled string."""
+    import re as _re
+    try:
+        from cverules import active_rules
+        rules = {r["cve"]: r for r in
+                 active_rules(pathlib.Path(data_dir) / "cve-cache.json")}
+    except Exception:
+        return []
+    if not rules:
+        return []
+    out = []
+    for e in events:
+        text = str(e.get("text") or "")
+        for cid in sorted(set(_re.findall(
+                r"CVE-\d{4}-\d{4,7}(?!\d)", text))):
+            rule = rules.get(cid)
+            if not rule:
+                continue
+            out.append(web.finding(
+                "known-cve-mention", rule["cve"] + " showed up in an event",
+                f"An event on this machine mentions {cid}, and the active "
+                f"rule list tracks it (score {rule.get('score', '?')} "
+                f"{rule.get('severity', '')}): "
+                f"{str(rule.get('summary') or '')[:180]}",
+                "Check which program carries the flaw and whether the "
+                "installed version includes the fix; the assistant can "
+                "walk you through it.",
+                rule.get("severity") or "HIGH",
+                [{"source": "events", "tool": e.get("from_tool", ""),
+                  "ts": e.get("ts", ""), "text": text[:240]}],
+                confidence="medium", status="confirmed", asset="host",
+                facts=[f"cve={cid}", f"matches={rule.get('tool', '')}"]))
+    return out
+
+
 def h_host_scan(events, home, _data_dir) -> list[dict]:
     """The host side: the Downloads folder, startup automation, and any
     program that arrived as a download and then ran."""
@@ -379,6 +420,7 @@ HYPOTHESES = (
     ("browser-config", h_browser_config, False),     # every cycle, bounded
     ("web-patterns", h_web_patterns, False),         # every cycle, bounded
     ("intel-join", h_intel_join, False),             # every cycle, cached
+    ("cve-watch", h_cve_watch, True),                # only on new events
 )
 
 

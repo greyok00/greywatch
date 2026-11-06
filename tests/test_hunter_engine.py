@@ -395,7 +395,8 @@ def test_hypotheses_carry_the_three_new_lanes():
     names = [name for name, _fn, _needs in engine.HYPOTHESES]
     assert names == ["events-detections", "scan-summaries",
                      "downloads-and-persistence", "browser-history",
-                     "browser-config", "web-patterns", "intel-join"]
+                     "browser-config", "web-patterns", "intel-join",
+                     "cve-watch"]
 
 
 # -------------------------------------------------- the wiring in main

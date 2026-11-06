@@ -344,6 +344,17 @@ _RULES = {
               "nothing to do - the list stays current on its own", steps=()),
     ],
     "cve-updater": [
+        _rule(r"affects",
+              "a known flaw matched something installed on this machine",
+              "the flaw is public knowledge: a version containing the fix "
+              "closes it, an unpatched version leaves it open - and since "
+              "this machine runs the affected tool, the check is due",
+              scan=True,
+              steps=(("command", "apt-cache policy <package> | head -n 4"),
+                     ("info", "Check the version against the flaw's fix "
+                              "release on the NVD page for that CVE id."),
+                     ("info", "Patch at a moment the keeper chooses - the "
+                              "app never upgrades packages by itself."))),
         _rule(r"updated|wrote|cache|downloaded",
               "the weekly known-flaw list was refreshed",
               "nothing to do; this list is how the app knows about new "

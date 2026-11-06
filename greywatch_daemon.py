@@ -347,6 +347,23 @@ class Daemon:
                 self.count_failure("ledger", "verify", e)
         return done
 
+    CVE_INTERVAL_S = 3600
+
+    def cve_watch(self) -> int:
+        """Wave C: the CVE cache as ACTIVE rules - every HIGH+ flaw for a
+        managed tool is announced once, in the monitors' voice, with the
+        playbook and the hunter wired to the same rules."""
+        import cverules
+        fired = 0
+        for severity, text, _cid, _tool in cverules.evaluate(self.data_dir):
+            try:
+                self._notice("cve-updater", severity, text,
+                             dedupe_window_s=1.0)
+                fired += 1
+            except Exception as e:
+                self.count_failure("cve", "announce", e)
+        return fired
+
     def _firewall_has_block(self, ip: str) -> bool:
         try:
             r = subprocess.run(
@@ -1056,6 +1073,7 @@ class Daemon:
         trim_at = time.monotonic() + trim_interval
         heartbeat_at = time.monotonic() + 900      # every tool: 15-min check-in
         verify_at = time.monotonic() + self.VERIFY_INTERVAL_S   # wave B
+        cve_at = time.monotonic() + self.CVE_INTERVAL_S        # wave C
         engine_check_at = time.monotonic() + 10
         engine_fails: list[float] = []
         scan_arm_at = time.monotonic() + 30
@@ -1147,6 +1165,12 @@ class Daemon:
                         self.verify_blocks()
                     except Exception as e:
                         self.count_failure("ledger", "verify", e)
+                if now >= cve_at:
+                    cve_at = now + self.CVE_INTERVAL_S
+                    try:
+                        self.cve_watch()
+                    except Exception as e:
+                        self.count_failure("cve", "tick", e)
                 if now >= trim_at:
                     trim_at = now + trim_interval    # deadline first (A11)
                     self.trim_events()
