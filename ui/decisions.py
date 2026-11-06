@@ -511,11 +511,11 @@ class DecisionBroker:
             square = CriticalSquare(CriticalEvents())
             self._crit_square = square
             self._crit_state = square.blocked     # CriticalEvents instance
-        fresh = [t for t in critical_filter(events)
-                 if t != self._crit_state.latest]
-        for tool, text in fresh:
-            shown = self._crit_state.add(tool, text)
-            square.show(shown)
+        fresh = [d for d in critical_filter(events)
+                 if (d["tool"], d["text"]) != self._crit_state.latest]
+        for d in fresh:
+            shown = self._crit_state.add(d["tool"], d["text"])
+            square.show(shown, lane=d.get("lane", "tool"))
 
     def _notify_denies(self, events) -> None:
         from ui.notify_alert import NotifyAlert, BlockedQueue, parse_deny

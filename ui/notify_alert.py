@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 from appfw import rules as R          # noqa: E402
 from appfw.rules import RuleStore     # noqa: E402
 
+from events import lane_for        # GW-197: threat lane vs tool lane
 from gwpaths import data_dir as _gw_data
 
 DATA = _gw_data()
@@ -219,21 +220,34 @@ def _event_age(ts, now=None) -> float | None:
 
 
 def critical_filter(events, now=None, window=None) -> list:
+    """The criticals worth a popup, split by lane (GW-197, owner
+    2026-11-06: BOTH lanes speak, each with its own controls). A tool
+    lane entry carries tool controls (Start tool); a threat lane entry
+    names what was found and leaves the controls to its decision.
+    Events that already carry their own decision dialog never pop twice
+    here. Returns the newest entry as a dict: lane, tool, text."""
     if window is None:               # read at call time: the class is
         window = CriticalEvents.SEEN_WINDOW   # defined further down
     out = []
     for e in events or ():
         if not isinstance(e, dict):
             continue
-        tool = e.get("from_tool", "")
-        if tool not in CRITICAL_TOOLS or e.get("severity") not in CRITICAL_SEVS:
+        tool = str(e.get("from_tool", ""))
+        if e.get("severity") not in CRITICAL_SEVS:
             continue
+        if isinstance(e.get("interaction"), dict):
+            continue                 # it has its own decision dialog
+        lane = lane_for(e)
         # Fail open on a missing stamp; fail CLOSED on one we can read.
         age = _event_age(e.get("ts"), now)
         if age is not None and age > window:
             continue
-        out.append((tool, str(e.get("text", ""))[:200]))
-    return out[-1:] if out else []      # only the newest is shown
+        out.append({"lane": lane, "tool": tool,
+                    "text": str(e.get("text", ""))[:200]})
+    newest = {}                     # the newest PER LANE: a tool-down and
+    for d in out:                   # a threat can be news at the same time,
+        newest[d["lane"]] = d       # and only one lane must not eat the
+    return list(newest.values())    # other's voice (GW-197)
 
 
 # Unit-less scanners (rkhunter, lynis: their verdict lives in their logs,
@@ -392,16 +406,17 @@ class NotifyAlert:
                     continue
 
     def show(self, text: str, app: str = "", host: str = "",
-             gate: bool = True) -> None:
+             gate: bool = True, summary: str = "") -> None:
         if gate:
             ok, _why = allow_popup(self.LANE, path=ALERTS_SETTING_PATH)
             if not ok:
                 return
         cls = self._cls()
         picture = self._tile(app, host)
+        title = summary or self.SUMMARY
         try:
             if self._n is None:
-                self._n = cls.Notification.new(self.SUMMARY, text)
+                self._n = cls.Notification.new(title, text)
                 self._n.set_timeout(8000)
                 self._attach_image(self._n, picture)
                 if hasattr(self._n, "add_action"):
@@ -409,7 +424,7 @@ class NotifyAlert:
                 self._n.show()
             else:
                 self._attach_image(self._n, picture)
-                self._n.update(self.SUMMARY, text)
+                self._n.update(title, text)
                 self._n.show()
         except Exception:
             self._n = None               # a bus hiccup must never loop
@@ -494,11 +509,30 @@ class CriticalSquare(NotifyAlert):
     APP = "greywatch-critical"
     LANE = "critical"
 
+    def show(self, text: str, gate: bool = True, lane: str = "tool"):
+        """Two faces, two voices (owner 2026-11-06): a tool critical says
+        Maintenance and offers the tool's own levers; a threat critical
+        says Security and never offers tool controls. The summary is
+        chosen before the first libnotify create, since actions and
+        title are fixed there."""
+        self._lane = lane
+        super().show(text, gate=gate, summary=self._summary(lane))
+
+    def _summary(self, lane: str = "tool") -> str:
+        return ("Security: critical event" if lane == "threat" else
+                "Maintenance: a tool needs attention")
+
     def _wire_actions(self, note) -> None:
-        """This lane's events are about the machine's OWN tools (a rootkit
-        scanner down, bans failing) — not an outside connection — so its
-        popup starts the tool instead of offering block actions that would
-        do nothing (owner live finding, 2026-11-05)."""
+        """Tool criticals are about the machine's OWN tools (a rootkit
+        scanner down, bans failing) — not an outside connection — so the
+        popup starts the tool instead of offering block actions that
+        would do nothing (owner live finding, 2026-11-05). Threat
+        criticals (GW-197) get the pair of actions that fit them: none
+        of them start a tool."""
+        if getattr(self, "_lane", "tool") == "threat":
+            note.add_action("snooze", "Snooze 30 min", self._on_snooze)
+            note.add_action("review", "Review", self._on_review)
+            return
         note.add_action("start-tool", "Start tool", self._on_start_tool)
         note.add_action("snooze", "Snooze 30 min", self._on_snooze)
         note.add_action("review", "Review", self._on_review)

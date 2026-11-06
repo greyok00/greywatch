@@ -71,12 +71,18 @@ def test_critical_filter_drops_old_events():
          "text": "RKHunter is down NOW", "ts": _aged(30.0, now)},
     ]
     assert critical_filter(events, now=now) == \
-        [("rkhunter", "RKHunter is down NOW")]
+        [{"lane": "tool", "tool": "rkhunter",
+          "text": "RKHunter is down NOW"}]
     # an event with no readable stamp fails OPEN: silence must be a
-    # chosen state, never a parsing accident
+    # chosen state, never a parsing accident. Fail2ban's own ban lines
+    # speak about the outside, so GW-197 sorts them into the threat lane;
+    # only this synthetic "Ban" wording's lane changed, not the
+    # fail-open rule it pins.
     assert critical_filter([{"from_tool": "fail2ban", "severity": "HIGH",
                              "text": "Ban", "ts": "not a stamp"}],
-                           now=now) == [("fail2ban", "Ban")]
+                           now=now) == [{"lane": "threat",
+                                         "tool": "fail2ban",
+                                         "text": "Ban"}]
 
 
 def test_critical_square_starts_the_tool(tmp_path, monkeypatch):

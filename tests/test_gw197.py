@@ -142,3 +142,77 @@ def test_the_lanes_never_mix_their_controls():
         assert word not in tool_fn, f"tool rows never touch {word}"
     for word in ("_control_requested", "start_tool", "control_label"):
         assert word not in threat_fn, f"threat rows never touch {word}"
+
+
+# ---- task 6: two notification lanes, proper controls each ------------------
+def _na_module():
+    from ui import notify_alert as na
+    return na
+
+
+class _FakeNotification:
+    instances = []
+
+    def __init__(self, summary=None, body=None):
+        self.summary, self.body = summary, body
+        self.actions = []
+
+    @classmethod
+    def new(cls, summary, body):
+        inst = cls(summary, body)
+        cls.instances.append(inst)
+        return inst
+
+    def add_action(self, name, label, cb):
+        self.actions.append((name, label, cb))
+
+
+def test_critical_filter_splits_the_two_lanes():
+    import datetime as dt
+    from ui.notify_alert import critical_filter
+    now = dt.datetime.now(dt.timezone.utc)
+    e_tool = {"from_tool": "clamav", "severity": "HIGH",
+              "text": "check-in: NOT RUNNING - needs attention",
+              "ts": (now - dt.timedelta(seconds=30)).isoformat()}
+    e_threat = {"from_tool": "responderd", "severity": "HIGH",
+                "text": "alert_local_only: credential read",
+                "ts": (now - dt.timedelta(seconds=30)).isoformat()}
+    lanes = {(d["lane"], d["tool"])
+             for d in critical_filter([e_tool, e_threat], now=now)}
+    assert ("tool", "clamav") in lanes
+    assert ("threat", "responderd") in lanes
+
+
+def test_critical_filter_stays_off_events_that_ask_their_own_question():
+    import datetime as dt
+    from ui.notify_alert import critical_filter
+    now = dt.datetime.now(dt.timezone.utc)
+    e = {"from_tool": "responderd", "severity": "HIGH",
+         "text": "quarantine: /tmp/Docs.zip ...",
+         "ts": (now - dt.timedelta(seconds=30)).isoformat(),
+         "interaction": {"id": "responderd:ab", "options": []}}
+    assert critical_filter([e], now=now) == [], (
+        "an event with its own decision dialog never pops twice")
+
+
+def test_threat_square_never_offers_start_tool():
+    na = _na_module()
+    note = _FakeNotification.new("s", "b")
+    sq = na.CriticalSquare.__new__(na.CriticalSquare)
+    sq._lane = "threat"
+    sq._wire_actions(note)
+    names = [a[0] for a in note.actions]
+    assert "start-tool" not in names
+    assert "snooze" in names and "review" in names
+
+
+def test_tool_square_keeps_start_tool_and_names_itself_maintenance():
+    na = _na_module()
+    note = _FakeNotification.new("s", "b")
+    sq = na.CriticalSquare.__new__(na.CriticalSquare)
+    sq._lane = "tool"
+    sq._wire_actions(note)
+    names = [a[0] for a in note.actions]
+    assert "start-tool" in names and "snooze" in names and "review" in names
+    assert "Maintenance" in sq._summary("tool")
+    assert "critical event" in sq._summary("threat")

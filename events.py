@@ -54,7 +54,8 @@ def normalize_event(tool: str, line: str) -> Optional[Event]:
 # daemon change. Tool state is enumerated; anything else that carries
 # HIGH weight defaults to a threat, never to silence.
 TOOL_MARKERS = ("NOT RUNNING", "needs attention", "not installed", "paused",
-                "exited", "timed out", "updated", "updater", "healer")
+                "exited", "timed out", "updated", "updater", "healer",
+                "is down", "could not be repaired")
 THREAT_TOOLS = frozenset({"responderd", "appfw", "netwatch", "tetragon"})
 THREAT_MARKERS = ("quarantine", "deny", "ban", "drop", "alert", "credential")
 
