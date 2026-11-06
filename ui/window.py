@@ -890,7 +890,8 @@ class MainWindow(Gtk.Window):
             on_filter=lambda: self._show_filter(
                 self.tools_desk.show_all_btn),
             on_details=self._details_selected,
-            on_navigate=self._show)
+            on_navigate=self._show,
+            on_control=self._control_requested)
         self.tools_desk = desk
         self.status_words = desk.status_words
         self.counts = desk.counts
@@ -1610,6 +1611,44 @@ class MainWindow(Gtk.Window):
             pass
         return None
 
+    SCAN_RUN = {"rkhunter": "rkhunter", "lynis": "lynis"}
+
+    def _control_requested(self, name: str) -> None:
+        """The registry record's control row. Same levers the strip rows
+        carry, now where the tool's own story is read: resume a paused
+        tool, start a down one, and for the unit-less scanners (rkhunter,
+        lynis: their verdict lives in their logs) run the scan now."""
+        tool = self.by_name.get(name) or {}
+        if not tool.get("unit") and name in self.SCAN_RUN:
+            self._scan_pressed(name)
+            return
+        self._toggle_tool(name, pause=False)
+
+    def _scan_pressed(self, name: str) -> None:
+        def worker():
+            try:
+                from wiz import common
+                rc = common.run_helper("scan-now", [self.SCAN_RUN[name]],
+                                       timeout=120)
+            except Exception:
+                rc = -1
+            GLib.idle_add(self._after_scan, name, rc)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _after_scan(self, name: str, rc: int) -> None:
+        self._assistant_record_outcome(rc == 0)
+        msg = (f"{friendly_name(name)} scan started; its row turns "
+               "green when the log speaks." if rc == 0 else
+               f"Could not start the {friendly_name(name)} scan "
+               f"(code {rc}).")
+        if hasattr(self, "scan_status"):
+            self.scan_status.set_markup(
+                f"<span size='13000' font_family='Inter'>{escape(msg)}</span>")
+        else:
+            print(f"scan {name}: {msg}", flush=True)
+        self.refresh()
+
     def _toggle_tool(self, name, pause: bool):
         tool = self.by_name.get(name) or {}
         unit = tool.get("unit")
@@ -1628,7 +1667,17 @@ class MainWindow(Gtk.Window):
 
         def worker():
             try:
-                if tool.get("scope") == "user":
+                if not unit:
+                    # No unit, no lever here: rkhunter and lynis run
+                    # through the scan runner; anything else refuses.
+                    if name in self.SCAN_RUN:
+                        from wiz import common
+                        rc = common.run_helper(
+                            "scan-now", [self.SCAN_RUN[name]], timeout=120)
+                    else:
+                        rc = -1
+                    state = None
+                elif tool.get("scope") == "user":
                     rc = subprocess.run(
                         ["systemctl", "--user", action, unit],
                         capture_output=True, text=True, timeout=20).returncode

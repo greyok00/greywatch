@@ -58,14 +58,20 @@ def _source(obj) -> str:
 
 
 def test_the_gui_no_longer_escalates_to_run_scans():
-    # The window may ask for a scan; it must never spawn one itself. No
-    # password, no helper invocation, no polling loop left behind.
+    # The window never moves a protection except through a press of the
+    # owner's hand. The old regression: automatic scan-all escalation,
+    # a helper invocation with no ask, and polling loops left behind.
+    # GW-194 (2026-11-05, owner finding "why can't i update from here?")
+    # re-authorised ONE explicit path: a control button on the registry
+    # record, which routes unit-less scanners through scan-now.sh and
+    # everything else through the toggles.
     from ui import window
     src = (ROOT / "ui" / "window.py").read_text(encoding="utf-8")
     assert "run_helper(\"tool-control\", [\"scan-all\"])" not in src
     for gone in ("_run_scan", "_poll_scan", "_poll_process", "_scan_done",
                  "_finish_scan_watch"):
         assert not hasattr(window.MainWindow, gone), gone
+    assert "_control_requested" in src          # the explicit press path
 
 
 def test_scan_all_runs_the_same_five_scanners():

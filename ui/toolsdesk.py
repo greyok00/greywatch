@@ -106,12 +106,14 @@ class ToolsDesk(Gtk.Box):
     """
 
     def __init__(self, registry, on_select=None, on_refresh=None,
-                 on_filter=None, on_details=None, on_navigate=None):
+                 on_filter=None, on_details=None, on_navigate=None,
+                 on_control=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.registry = registry
         self.on_select = on_select
         self.on_details = on_details
         self.on_navigate = on_navigate
+        self.on_control = on_control
         self.selected: str | None = None
         self._facts: dict = {}
         self._events: list = []
@@ -405,7 +407,7 @@ class ToolsDesk(Gtk.Box):
         self._fill_reads(f)
         d.detail().append(d.label("SUGGESTED NEXT STEP"))
         d.detail().append(d.next_box(self._next_text(f)))
-        self._fill_actions(name)
+        self._fill_actions(name, f)
 
     def _trail_line(self, e: dict) -> str:
         """One trail line in the tool's own words; the sentences are the
@@ -501,20 +503,37 @@ class ToolsDesk(Gtk.Box):
                     "you want it working again; until then pause is "
                     "yours, nothing resumes on its own.")
         if state in ("RED", "YELLOW"):
-            return ("The row's own detail says what to look at next; "
-                    "the Logs page carries the raw lines beside their "
-                    "plain readings.")
+            return ("Start it from the control above when you want it "
+                    "running again; the Logs page carries the raw "
+                    "lines beside their plain readings.")
         return ("Keep it on. Nothing here starts or stops a protection "
                 "on its own; the suite reads only.")
 
-    def _fill_actions(self, name: str) -> None:
-        """The record's actions row (approved mockup): the shipped
-        hand-offs only - the tool's raw log page and the details dialog
-        the protect cards also grow. No new powers are created."""
-        if self.on_navigate is None and self.on_details is None:
+    def _fill_actions(self, name: str, f: dict | None = None) -> None:
+        """The record's actions row: the reading hand-offs, plus the
+        tool's own control when the record itself says it needs one
+        (owner finding, 2026-11-05: a 'state: not running' panel with no
+        lever sent the reader walking to find a button). The powers live
+        in the window; this is the button that reaches them, and only a
+        press of yours moves anything."""
+        if self.on_navigate is None and self.on_details is None \
+                and self.on_control is None:
             return
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                           spacing=6)
+        needs_start = bool(f) and (f.get("paused")
+                                   or f.get("state") not in ("GREEN",))
+        if self.on_control is not None and f is not None and needs_start:
+            label = ("Resume" if f.get("paused")
+                     else "Run scan" if not f.get("unit")
+                     else "Update now" if name in ("freshclam",
+                                                   "cve-updater")
+                     else "Start tool")
+            ctl_btn = Gtk.Button(label=label)
+            ctl_btn.add_css_class("gw-mini")
+            ctl_btn.connect("clicked",
+                            lambda *_b, k=name: self.on_control(k))
+            actions.append(ctl_btn)
         if self.on_navigate is not None:
             open_btn = Gtk.Button(label="Open in Logs")
             open_btn.add_css_class("gw-mini")
