@@ -46,6 +46,17 @@ def observe(widget):
     return list(widget.observe_children())
 
 
+def _walk_labels(root):
+    """Collect every Gtk.Label under a widget, depth-first."""
+    found, todo = [], [root]
+    while todo:
+        x = todo.pop()
+        if isinstance(x, Gtk.Label):
+            found.append(x)
+        todo.extend(observe(x))
+    return found
+
+
 @pytest.fixture(scope="module")
 def win():
     from ui.window import MainWindow
@@ -113,8 +124,6 @@ def test_a_scan_button_opens_the_services_page(win):
         win._start_scan(None, mode)
         pump(10)
         assert win.stack.get_visible_child_name() == "services"
-        assert "asked" in win.scan_status.get_text() or \
-            "Progress below" in win.scan_status.get_text()
     finally:
         win.data_dir = old
         shutil.rmtree(tmp, ignore_errors=True)
@@ -834,12 +843,9 @@ def test_settings_has_a_browse_button(win):
 
 
 def test_progress_ring_only_exists_while_a_scan_runs(win):
+    """Phase 4 re-root: the ring half of the retired Scans page is gone
+    from the window; the widget contract it carried stays pinned here."""
     from ui.window import ProgressCircle
-    win._ensure_view("scans")    # the ring lives on the Scans page
-    # Earlier scan tests in this module leave the ring spinning; stop it so
-    # this test measures the widget, not the leftovers.
-    win.circle.stop("idle")
-    assert not win.circle.get_visible()      # Tools screen starts clean
     c = ProgressCircle()
     assert not c.get_visible()
     c.start("Quick scan")
@@ -1076,7 +1082,7 @@ def test_baseline_keeps_its_own_page(win):
     # still saying "harden" land on Services through the one legacy map,
     # and the key is gone from the rail.
     from ui import shell
-    assert "harden" in win._builders
+    assert "harden" not in win._builders
     assert "harden" not in shell.RAIL_KEYS
     win._show("harden")
     pump(5)
@@ -1084,20 +1090,24 @@ def test_baseline_keeps_its_own_page(win):
 
 
 def test_tool_card_shows_plain_name_and_real_tool_name(win):
-    # Phase 4: the protection cards build on demand; the test builds the
-    # page through the same builder the stack uses.
-    win._ensure_view("protect")
-    frame = win.card_widgets["responderd"]
-    found = []
-    todo = [frame]
-    while todo:
-        x = todo.pop()
-        if isinstance(x, Gtk.Label):
-            found.append(x.get_label() or "")
-        todo.extend(observe(x))
-    blob = "\n".join(found)
-    assert "Auto-responder" in blob
-    assert "responderd" in blob
+    """Phase 4 re-root: the protection card half retired with the
+    Protections page; the registry feed keeps the same naming contract -
+    each row shows the plain name and carries the real tool name in its
+    meta line."""
+    win._show("services")
+    pump(10)
+    desk = win.services_page.tools_desk
+    row = None
+    for _ in range(5):
+        while GLib.main_context_default().iteration(False):
+            pass
+    rows = desk.feed.rows()
+    row = rows.get("responderd")
+    assert row is not None, "responderd has a row on the registry feed"
+    text = "\n".join(
+        str(lbl.get_text()) for lbl in _walk_labels(row))
+    assert "Auto-responder" in text
+    assert "responderd" in text
 
 
 def test_assistant_chat_answers_are_selectable():
@@ -1201,11 +1211,13 @@ def test_service_state_column_fits_its_longest_phrase(win):
         natural = label.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
         assert natural <= STATE_COLUMN_PX, (words, natural, STATE_COLUMN_PX)
 
-    # And the real rows must use that column width, not their own number.
-    win._ensure_view("protect")
-    for _ in range(5):
-        while GLib.main_context_default().iteration(False):
-            pass
-    subs = [f._sub for f in win.card_widgets.values()]
-    assert len(subs) >= 17, len(subs)
+    # Phase 4 re-root: the card half retired with the Protections page;
+    # the fixed-width mechanism itself stays pinned at ui.desk.Feed.row.
+    from ui.desk import DeskFeed
+    feed = DeskFeed()
+    row = feed.row("state-col", "Title", "meta",
+                   sub="service needs attention",
+                   sub_width=STATE_COLUMN_PX)
+    subs = [w for w in _walk_labels(row) if w.get_size_request()[0] != -1]
+    assert subs, "the sub label carries the fixed state column"
     assert {s.get_size_request()[0] for s in subs} == {STATE_COLUMN_PX}

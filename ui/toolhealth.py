@@ -64,11 +64,13 @@ class ServicesPage(Gtk.Box):
                          on_select=win._tools_picked,
                          on_refresh=win.refresh,
                          on_filter=lambda: win._show_filter(
-                             win.tools_desk.show_all_btn),
+                             desk.show_all_btn),
                          on_details=win._details_selected,
                          on_navigate=win._show,
                          on_control=win._control_requested)
         self.tools_desk = desk
+        # The one show-all filter lives on this desk; window.py reads it.
+        win.show_all_btn = desk.show_all_btn
         self.append(desk)
 
     def _scan_clicked(self, _btn, name):

@@ -164,7 +164,7 @@ def main() -> int:
                 tray.on_show = lambda: win.present()
                 tray.on_quit = application.quit
             win.present()
-            win._show("tools")        # the Security home (never "status")
+            win._show("overview")     # the Security home (never "status")
             win._ensure_default_on()
             # The assistant model wakes once, here, with the window up; its
             # loader thread reports into the panel banner on the main loop

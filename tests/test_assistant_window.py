@@ -33,10 +33,12 @@ def test_assistant_intent_dispatch_routes_to_toggle_helpers(
 
 
 def test_home_builder_exists_and_panel_importable():
+    """Phase 4 re-root: the chat panel lives on the Overview page through
+    ui.console importing the panel itself, so a broken AssistantPanel
+    class body fails this import too (the plain "panel importable"
+    property); _home_view retired with the Home page."""
     from ui.window import MainWindow
-    # ui.window imports the panel itself, so a broken AssistantPanel class
-    # body fails this import too (the plain "panel importable" property).
-    assert hasattr(MainWindow, "_home_view")
+    assert hasattr(MainWindow, "_overview_view")
     assert hasattr(MainWindow, "_assistant_intent")
 
 
@@ -247,6 +249,12 @@ def test_retheme_snapshots_the_chat_and_reopens_the_feed(tmp_path,
         def snapshot_transcript(self):
             return {"rows": [("change theme to light mode", True)]}
 
+        def restore_transcript(self, snap):
+            self.restored = snap
+
+        def note_state(self, ok, err):
+            self.state_note = (ok, err)
+
     class FakeStack:
         def get_visible_child_name(self):
             return "tools"
@@ -256,10 +264,16 @@ def test_retheme_snapshots_the_chat_and_reopens_the_feed(tmp_path,
 
     class FakeWin:
         stack = FakeStack()
-        assistant_panel = FakePanel()
+        # Phase 4 re-root: the chat panel lives on the Overview page; the
+        # window resolves it through _panel() (rebuild contract).
+        overview_page = type("P", (), {
+            "_assistant": FakePanel()})()
         rebuilt = {}
         views = {}
         shown = []
+
+        def _panel(self):
+            return self.overview_page._assistant
 
         def _show(self, key):
             self.shown.append(key)
@@ -271,9 +285,13 @@ def test_retheme_snapshots_the_chat_and_reopens_the_feed(tmp_path,
     win = FakeWin()
     win._views = {"logs": object(), "tools": object()}
     win._recent_seen = [1, 2, 3]
+    win._chat_snapshot = None
+    win._chat_state = None
+    win._symbols = {}
     W.MainWindow._retheme(win)
-    assert win._chat_snapshot is not None
-    assert "change theme to light mode" in win._chat_snapshot["rows"][0]
+    assert win._chat_snapshot is None    # handed over, then released
+    assert "change theme to light mode" \
+        in win.overview_page._assistant.restored["rows"][0]
     assert win._recent_seen is None      # refresh() must refill the feed
     assert win.shown == ["tools"]
     assert win.refreshed
