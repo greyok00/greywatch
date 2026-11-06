@@ -24,14 +24,19 @@ def _run(*args):
 
 
 def test_the_script_returns_yaras_own_status_to_the_desk():
-    """A source pin beside the behaviour tests: the exit reads yara's
-    captured status, and no bare `$?` follows the filter pipeline."""
+    """A source pin beside the behaviour tests. GW-185: no bare `$?` at
+    the tail of the filter pipeline. GW-196 redefined the exit: the
+    sweep's verdict is what was actually swept, per-root isolated, so
+    one churning temp file can no longer mark the whole sweep failed."""
     code = "\n".join(l for l in SCRIPT.read_text().splitlines()
                      if not l.lstrip().startswith("#"))
-    assert 'exit "$yara_rc"' in code, "the wrapper must exit on yara's rc"
-    assert "yara_rc=$?" in code
+    assert 'exit "$yara_rc"' not in code, (
+        "GW-196: one root's raw yara code no longer fails the sweep")
     assert 'exit "$?"' not in code, (
         "$? at the tail is the last grep's status; that was GW-185")
+    assert 'hits="$(grep' in code, "the filter pipeline stays a capture"
+    assert "[ \"$swept\" -gt 0" in code, "the exit reads the swept count"
+    assert "yara_rc=$?" in code
     # GW-123's pytest exclusion survives the rewrite: the pattern line
     # still ends in a `' \` continuation where the closeout pin reads it.
     assert "pytest-of-" in code and "/(var/)?" in code

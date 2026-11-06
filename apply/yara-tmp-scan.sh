@@ -45,13 +45,41 @@ for r in "${roots[@]}"; do
 done
 printf '@@DIRS %d\n' "$folders"
 
-raw="$(mktemp)"
-/usr/bin/yara -r -w "$RULES" "${roots[@]}" 2>/dev/null >"$raw"
-yara_rc=$?
-hits="$(grep -vE '(Big_Numbers1|invalid_trailer_structure|possible_includes_base64_packed_functions).*\.(pdf|html)( |$)' "$raw" \
+rawf="$(mktemp)"
+raw_all="$(mktemp)"
+errf="$(mktemp)"
+YARA_BIN="${YARA_BIN:-/usr/bin/yara}"
+# Each root is swept on its own with two attempts. A temp file deleted or
+# rewritten underneath one pass kills that pass outright ("input in flex
+# scanner failed" - owner live finding, 2026-11-05, every 16k-folder sweep
+# on a churning box read as "exited 1"): the churn is per-file and passes,
+# so the legs are isolated, briefly retried, and the sweep's verdict is
+# what was actually swept, never one poison file's shadow over the rest.
+swept=0
+for r in "${roots[@]}"; do
+    ok=""
+    for attempt in 1 2; do
+        "$YARA_BIN" -r -w "$RULES" "$r" >"$rawf" 2>"$errf"
+        yara_rc=$?
+        if [ "$yara_rc" -eq 0 ]; then
+            ok=1
+            cat "$rawf" >>"$raw_all"
+            break
+        fi
+        sleep 3
+    done
+    if [ -n "$ok" ]; then
+        swept=$((swept + 1))
+    else
+        head -n 1 "$errf" >&2          # one line of why, in the journal
+    fi
+done
+rm -f "$rawf" "$errf"
+hits="$(grep -vE '(Big_Numbers1|invalid_trailer_structure|possible_includes_base64_packed_functions).*\.(pdf|html)( |$)' "$raw_all" \
     | grep -vE 'with_sqlite.*(/tmp/sxng_cache_|/var/tmp/sxng_cache_|scantemp)' \
     | grep -vE '/(var/)?tmp/pytest-of-[^/]+/pytest-[0-9]+/' \
 )"
-rm -f "$raw"
+rm -f "$raw_all"
 [ -n "$hits" ] && printf '%s\n' "$hits"
-exit "$yara_rc"
+[ "$swept" -gt 0 ] || exit 1     # nothing could be swept at all
+exit 0
