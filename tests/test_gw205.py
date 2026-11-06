@@ -28,10 +28,10 @@ def _stub_bin(tmp_path, name, body):
     return str(p)
 
 
-def _sidekick_event(spec_id="sidekick:abc123", ts="2026-11-06T09:00:00+00:00"):
-    return {"from_tool": "sidekick", "severity": "MEDIUM", "text": "asks",
+def _reviewer_event(spec_id="block-reviewer:abc123", ts="2026-11-06T09:00:00+00:00"):
+    return {"from_tool": "block-reviewer", "severity": "MEDIUM", "text": "asks",
             "ts": ts,
-            "interaction": {"id": spec_id, "eyebrow": "Sidekick check",
+            "interaction": {"id": spec_id, "eyebrow": "Block Reviewer check",
                             "subject": "192.168.0.44 is blocked",
                             "question": "Keep blocking, or lift it?",
                             "options": [{"id": "keep", "helper":
@@ -69,17 +69,17 @@ def test_page_digest_marks_reviewed_and_forever(tmp_path):
 
 
 def test_page_digest_lists_only_unanswered_asks(tmp_path):
-    evs = [_sidekick_event(), _sidekick_event(spec_id="sidekick:gone"),
+    evs = [_reviewer_event(), _reviewer_event(spec_id="block-reviewer:gone"),
            {"from_tool": "clamav", "severity": "CRITICAL",
             "text": "FOUND /x", "ts": "t",
             "interaction": {"id": "clamav:1", "options": []}}]
     doc = blockledger.page_digest(evs, tmp_path,
-                                  answered=("sidekick:gone",))
-    assert [a["spec"]["id"] for a in doc["asks"]] == ["sidekick:abc123"]
+                                  answered=("block-reviewer:gone",))
+    assert [a["spec"]["id"] for a in doc["asks"]] == ["block-reviewer:abc123"]
 
 
 def test_page_digest_is_bounded(tmp_path):
-    evs = [_sidekick_event(spec_id=f"sidekick:{i:04d}") for i in range(60)]
+    evs = [_reviewer_event(spec_id=f"block-reviewer:{i:04d}") for i in range(60)]
     doc = blockledger.page_digest(evs, tmp_path)
     assert len(doc["asks"]) == 50
 
@@ -93,9 +93,9 @@ def test_daemon_writes_the_defense_digest(tmp_path):
     doc = snap["defense"]
     assert [r["ip"] for r in doc["blocked"]] == ["192.168.0.44"]
     assert doc["blocked"][0]["cls"] == "own-infra"
-    # a sidekick event in the store shows up as one ask
+    # a reviewer event in the store shows up as one ask
     with open(d.events_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(_sidekick_event()) + "\n")
+        f.write(json.dumps(_reviewer_event()) + "\n")
     d.write_status()
     snap = json.loads((d.data_dir / "status.json").read_text())
     assert len(snap["defense"]["asks"]) == 1
@@ -198,10 +198,10 @@ def test_cve_rules_never_patch_anything():
 def test_rail_groups_follow_the_two_system_design():
     from ui import shell
     groups = {g: tuple(k for k, _l in rows) for g, rows in shell.RAIL}
-    assert tuple(groups) == ("Watch", "Defense", "Care", "System")
+    assert tuple(groups) == ("Watch", "Firewall", "Care", "System")
     # the Defense group carries BOTH threat desks, and Defense has a row
-    assert groups["Defense"][0] == "thunter"
-    assert "defense" in groups["Defense"]
+    assert groups["Firewall"][0] == "thunter"
+    assert "defense" in groups["Firewall"]
     # every rail key is unique and resolvable in the pane stack
     keys = [k for keys in groups.values() for k in keys]
     assert len(keys) == len(set(keys))

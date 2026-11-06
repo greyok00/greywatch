@@ -333,7 +333,7 @@ def _runtime_cfg(data_dir) -> dict:
 def run(argv=None) -> int:
     ap = argparse.ArgumentParser(
         prog="gw-hunter",
-        description="Watch's threat hunter - a separate unprivileged "
+        description="Watch's browser watch - a separate unprivileged "
                     "process over events, downloads, browser history, "
                     "startup automation, and HAR imports.")
     ap.add_argument("--data-dir", required=True)

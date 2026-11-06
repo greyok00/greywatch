@@ -12,7 +12,7 @@ from ui import metrics
 # the suite the keeper runs, System holds the service's own surfaces.
 RAIL = (
     ("Watch", (("home", "Home"),)),
-    ("Defense", (("thunter", "Threat Hunter"), ("defense", "Defense"))),
+    ("Firewall", (("thunter", "Browser Watch"), ("defense", "Firewall"))),
     ("Care", (("scans", "Scans"), ("protect", "Protections"),
               ("tools", "Tools"), ("harden", "Harden"))),
     ("System", (("logs", "Activity log"), ("settings", "Settings"),

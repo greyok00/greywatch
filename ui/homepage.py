@@ -92,8 +92,8 @@ def report_text(note: dict, finding: dict | None) -> str:
     title = str((finding or {}).get("title") or "")
     text = str(note.get("text") or (finding or {}).get("what") or "")
     hint = str(note.get("hint") or (finding or {}).get("next") or "")
-    head = (f"Threat Hunter report - {title}" if title
-            else "Threat Hunter report")
+    head = (f"Browser Watch report - {title}" if title
+            else "Browser Watch report")
     body = " ".join(part for part in (text, hint) if part)
     return f"{head}:\n{body}" if body else head
 
@@ -173,7 +173,7 @@ class HomeDigest(Gtk.Box):
         self._head.set_markup(
             f"<span size='10500' font_family='IBM Plex Mono' "
             f"font-weight='600' color='{theme_muted()}'>"
-            f"THREAT HUNTER · "
+            f"BROWSER WATCH · "
             f"{count} NEW FINDING{'S' if count != 1 else ''}"
             "</span>")
         for child in list(self._rows.observe_children()):
@@ -229,14 +229,14 @@ class HomeDigest(Gtk.Box):
             open_b = Gtk.Button(label="Open the hunter")
             open_b.add_css_class("gw-mini")
             open_b.set_tooltip_text(
-                "See every finding on the Threat Hunter tab")
+                "See every finding on the Browser Watch tab")
             open_b.connect("clicked", self._open_of())
             acts.append(open_b)
         row.append(acts)
         return row
 
     def _ask_of(self, note: dict, finding: dict | None):
-        # Same wording the finding rows on the Threat Hunter tab use, so
+        # Same wording the finding rows on the Browser Watch tab use, so
         # the answer reads identically from either surface.
         f = finding or {}
         def handler(_btn):

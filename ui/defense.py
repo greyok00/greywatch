@@ -135,10 +135,10 @@ _BLOCK_OPTS = {
 
 
 class DefenseView(Gtk.Box):
-    """The network defense desk: who is blocked, what the sidekick is
+    """The network defense desk: who is blocked, what the Block Reviewer is
     asking, how the wave-A armor chain stands. The page never blocks or
     lifts anything itself: a blocked row defers to the window's
-    confirm-then-helper pipeline, and a sidekick card runs the same
+    confirm-then-helper pipeline, and a reviewer card runs the same
     decision machinery as the decisions window."""
 
     def __init__(self, win=None):
@@ -156,7 +156,7 @@ class DefenseView(Gtk.Box):
         self.append(box)
         for title, host in (
                 ("Blocked addresses", "blocked"),
-                ("Sidekick questions", "asks"),
+                ("Block Reviewer questions", "asks"),
                 ("Network armor", "armor")):
             head = Gtk.Label(label=title, xalign=0)
             head.add_css_class("gw-page-title")
@@ -208,9 +208,9 @@ class DefenseView(Gtk.Box):
         if row.get("forever"):
             why = "kept for good: " + why
         if row.get("reviewed") == "keep":
-            why += " (a sidekick question was answered: keep blocking)"
+            why += " (a Block Reviewer question was answered: keep blocking)"
         elif row.get("reviewed") == "lift":
-            why += " (a sidekick question was answered: lift)"
+            why += " (a Block Reviewer question was answered: lift)"
         meta = Gtk.Label(label=why, xalign=0, wrap=True, selectable=True)
         meta.add_css_class("gw-meta")
         card.append(title)
@@ -232,7 +232,7 @@ class DefenseView(Gtk.Box):
     def _paint_asks(self, asks):
         from ui.decisionlist import card_widget
         if not asks:
-            self._quiet(self._asks, "The sidekick has nothing to ask.")
+            self._quiet(self._asks, "The Block Reviewer has nothing to ask.")
             return
         for ask in asks:
             spec = ask.get("spec") if isinstance(ask, dict) else None

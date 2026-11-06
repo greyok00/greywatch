@@ -7,7 +7,7 @@
     greywatch decisions [--pending] | answer ID OPTION
     greywatch rules TOOL ...       (wizard builders — Task 8, same code)
     greywatch action {restart UNIT | drop-ip IP | unban JAIL IP}
-    greywatch hunter [--hunt] [--notes]   (threat hunter read + one-shot)
+    greywatch hunter [--hunt] [--notes]   (browser watch read + one-shot)
 
 stdlib only; zero privileged code of its own (user-unit restarts go through
 systemctl --user, everything privileged through pkexec-helpers only). All

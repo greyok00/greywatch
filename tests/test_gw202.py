@@ -1,7 +1,7 @@
 """GW-203/204 (owner 2026-11-06, wave C): CVE data becomes ACTIVE rules.
 Every high-severity flaw in the cache that names a managed tool is
 announced once by the daemon, joined to events that mention it by the
-threat hunter, and explained by the assistant - and nothing is ever
+browser watch, and explained by the assistant - and nothing is ever
 patched automatically."""
 import json
 import pathlib

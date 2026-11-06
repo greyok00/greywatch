@@ -402,7 +402,7 @@ class ScanConsole(Gtk.Box):
              "sentences", "protect"),
             ("Logs", "Events the suite recorded from these scanners",
              "logs"),
-            ("Threat Hunter",
+            ("Browser Watch",
              "The hunter's detections channel watching these tools",
              "thunter"),
         )

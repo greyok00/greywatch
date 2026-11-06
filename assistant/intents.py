@@ -40,6 +40,7 @@ PAGES = {
     "home": "home",
     "hunter": "thunter",
     "threat hunter": "thunter",
+    "browser watch": "thunter",
     "defense": "defense",
     "network": "defense",
     "hardening": "harden",
@@ -187,7 +188,7 @@ def describe(intent: Intent, friendly: dict, scan_titles=None) -> str:
         # "open my scans" describes itself as the Scans page.
         where = {"protect": "Protections", "tools": "Tools", "logs": "Logs",
                  "settings": "Settings", "help": "Help", "scans": "Scans",
-                 "home": "Home", "thunter": "threat hunter"}
+                 "home": "Home", "thunter": "browser watch"}
         page = where.get(PAGES.get(intent.value.lower(), ""), "page")
         return f"Open the {page} page?"
     if intent.action == "scan":

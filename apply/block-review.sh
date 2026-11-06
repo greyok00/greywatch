@@ -1,9 +1,9 @@
 #!/bin/bash
-# block-review.sh — record the keeper's verdict on a sidekick question.
+# block-review.sh — record the keeper's verdict on a block reviewer question.
 #
 #   block-review.sh IP keep|lift
 #
-# "keep" closes the audit trail: the sidekick never asks about this address
+# "keep" closes the audit trail: the block reviewer never asks about this address
 # again. ("lift" reaches here rarely - the card's Lift option calls
 # lift-block.sh directly, which both releases the block and records it.)
 # Never touches the firewall; verdict only. Idempotent.

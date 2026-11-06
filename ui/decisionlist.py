@@ -136,7 +136,7 @@ def card_widget(spec, ts, on_answer):
     """One decision card: eyebrow, subject, detail, and the option buttons
     wired to a caller-provided click handler (btn, spec, opt, buttons,
     state). Shared by the decisions window and the Defense page's
-    sidekick section, so both keep their own answer bookkeeping."""
+    reviewer section, so both keep their own answer bookkeeping."""
     card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
     card.add_css_class("gw-card")
 

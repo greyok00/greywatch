@@ -1,6 +1,6 @@
 """GW-181 (owner 2026-11-05, "picking up my browser extensions... I
 want to keep these so I should be able to whitelist them or click
-ignore and it remembers"): the threat hunter flagged an installed
+ignore and it remembers"): the browser watch flagged an installed
 browser extension (the owner's user-agent switcher), and an owner's
 deliberate keep must outlive restarts.
 

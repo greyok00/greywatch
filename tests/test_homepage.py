@@ -142,13 +142,13 @@ def test_report_text_says_what_it_found_and_what_is_next(tmp_path):
     note = [n for n in store.read_defender(tmp_path, 10)
             if n.get("finding_id") == "old-13"][0]
     text = report_text(note, findings["old-13"])
-    assert text.startswith("Threat Hunter report")
+    assert text.startswith("Browser Watch report")
     assert "Old finding on the plate" in text
     assert "A file named like a document is a program." in text
     assert "Delete it." in text
     # A note whose finding already rotated out still reports cleanly from
     # the note's own language.
-    assert report_text(note, None).startswith("Threat Hunter report")
+    assert report_text(note, None).startswith("Browser Watch report")
 
 
 # --- the suite-first Home lead (GW-121) ----------------------------------
@@ -283,7 +283,7 @@ def notebook(win, tmp_path):
 
 def _window_reports(win):
     return [str(p[0]) for p in getattr(win.assistant_panel, "_transcript", [])
-            if str(p[0]).startswith("Threat Hunter report")]
+            if str(p[0]).startswith("Browser Watch report")]
 
 
 def test_hybrid_home_starts_clean_without_hunter_files(notebook):

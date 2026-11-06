@@ -107,7 +107,7 @@ class HelpDeskMixin:
                 ("Protections", "One row per protection, every state."),
                 ("Scans", "Every scan: buttons, progress, and the log."),
                 ("Tools", "The whole tool table, with live status."),
-                ("Threat Hunter", "The hunter's findings and what they mean."),
+                ("Browser Watch", "The hunter's findings and what they mean."),
                 ("Endpoint Hardening", "Baseline checks, apply, verify, undo."),
                 ("Logs", "The raw record, newest first."),
                 ("Settings", "Theme, app firewall, trusted items, updates."),

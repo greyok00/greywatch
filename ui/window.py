@@ -79,7 +79,7 @@ _LEGACY_PAGE = {"security": "protect", "deep": "protect"}
 _SETTINGS_RELATED = {
     "look": (("Connections", "The lists the firewall consults", "connections"),
              ("Tools", "Every protection, its row in the suite", "tools"),
-             ("Threat Hunter", "The findings desk", "thunter")),
+             ("Browser Watch", "The findings desk", "thunter")),
     "firewall": (("Connections", "Add trusted sites or programs", "connections"),
                  ("Notifications", "Snooze popups or quiet a lane",
                   "alerts"),
@@ -326,7 +326,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
             self._hunter_tick()
 
     def _defense_view(self):
-        """The network defense desk (wave D): blocked addresses, sidekick
+        """The network defense desk (wave D): blocked addresses, Block Reviewer
         questions and the wave-A armor chain, fed by the daemon's public
         status digest since the ledger and event store stay root-only."""
         from ui.defense import DefenseView
@@ -383,7 +383,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         it at its old fixed size; unread hunter notes pin on top.
         (suite first,: a plain-language protections verdict
         card leads the page — this is a full security suite before it is
-        a threat hunter."""
+        a browser watcher."""
         box = self._page_box(12)
         box.set_vexpand(True)
 
@@ -844,7 +844,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         return page
 
     def _thunter_view(self):
-        """Threat Hunter: the hunter desk (. The panel mounts whole — command strip, stat band,
+        """Browser Watch: the hunter desk (. The panel mounts whole — command strip, stat band,
         coverage, feed and side-by-side dossier — and its "related in the
         suite" rows hand the finding back to the other pages."""
         page = self._page_box(8)
@@ -892,7 +892,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         page.append(sec)
         links = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         for key, label in (("harden", "Endpoint hardening"),
-                           ("thunter", "Threat Hunter"),
+                           ("thunter", "Browser Watch"),
                            ("logs", "Raw log"),
                            ("help", "Reference card")):
             b = Gtk.Button(label=label)
@@ -3498,7 +3498,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
                 self._sync_selection_buttons()
             elif self._selected_tool and self._selected_from == "tools":
                 tools_desk.fill_dossier(self._selected_tool)
-        # The Threat Hunter tab shows its unread count before it is
+        # The Browser Watch tab shows its unread count before it is
         # opened. The badge and the pinned digest must agree, so both
         # count the same pointer-relative list (home_unread, homepage.py).
         if getattr(self, "_badges", None):

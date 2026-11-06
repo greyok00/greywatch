@@ -1,18 +1,18 @@
-"""The sidekick: audits blocked addresses and QUESTIONS, never fixes.
+"""The block reviewer: audits blocked addresses and QUESTIONS, never fixes.
 
-The owner's directive (2026-11-06): "a sidekick where it'll correct my
+The owner's directive (2026-11-06): "a block reviewer where it'll correct my
 decisions if it finds that i accidentally blocked something i shouldn't
-have. it should question, not auto fix."  The sidekick therefore has two
+have. it should question, not auto fix."  The block reviewer therefore has two
 hard properties baked in: it produces question specs for blocks that
 match the baselines (an address on the house's own network, or a
 content-delivery network that ordinary browsing arrives over), and no
 function in this module touches the firewall or the ledger. The only way
-a block moves after a sidekick question is the keeper's own choice in
+a block moves after a block reviewer question is the keeper's own choice in
 the card, which runs a real helper.
 
 The ranges below are baselines: best-effort headline prefixes of the big
 content networks, correct when written, drifting over time. They are
-deliberately conservative: when unsure, the sidekick asks nothing and
+deliberately conservative: when unsure, the block reviewer asks nothing and
 treats the address as a scanner it has no reason to doubt a block for.
 """
 from __future__ import annotations
@@ -73,7 +73,7 @@ def review_block(ip: str, reason: str = "") -> dict | None:
     """A QUESTION card for blocks that smell accidental, or None.
 
     None is the common case: psad only reports danger-level 5 attackers,
-    so far away addresses are blocked for a reason and the sidekick has
+    so far away addresses are blocked for a reason and the block reviewer has
     nothing to challenge. House addresses and content networks get one
     polite ask, phrased so the answer runs a helper either way.
     """
@@ -90,8 +90,8 @@ def review_block(ip: str, reason: str = "") -> dict | None:
                     "sites loading. Keep the block, or lift it?")
     digest = hashlib.md5(ip.encode()).hexdigest()[:6]
     spec = {
-        "id": f"sidekick:{digest}",
-        "eyebrow": "Sidekick check",
+        "id": f"block-reviewer:{digest}",
+        "eyebrow": "Block Reviewer check",
         "subject": subject,
         "question": question,
         "options": [

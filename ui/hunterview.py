@@ -1,4 +1,4 @@
-"""The Threat Hunter desk (.
+"""The Browser Watch desk (.
 
 The hunter runs headless in its own user process (hunter.main); this page
 only renders the files it writes — findings.jsonl, defender.jsonl,

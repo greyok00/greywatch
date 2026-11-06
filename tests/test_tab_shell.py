@@ -96,7 +96,7 @@ def test_defense_is_a_real_stack_page(win):
     assert view._blocked is not None and view._asks is not None \
         and view._armor is not None
     assert "gw-lane-threat" in view.get_css_classes()
-    assert rail_row_label(win._tabs["defense"]) == "Defense"
+    assert rail_row_label(win._tabs["defense"]) == "Firewall"
 
 
 def test_every_page_switches(win):

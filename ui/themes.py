@@ -667,7 +667,7 @@ button.gw-chip, .gw-chips button {{
 button.gw-chip:hover, .gw-chips button:hover {{
   background-color: {hover}; color: {ink};
 }}
-/* Active filter (Threat Hunter severity chips): the chip fills with ink
+/* Active filter (Browser Watch severity chips): the chip fills with ink
    while the page's voice owns the accent, so an on-chip reads as chosen
    without shouting. The bare label rule that sets ink beats any colour
    the button inherits, so the on-chip's label sets its own. */
@@ -854,7 +854,7 @@ button.gw-send:hover {{ background-color: {accent_hover}; }}
   font-size: 17px; font-weight: 650; color: {ink}; padding: 1px 0;
 }}
 
-/* --- Threat Hunter desk (, --- */
+/* --- Browser Watch desk (, --- */
 /* The desk is one instrument: a command strip on top, a five-tile stat
    band, the hunt channels' coverage strip, then the feed and the selected
    finding's dossier side by side. Everything reads hunter-written files;

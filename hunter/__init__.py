@@ -1,4 +1,4 @@
-"""The threat hunter — a separate user-level process, by design.
+"""The browser watch — a separate user-level process, by design.
 
 The hunter investigates hypotheses over evidence GreyWatch already
 collects (events, scan findings, downloads, imported HAR captures) plus a

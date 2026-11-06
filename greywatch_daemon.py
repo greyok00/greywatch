@@ -168,7 +168,7 @@ class Daemon:
                                   "(headless fallback, NOT user-approved)")
         self.healer = None       # built in run_forever (needs log/alert)
         self._notice_at = {}     # generic notice dedupe table
-        self._sidekick_cards = set()   # question ids already raised (wave B)
+        self._reviewer_cards = set()   # question ids already raised (wave B)
         # Scans belong to the daemon: it spawns them, parses their output
         # and writes the live/findings/summary files the GUI reads. The GUI
         # holds no scan state, so a GUI crash loses nothing.
@@ -311,11 +311,11 @@ class Daemon:
         """Periodic verification over the blocked-address ledger (owner
         2026-11-06, wave B): 1) a "block for good" that fell out of the
         firewall is re-armed and announced; 2) a block that matches the
-        sidekick's baselines (own network, content networks) and has no
-        verdict yet raises ONE question card. The sidekick questions, it
+        block reviewer's baselines (own network, content networks) and has no
+        verdict yet raises ONE question card. The block reviewer questions, it
         never auto-fixes: nothing here lifts a block."""
         import blockledger
-        import sidekick
+        import blockreviewer
         done = []
         active = blockledger.active_blocks(self.data_dir)
         verdicts = blockledger.reviews(self.data_dir)
@@ -328,7 +328,7 @@ class Daemon:
                 if rec.get("forever") and not probe(ip):
                     try:
                         rearm(ip)
-                        self._notice("sidekick", "MEDIUM",
+                        self._notice("block-reviewer", "MEDIUM",
                                      f"re-armed the block for {ip} after it "
                                      "fell out of the firewall rules")
                         done.append(("rearm", ip))
@@ -336,12 +336,12 @@ class Daemon:
                         self.count_failure("ledger", "rearm", e)
                 if verdicts.get(ip):
                     continue
-                if (card := sidekick.review_block(
+                if (card := blockreviewer.review_block(
                         ip, rec.get("reason", ""))) is not None:
-                    if card["id"] in self._sidekick_cards:
+                    if card["id"] in self._reviewer_cards:
                         continue
-                    self._sidekick_cards.add(card["id"])
-                    self._sidekick_card(card)
+                    self._reviewer_cards.add(card["id"])
+                    self._reviewer_card(card)
                     done.append(("question", ip))
             except Exception as e:
                 self.count_failure("ledger", "verify", e)
@@ -382,12 +382,12 @@ class Daemon:
         subprocess.run([str(helper), ip], capture_output=True, timeout=30)
         # the helper is idempotent; the ledger line it appends is harmless
 
-    def _sidekick_card(self, spec: dict) -> None:
-        """Emit one sidekick question as a carded event (threat lane,
+    def _reviewer_card(self, spec: dict) -> None:
+        """Emit one block reviewer question as a carded event (threat lane,
         like every decision card; wave 1 pinned that pairing)."""
         try:
             from events import Event
-            ev = Event(from_tool="sidekick", severity="MEDIUM",
+            ev = Event(from_tool="block-reviewer", severity="MEDIUM",
                        text=spec.get("subject", "a block needs review"),
                        ts=_dt.datetime.now(_dt.timezone.utc)
                        .isoformat(timespec="seconds"))
@@ -397,7 +397,7 @@ class Daemon:
                 self._outbox.append(json.dumps(ev.to_dict(),
                                                separators=(",", ":")))
         except Exception as e:
-            self.count_failure("write", "sidekick card", e)
+            self.count_failure("write", "block reviewer card", e)
 
     def _ban_heuristic(self, ev):
         if ev.from_tool != "fail2ban" or not ev.text.startswith("Ban"):

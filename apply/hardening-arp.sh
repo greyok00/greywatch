@@ -21,7 +21,7 @@ DEV="$("$IP_BIN" -4 route show default 2>/dev/null | awk '{print $5; exit}')"
 if [ -z "$GW" ] || [ -z "$DEV" ]; then
     note "no IPv4 default route; nothing to pin"; exit 66
 fi
-MAC="$("$IP_BIN" neigh show "$GW" dev "$DEV" 2>/dev/null | awk '{print $5; exit}')"
+MAC="$("$IP_BIN" neigh show "$GW" 2>/dev/null | awk '{print $5; exit}')"
 if [ -z "$MAC" ]; then
     note "no MAC learned yet for gateway $GW; ping it first and rerun"
     "$IP_BIN" neigh show dev "$DEV" 2>/dev/null | head -3

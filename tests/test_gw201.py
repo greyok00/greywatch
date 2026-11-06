@@ -1,9 +1,9 @@
 """GW-201/202 (owner 2026-11-06, wave B): the blocked-IP ledger, the
-periodic verification pass, and the sidekick that QUESTIONS blocks that
+periodic verification pass, and the reviewer that QUESTIONS blocks that
 smell accidental and never auto-fixes anything. psad already auto-blocks
 at danger level 5; wave B is the bookkeeping and review layer on top:
 the ledger remembers, verification keeps the wall standing, and the
-sidekick asks before an own-network or content-network block stays."""
+reviewer asks before an own-network or content-network block stays."""
 import json
 import os
 import pathlib
@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 import blockledger
 import greywatch_daemon as gd
-import sidekick
+import blockreviewer
 from decisions_factory import HELPERS, interaction_for, sanitize
 from events import Event
 from greywatch_daemon import Daemon, read_events
@@ -109,31 +109,31 @@ def test_wave_b_helpers_are_sanitizer_known():
         assert name in HELPERS
 
 
-# ---- the sidekick questions, never fixes ---------------------------------
-def test_sidekick_baselines_classify_own_cdn_scanner():
-    assert sidekick.classify("192.168.0.15")["cls"] == "own-infra"
-    assert sidekick.classify("10.1.2.3")["cls"] == "own-infra"
-    assert sidekick.classify("104.18.32.7")["cls"] == "cdn"
-    assert sidekick.classify("151.101.65.140")["cls"] == "cdn"
-    far = sidekick.classify("203.0.113.9")
+# ---- the reviewer questions, never fixes ---------------------------------
+def test_reviewer_baselines_classify_own_cdn_scanner():
+    assert blockreviewer.classify("192.168.0.15")["cls"] == "own-infra"
+    assert blockreviewer.classify("10.1.2.3")["cls"] == "own-infra"
+    assert blockreviewer.classify("104.18.32.7")["cls"] == "cdn"
+    assert blockreviewer.classify("151.101.65.140")["cls"] == "cdn"
+    far = blockreviewer.classify("203.0.113.9")
     assert far["cls"] == "datacenter"
 
 
-def test_sidekick_asks_about_house_and_cdn_blocks_only():
-    house = sidekick.review_block("192.168.0.99", "keeper chose block",
+def test_reviewer_asks_about_house_and_cdn_blocks_only():
+    house = blockreviewer.review_block("192.168.0.99", "keeper chose block",
                                   )
-    cdn = sidekick.review_block("104.18.32.7")
+    cdn = blockreviewer.review_block("104.18.32.7")
     assert house and cdn and house["options"] and cdn["options"]
     for card in (house, cdn):
         helpers = [o["helper"] for o in card["options"]]
         assert set(helpers) <= {"block-review", "lift-block"}
         assert "block-review" in helpers and "lift-block" in helpers
     # and says nothing about a real scanner
-    assert sidekick.review_block("203.0.113.9") is None
+    assert blockreviewer.review_block("203.0.113.9") is None
 
 
-def test_sidekick_module_never_touches_the_firewall():
-    src = (ROOT / "sidekick.py").read_text()
+def test_reviewer_module_never_touches_the_firewall():
+    src = (ROOT / "blockreviewer.py").read_text()
     for forbidden in ("subprocess", "nft ", "iptables", "blockledger"):
         assert forbidden not in src, forbidden
 
@@ -155,7 +155,7 @@ def test_verification_rearms_drifted_forever_blocks(tmp_path):
         probe=lambda ip: False, rearm=rearm_calls.append)
     assert rearm_calls == ["45.155.0.77"]     # only the keeper's own hold
     assert ("rearm", "45.155.0.77") in done
-    # the far scanner gets no re-arm and no sidekick question
+    # the far scanner gets no re-arm and no reviewer question
     assert ("question", "203.0.113.9") not in done
 
 
@@ -168,10 +168,10 @@ def test_verification_asks_once_about_a_house_block(tmp_path):
                         )
     d.flush_outbox()
     cards = [e for e in read_events(d.events_path)
-             if e["from_tool"] == "sidekick"]
+             if e["from_tool"] == "block-reviewer"]
     assert len(cards) == 1, cards             # ONE question, never a flood
     spec = cards[0]["interaction"]
-    assert spec["id"].startswith("sidekick:")
+    assert spec["id"].startswith("block-reviewer:")
     assert [o["helper"] for o in spec["options"]] == \
         ["block-review", "lift-block"]
 
@@ -185,12 +185,12 @@ def test_answered_house_block_never_asks_again(tmp_path):
     d.verify_blocks(probe=lambda ip: True, rearm=lambda ip: None)
     d.flush_outbox()
     cards = [e for e in read_events(d.events_path)
-             if e["from_tool"] == "sidekick"]
+             if e["from_tool"] == "block-reviewer"]
     assert len(cards) == 1                    # the verdict closes the ask
 
 
 def test_verification_treats_probe_failure_as_standing(tmp_path):
-    """When nftables cannot be read, the sidekick CANNOT claim a block
+    """When nftables cannot be read, the reviewer CANNOT claim a block
     left the wall: it stays silent rather than churn or lift anything."""
     d = mk_daemon(tmp_path)
     blockledger.record_block(d.data_dir, "198.51.100.3", "psad",

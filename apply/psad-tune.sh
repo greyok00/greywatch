@@ -54,9 +54,12 @@ if grep -Eq '^ENABLE_AUTO_IDS[:[:space:]]+Y;' "$PSAD_CONF" 2>/dev/null; then
 else
     [ -f "$PSAD_CONF.greywatch-orig" ] || cp -n "$PSAD_CONF" \
         "$PSAD_CONF.greywatch-orig" 2>/dev/null
-    sed -i 's|^ENABLE_AUTO_IDS.*;|ENABLE_AUTO_IDS             Y;|' "$PSAD_CONF" || true
-    sed -i 's|^AUTO_IDS_DANGER_LEVEL.*;|AUTO_IDS_DANGER_LEVEL    5;|' "$PSAD_CONF" || true
-    sed -i 's|^EMAIL_ALERT_DANGER_LEVEL.*;|EMAIL_ALERT_DANGER_LEVEL 2;|' "$PSAD_CONF" || true
+    # the [[:space:]] anchor stops each match at the variable's own name;
+    # without it ENABLE_AUTO_IDS also eats ENABLE_AUTO_IDS_REGEX and
+    # ENABLE_AUTO_IDS_EMAILS (the restart-dead config bug of 2026-11-06)
+    sed -i 's|^ENABLE_AUTO_IDS[[:space:]].*;|ENABLE_AUTO_IDS             Y;|' "$PSAD_CONF" || true
+    sed -i 's|^AUTO_IDS_DANGER_LEVEL[[:space:]].*;|AUTO_IDS_DANGER_LEVEL    5;|' "$PSAD_CONF" || true
+    sed -i 's|^EMAIL_ALERT_DANGER_LEVEL[[:space:]].*;|EMAIL_ALERT_DANGER_LEVEL 2;|' "$PSAD_CONF" || true
     note "auto-ids armed: block only at danger level 5, alerts from level 2"
     CHANGED=1
 fi
@@ -74,6 +77,15 @@ if [ -n "$L" ]; then
         note "whitelisted own LAN range $NET24"
         CHANGED=1
     fi
+fi
+# loopback is never a scanner: self-traffic must never score DL2 and
+# flood the block ledger (the 2026-11-06 false-positive storm finding)
+if grep -qF "127.0.0.0/8" "$PSAD_WHITELIST" 2>/dev/null; then
+    note "whitelist already carries loopback"
+else
+    printf '127.0.0.0/8\n' >> "$PSAD_WHITELIST" 2>/dev/null
+    note "whitelisted loopback 127.0.0.0/8 (self-traffic is not a scan)"
+    CHANGED=1
 fi
 if [ -n "$GW" ] && grep -qF "$GW" "$PSAD_WHITELIST" 2>/dev/null; then
     note "whitelist already carries gateway $GW"
@@ -103,6 +115,21 @@ if [ ! -e "$KERN_LOG" ] && [ -x /usr/sbin/rsyslogd ]; then
 elif [ ! -x /usr/sbin/rsyslogd ]; then
     note "rsyslog is not installed on this system; psad's kernel-log reader needs a syslog source"
     exit 3
+fi
+
+# 4b. aim psad's parser at a kernel log that EXISTS: Debian's shipped
+#     default points at /var/log/messages, which modern systems never
+#     write (rsyslog puts kernel lines in /var/log/kern.log), leaving
+#     psad parsing silence forever (the 2026-11-06 deafness bug)
+P_LOG="$(grep -E '^IPT_SYSLOG_FILE' "$PSAD_CONF" 2>/dev/null \
+    | awk '{print $2}' | tr -d ';')"
+if [ -e "$KERN_LOG" ] && [ "$P_LOG" != "$KERN_LOG" ]; then
+    sed -i "s|^IPT_SYSLOG_FILE[[:space:]].*;|IPT_SYSLOG_FILE    $KERN_LOG;|" \
+        "$PSAD_CONF" || true
+    sed -i 's|^SYSLOG_DAEMON[[:space:]].*;|SYSLOG_DAEMON    rsyslog;|' \
+        "$PSAD_CONF" || true
+    note "psad now parses $KERN_LOG directly (was $P_LOG, rsyslog parser)"
+    CHANGED=1
 fi
 
 # 5. restart psad so the new config is live, then prove it ---------------

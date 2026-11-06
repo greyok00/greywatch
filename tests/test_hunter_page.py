@@ -1,5 +1,5 @@
 """GW-125 (owner 2026-11-03, "use the same treatment for all"): the
-Threat Hunter page is the hunter desk — command strip (hunt now, HAR
+Browser Watch page is the hunter desk — command strip (hunt now, HAR
 import, the AI explainer meter, the suite's own verdict, the hunt
 clock), a stat band over the hunt channels, a coverage strip, the
 day-grouped feed, and the selected finding's side-by-side dossier with

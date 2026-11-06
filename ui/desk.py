@@ -1,6 +1,6 @@
 """Shared desk widgets.
 
- landed this shape for the Threat Hunter: a command strip, a
+ landed this shape for the Browser Watch: a command strip, a
 five-tile stat band, a coverage strip, a day-grouped feed and the
 selected row's side-by-side dossier. The same treatment was then asked for
 treatment on every page but Home ("THE AI IS THE DUMBED DOWN SCREEN..."),

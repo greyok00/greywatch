@@ -5,7 +5,7 @@ the two-system directive, "CVE data must become active rules": every
 cached flaw that scores HIGH or above AND names a tool this machine can
 check becomes one rule that
   1. the daemon announces once per flaw (the monitors' voice),
-  2. the threat hunter joins to events that mention the same CVE id,
+  2. the browser watch joins to events that mention the same CVE id,
   3. the assistant's playbook explains in plain words.
 Nothing here patches anything: the keeper decides when packages move,
 which is why each announcement says "verify the installed version".

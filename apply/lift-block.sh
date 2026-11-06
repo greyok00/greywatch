@@ -6,7 +6,7 @@
 # Asks psad to drop its own auto-block too (best effort: psad may have
 # already expired it), removes the address from the greywatch_blocks nft
 # set if present, and appends a release line to the blocked-IP ledger so
-# the sidekick stops questioning and verification stops re-arming.
+# the block reviewer stops questioning and verification stops re-arming.
 set -uo pipefail
 [ $# -eq 1 ] || { echo "usage: lift-block.sh IP" >&2; exit 64; }
 IP="$1"

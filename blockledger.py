@@ -3,7 +3,7 @@
 Every block greywatch knows about psad's auto-block, fail2ban's bans,
 or a keeper's own "block for good" lands here as one appended JSON line,
 so after any restart the picture of who is locked out is intact and the
-sidekick can audit it. The file is append-only: a release is a new line,
+block reviewer can audit it. The file is append-only: a release is a new line,
 never an edit, and a review verdict is tracked beside the block rather
 than rewriting it.
 """
@@ -154,15 +154,15 @@ def page_digest(evs, data_dir, answered=None) -> dict:
     Both the events store and this ledger are root-owned 0600, so the
     daemon publishes the same digest shape inside status.json that the
     recent-activity snapshot rides on; the desktop app reads status.json
-    and never touches these files directly. Rows carry the sidekick's
+    and never touches these files directly. Rows carry the block reviewer's
     plain-language class so the page explains WHY each address is held.
     """
-    import sidekick
+    import blockreviewer
 
     verdicts = reviews(data_dir)
     rows = []
     for ip, rec in active_blocks(data_dir).items():
-        verdict = sidekick.classify(ip)
+        verdict = blockreviewer.classify(ip)
         rows.append({
             "ip": ip, "source": str(rec.get("source", "")),
             "reason": str(rec.get("reason", "")),
@@ -174,7 +174,7 @@ def page_digest(evs, data_dir, answered=None) -> dict:
     rows.sort(key=lambda r: (r["ts"],), reverse=True)
     asks, seen = [], set()
     for ev in reversed(list(evs or [])):
-        if str(ev.get("from_tool", "")) != "sidekick":
+        if str(ev.get("from_tool", "")) != "block-reviewer":
             continue
         spec = ev.get("interaction")
         if not (isinstance(spec, dict) and spec.get("id")):
