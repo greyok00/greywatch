@@ -201,6 +201,91 @@ CRITICAL_TOOLS = ("fail2ban", "yara-watch", "yara-tmp-scan", "rkhunter")
 CRITICAL_SEVS = ("HIGH", "CRITICAL")
 
 
+def _event_age(ts, now=None) -> float | None:
+    """Seconds since a daemon event stamp, or None when it carries no
+    readable timestamp. Old alarms must not greet the user on the next
+    launch: the newest HIGH in the file is not news forty minutes later
+    (owner live finding, 2026-11-05: the 17:03 rkhunter alarm popped on
+    first launch at 17:26)."""
+    try:
+        import datetime as _dt
+        when = _dt.datetime.fromisoformat(str(ts).strip())
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=_dt.timezone.utc)
+        now = (_dt.datetime.now(_dt.timezone.utc) if now is None else now)
+        return (now - when).total_seconds()
+    except (ValueError, TypeError):
+        return None
+
+
+def critical_filter(events, now=None, window=None) -> list:
+    if window is None:               # read at call time: the class is
+        window = CriticalEvents.SEEN_WINDOW   # defined further down
+    out = []
+    for e in events or ():
+        if not isinstance(e, dict):
+            continue
+        tool = e.get("from_tool", "")
+        if tool not in CRITICAL_TOOLS or e.get("severity") not in CRITICAL_SEVS:
+            continue
+        # Fail open on a missing stamp; fail CLOSED on one we can read.
+        age = _event_age(e.get("ts"), now)
+        if age is not None and age > window:
+            continue
+        out.append((tool, str(e.get("text", ""))[:200]))
+    return out[-1:] if out else []      # only the newest is shown
+
+
+# Unit-less scanners (rkhunter, lynis: their verdict lives in their logs,
+# GW-192) have no unit to start; the local way to start them is to run the
+# scan now, which scan-now.sh does as root, logging to the usual files.
+SCAN_NOW = {"rkhunter": "rkhunter", "lynis": "lynis"}
+
+
+def _run(cmd, timeout=45) -> int:
+    try:
+        import subprocess
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout).returncode
+    except (OSError, subprocess.SubprocessError):
+        return -1
+
+
+def start_tool(name: str, run=None) -> tuple[bool, str]:
+    """Start a real local protection from the notification itself.
+
+    A critical event about rkhunter or fail2ban is a statement about a tool
+    this dashboard manages, not an outside threat, so its popup must offer
+    the tool's own lever: user units start on the user bus, root units go
+    through the tool-control helper, and unit-less scanners start by
+    running their scan. Returns (ok, words for the user)."""
+    try:
+        from registry import load_registry, get_tool
+        tool = get_tool(load_registry(), str(name or "")) or {}
+    except Exception:
+        tool = {}
+    run = _run if run is None else run
+    unit = tool.get("unit")
+    label = tool.get("label") or "that program"
+    if unit is None and str(name) in SCAN_NOW:
+        rc = run(["pkexec", str(ROOT / "apply" / "scan-now.sh"),
+                  SCAN_NOW[str(name)]], timeout=45)
+        return rc == 0, (f"Running the {label} scan now; its dashboard row "
+                         "turns green when the log speaks.")
+    if not unit:
+        return False, f"Nothing to start: {label} is not a managed tool."
+    if unit == "greywatch.service":
+        return False, "GreyWatch's own unit restarts with the app window."
+    if tool.get("scope") == "user":
+        rc = run(["systemctl", "--user", "start", unit])
+        return rc == 0, (f"Started {label}. Its row on the dashboard will "
+                         "turn green when it checks in.")
+    rc = run(["pkexec", str(ROOT / "apply" / "tool-control.sh"),
+              "start", unit])
+    return rc == 0, (f"Started {label}. Its row on the dashboard will turn "
+                     "green when it checks in.")
+
+
 def parse_deny(text: str):
     s = str(text or "")
     m = _DRE.search(s)
@@ -210,17 +295,6 @@ def parse_deny(text: str):
     if not m:
         return None
     return {"app": m.group(2), "host": m.group(3), "action": m.group(1)}
-
-
-def critical_filter(events) -> list:
-    out = []
-    for e in events or ():
-        if not isinstance(e, dict):
-            continue
-        tool = e.get("from_tool", "")
-        if tool in CRITICAL_TOOLS and e.get("severity") in CRITICAL_SEVS:
-            out.append((tool, str(e.get("text", ""))[:200]))
-    return out[-1:] if out else []      # only the newest is shown
 
 
 class CriticalEvents:
@@ -331,16 +405,7 @@ class NotifyAlert:
                 self._n.set_timeout(8000)
                 self._attach_image(self._n, picture)
                 if hasattr(self._n, "add_action"):
-                    self._n.add_action(
-                        "block-site", "Block address", self._on_block_site)
-                    self._n.add_action(
-                        "block-app", "Block program", self._on_block_app)
-                    self._n.add_action(
-                        "snooze", "Snooze 30 min", self._on_snooze)
-                    self._n.add_action(
-                        "unblock-all", "Unblock all", self._on_unblock)
-                    self._n.add_action(
-                        "review", "Review", self._on_review)
+                    self._wire_actions(self._n)
                 self._n.show()
             else:
                 self._attach_image(self._n, picture)
@@ -348,6 +413,17 @@ class NotifyAlert:
                 self._n.show()
         except Exception:
             self._n = None               # a bus hiccup must never loop
+
+    def _wire_actions(self, note) -> None:
+        """libnotify actions are fixed on the square's first creation, so
+        each lane declares its own set here. The deny lane acts on the
+        outside connection; the critical lane (which is about this
+        machine's own tools) is handled by CriticalSquare's override."""
+        note.add_action("block-site", "Block address", self._on_block_site)
+        note.add_action("block-app", "Block program", self._on_block_app)
+        note.add_action("snooze", "Snooze 30 min", self._on_snooze)
+        note.add_action("unblock-all", "Unblock all", self._on_unblock)
+        note.add_action("review", "Review", self._on_review)
 
     def _on_block_site(self, *_a):
         """Deny this destination forever: a rule on the address itself."""
@@ -417,3 +493,20 @@ class CriticalSquare(NotifyAlert):
     SUMMARY = "Security: critical event"
     APP = "greywatch-critical"
     LANE = "critical"
+
+    def _wire_actions(self, note) -> None:
+        """This lane's events are about the machine's OWN tools (a rootkit
+        scanner down, bans failing) — not an outside connection — so its
+        popup starts the tool instead of offering block actions that would
+        do nothing (owner live finding, 2026-11-05)."""
+        note.add_action("start-tool", "Start tool", self._on_start_tool)
+        note.add_action("snooze", "Snooze 30 min", self._on_snooze)
+        note.add_action("review", "Review", self._on_review)
+
+    def _on_start_tool(self, *_a):
+        events = getattr(self, "blocked", None)
+        name = events.latest[0] if events and events.latest[0] else ""
+        ok, words = start_tool(name)
+        self.show(("✓ " if ok else "✗ ") + words, gate=False)
+        return ok
+
