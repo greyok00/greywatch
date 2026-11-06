@@ -90,3 +90,55 @@ def test_clear_events_helper_errors_without_a_log(tmp_path):
                          text=True, env=env)
     assert out.returncode == 66, out.stderr
     assert "no event log" in out.stderr
+
+
+# ---- task 3: log rows carry raw events; tool rows fix from the row ---------
+import os as _os
+import sys as _sys
+_sys.path.insert(0, str(ROOT))
+
+
+def test_control_label_matches_the_desk_verb():
+    from ui.toolsdesk import control_label
+    assert control_label({"name": "yara-watch", "paused": True,
+                          "unit": "x.service"}) == "Resume"
+    assert control_label({"name": "rkhunter", "unit": None}) == "Run scan"
+    assert control_label({"name": "freshclam",
+                          "unit": "clamav-freshclam.service"}) == "Update now"
+    assert control_label({"name": "clamav",
+                          "unit": "clamav-daemon.service"}) == "Start tool"
+
+
+def test_log_row_values_carry_the_raw_event_and_lane():
+    import ui.window as winmod
+    ev = {"from_tool": "fail2ban", "severity": "HIGH",
+          "text": "check-in: NOT RUNNING - needs attention",
+          "ts": "2026-11-06T01:00:00+00:00"}
+    display, raw, lane = winmod.log_row_values(ev, "9:00 fail2ban",
+                                               "NOT RUNNING", "ink")
+    assert raw is ev and lane == "tool"
+    assert display[3] == "9:00 fail2ban" and display[-1] == "NOT RUNNING"
+
+
+def test_threat_card_options_offer_delete_only_for_real_targets():
+    import ui.window as winmod
+    spec = {"id": "responderd:8a5fa1", "options": [
+        {"id": "keep", "label": "Keep quarantined",
+         "helper": "keep-quarantine", "args": ["/tmp/Docs.zip"]}]}
+    ev = {"from_tool": "responderd", "severity": "HIGH",
+          "text": "quarantine: /tmp/Docs.zip ...", "interaction": spec,
+          "ts": "2026-11-06T01:00:00+00:00"}
+    opts = winmod.threat_card_options(ev)
+    ids = [o["id"] for o in opts]
+    assert ids == ["keep", "delete"]
+    assert opts[:1] == spec["options"], "the stored options come first"
+
+
+def test_the_lanes_never_mix_their_controls():
+    src = (ROOT / "ui" / "window.py").read_text()
+    tool_fn = src.split("def _log_tool_actions")[1].split("def ")[0]
+    threat_fn = src.split("def _log_threat_actions")[1].split("def ")[0]
+    for word in ("delete", "quarantine", "file-action"):
+        assert word not in tool_fn, f"tool rows never touch {word}"
+    for word in ("_control_requested", "start_tool", "control_label"):
+        assert word not in threat_fn, f"threat rows never touch {word}"

@@ -26,6 +26,7 @@ from ui.cards import SCAN_MODES, STRIP_MODES, quiet_note
 from ui.scanview import NAMES as SCAN_NAMES
 from ui.scanview import (ScanConsole, SCANNER_ORDER, card_text,
                          read_live, read_history, status_line)
+from events import lane_for
 from ui.protectdesk import ProtectDesk
 from ui.toolsdesk import ToolsDesk
 from ui.desk import aperture, related_box
@@ -44,6 +45,58 @@ import greywatch_daemon as daemon_mod
 
 DATA_DIR = daemon_mod.DATA_DIR
 PAINT_MERGE_MS = 250
+
+QUARANTINE_HELPERS = ("keep-quarantine", "restore-quarantine")
+
+
+def log_row_values(ev, time_tool, event_text, severity_ink):
+    """The Full logs row's display values plus the raw event and its lane
+    (GW-197): the row carries what happened, so a click can fix it right
+    there instead of sending the reader hunting for the lever."""
+    return ([tool_icon(str(ev.get("from_tool", ""))),
+             pc_severity_word(str(ev.get("severity", ""))),
+             severity_ink, time_tool, event_text],
+            ev, lane_for(ev))
+
+
+def _threat_target(ev) -> str:
+    """The file a threat event is about, from its decision's first or its
+    quarantine line (GW-197). Only absolute-looking paths count."""
+    spec = ev.get("interaction") or {}
+    opts = [o for o in (spec.get("options") or []) if o.get("helper")]
+    if opts:
+        args = opts[0].get("args") or []
+        if args and str(args[0]).startswith("/"):
+            return str(args[0])
+    text = str(ev.get("text", ""))
+    if text.startswith("quarantine:"):
+        tail = text.split(":", 1)[1].strip()
+        first = tail.split(" ", 1)[0] if " " in tail else tail
+        if first.startswith("/"):
+            return first
+    return ""
+
+
+def threat_card_options(ev) -> list:
+    """The threat row's real controls (GW-197): the stored decision's own
+    options first, then Delete permanently when this lane holds a copy
+    (quarantine helpers present) or the file still sits at its path.
+    Tool controls never appear here, and a quarantine ask gains delete
+    instead of staying locked to keep-or-restore forever."""
+    spec = ev.get("interaction") or {}
+    opts = [dict(o) for o in (spec.get("options") or []) if o.get("helper")]
+    target = _threat_target(ev)
+    if any(o.get("helper") in QUARANTINE_HELPERS for o in opts) and target:
+        opts.append({"id": "delete", "label": "Delete permanently",
+                     "tone": "danger", "helper": "delete-quarantine",
+                     "args": [target]})
+    elif target and not any(o.get("helper") == "file-action"
+                            for o in opts) \
+            and pathlib.Path(target).exists():
+        opts.append({"id": "delete", "label": "Delete permanently",
+                     "tone": "danger", "helper": "file-action",
+                     "args": ["delete", target]})
+    return opts
 
 # Recent-activity table geometry. The header row in `_security_view` draws
 # plain labels over these widths, so they are shared rather than guessed in
@@ -1934,10 +1987,13 @@ class MainWindow(Gtk.Window):
         box.append(row)
 
         # 0 tool icon name, 1 severity word, 2 severity ink, 3 time/tool,
-        # 4 event. The severity used to be an emoji (🔴/🟡/🟢); it is now the
-        # tool's own drawn symbol plus a word in the theme's status ink, so
-        # the raw log matches the rest of the dashboard.
-        self.logs_store = Gtk.ListStore(str, str, str, str, str)
+        # 4 event, 5 raw event, 6 lane. The severity used to be an emoji
+        # (🔴/🟡/🟢); it is now the tool's own drawn symbol plus a word in
+        # the theme's status ink. GW-197 adds the raw event and its lane,
+        # so clicking a row can fix it right there, with that lane's
+        # controls only.
+        self.logs_store = Gtk.ListStore(str, str, str, str, str, object,
+                                        str)
         view = Gtk.TreeView(model=self.logs_store, headers_visible=False)
         log_icon = Gtk.CellRendererPixbuf()
         log_icon.set_property("width", 22)
@@ -1963,6 +2019,9 @@ class MainWindow(Gtk.Window):
         last.set_fixed_width(200)
         last.set_expand(True)
         view.append_column(last)
+        # GW-197: a row is clickable. Activation opens that row's lane
+        # card, so fixing happens here instead of hunting for the lever.
+        view.connect("row-activated", self._log_row_activated)
         # Same header treatment as Recent activity: plain labels over the
         # fixed column widths, so "State" sits over the severity words.
         head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
@@ -2039,6 +2098,122 @@ class MainWindow(Gtk.Window):
             f"Clearing did not finish (helper rc {rc}).")
         return False
 
+    def _log_row_activated(self, _view, path, _col):
+        ev = self.logs_store[path][-2]          # the raw event, GW-197
+        lane = self.logs_store[path][-1]
+        if isinstance(ev, dict):
+            self._log_action_card(ev, str(lane))
+
+    def _log_action_card(self, ev, lane):
+        """One row, one card, controls from its lane only: a tool row
+        starts/updates its tool, a threat row answers the decision it
+        carries. Neither lane ever borrows the other's controls."""
+        title = "Threat" if lane == "threat" else "Fix this"
+        dlg = Gtk.Dialog(transient_for=self, modal=False, title=title)
+        dlg.set_destroy_with_parent(True)
+        body = dlg.get_content_area()
+        body.set_margin_top(12); body.set_margin_bottom(12)
+        body.set_margin_start(18); body.set_margin_end(18)
+        what = Gtk.Label(xalign=0, wrap=True)
+        what.set_xalign(0)
+        what.set_text(str(ev.get("text", ""))[:400])
+        body.append(what)
+        acts = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        acts.set_margin_top(10)
+        if lane == "threat":
+            self._log_threat_actions(ev, acts)
+        else:
+            self._log_tool_actions(ev, acts)
+        copy = Gtk.Button(label="Copy details")
+        copy.add_css_class("gw-quiet")
+        copy.connect("clicked", self._copy_log_row, ev)
+        acts.append(copy)
+        body.append(acts)
+        dlg.connect("response", lambda d, _r: d.destroy())
+        present_now(dlg)
+
+    def _log_tool_actions(self, ev, acts):
+        name = str(ev.get("from_tool", ""))
+        tools = {t["name"]: t for t in self.registry}
+        known = tools.get(name)
+        if not known:
+            return
+        from ui.toolsdesk import control_label
+        b = Gtk.Button(label=control_label({
+            "name": name, "unit": known.get("unit"),
+            "paused": self.paused.is_paused(name)}))
+        b.add_css_class("gw-primary")
+        b.connect("clicked", lambda *_a, k=name: self._control_requested(k))
+        acts.append(b)
+
+    def _log_threat_actions(self, ev, acts):
+        for o in threat_card_options(ev):
+            b = Gtk.Button(label=o.get("label") or o.get("id"))
+            b.add_css_class("gw-primary" if o.get("tone") == "primary"
+                            else "gw-danger")
+            b.connect("clicked", self._run_log_option, dict(o))
+            acts.append(b)
+        target = _threat_target(ev)
+        if target and pathlib.Path(target).exists():
+            show = Gtk.Button(label="Show in folder")
+            show.add_css_class("gw-quiet")
+            show.connect("clicked", lambda *_a, p=target: self._show_folder(p))
+            acts.append(show)
+
+    def _run_log_option(self, _btn, opt):
+        d = Gtk.Dialog(title=f"{opt.get('label')} : are you sure?",
+                       transient_for=self, modal=False)
+        d.set_destroy_with_parent(True)
+        body = d.get_content_area()
+        body.set_margin_start(18); body.set_margin_end(18)
+        body.set_margin_top(12); body.set_margin_bottom(12)
+        lbl = Gtk.Label(xalign=0, wrap=True)
+        lbl.set_xalign(0)
+        args = ", ".join(str(a) for a in (opt.get("args") or []))
+        lbl.set_text(f"{opt.get('helper')} {args}\n\n"
+                     "You will be asked for your password.")
+        body.append(lbl)
+        d.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        d.add_button(opt.get("label") or "Run", Gtk.ResponseType.OK)
+        d.connect("response", self._on_log_option_response, opt)
+        present_now(d)
+
+    def _on_log_option_response(self, d, rid, opt):
+        d.destroy()
+        if rid != Gtk.ResponseType.OK:
+            return
+
+        def worker():
+            from ui import decisionlist as dl
+            try:
+                rc = dl._helper_exec(opt.get("helper"),
+                                     list(opt.get("args", [])))
+            except Exception:
+                rc = -1
+            GLib.idle_add(self._after_log_option, opt.get("label"), rc)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _after_log_option(self, label, rc):
+        self._refresh_logs()
+        status = getattr(self, "logs_status", None)
+        if status is not None:
+            status.set_text(
+                f"{label}: done." if rc == 0 else
+                f"{label}: the helper exited {rc}.")
+        return False
+
+    def _copy_log_row(self, _btn, ev):
+        detail = (f"{ev.get('severity', '')} - "
+                  f"{friendly_name(ev.get('from_tool', ''))}"
+                  f" ({ev.get('from_tool', '')})\n{ev.get('text', '')}")
+        try:
+            from gi.repository import Gdk
+            Gdk.Display.get_default().get_clipboard().set(detail)
+            self.logs_status.set_text("Copied. Paste it into a note.")
+        except Exception:
+            self.logs_status.set_text("Could not reach the clipboard.")
+
     def _refresh_logs(self):
         tool = self.logs_pick.get_active_id() or None
         try:
@@ -2063,12 +2238,12 @@ class MainWindow(Gtk.Window):
             e = g["ev"]
             sev = e.get("severity", "")
             suffix = f"   ×{g['count']}" if g["count"] > 1 else ""
-            self.logs_store.append(
-                [tool_icon(e.get("from_tool", "")), pc_severity_word(sev),
-                 pc_severity_colour(sev),
-                 f"{local_clock(e.get('ts', ''))} "
-                 f"{friendly_name(e.get('from_tool', ''))}",
-                 e.get("text", "")[:400] + suffix])
+            values, raw, lane = log_row_values(
+                e, f"{local_clock(e.get('ts', ''))} "
+                   f"{friendly_name(e.get('from_tool', ''))}",
+                str(e.get("text", ""))[:400] + suffix,
+                pc_severity_colour(sev))
+            self.logs_store.append([*values, raw, lane])
 
     def _help_view(self):
         """Help as an index and a pane, matching Settings.

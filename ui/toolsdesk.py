@@ -97,6 +97,20 @@ def _sev_word(state: str) -> str:
                                                          "LOW")
 
 
+def control_label(f: dict) -> str:
+    """The record row's control verb, shared by the desk and the log page
+    (GW-197): a paused tool says Resume, a unit-less tool runs its scan,
+    the definition updaters update, and every other tool starts."""
+    if f.get("paused"):
+        return "Resume"
+    unit = f.get("unit")
+    if not unit:
+        return "Run scan"
+    if f.get("name") in ("freshclam", "cve-updater"):
+        return "Update now"
+    return "Start tool"
+
+
 class ToolsDesk(Gtk.Box):
     """The tools desk: strip, band, coverage, registry feed + record.
 
@@ -524,11 +538,7 @@ class ToolsDesk(Gtk.Box):
         needs_start = bool(f) and (f.get("paused")
                                    or f.get("state") not in ("GREEN",))
         if self.on_control is not None and f is not None and needs_start:
-            label = ("Resume" if f.get("paused")
-                     else "Run scan" if not f.get("unit")
-                     else "Update now" if name in ("freshclam",
-                                                   "cve-updater")
-                     else "Start tool")
+            label = control_label(f)
             ctl_btn = Gtk.Button(label=label)
             ctl_btn.add_css_class("gw-mini")
             ctl_btn.connect("clicked",
