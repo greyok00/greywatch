@@ -350,14 +350,16 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         return scroller
 
     def _auditlog_view(self):
-        """Activity Log placeholder until Phase 4 builds the real desk;
-        the builder must exist so the stack never keys into None."""
-        page = self._page_box(8)
-        lbl = Gtk.Label(xalign=0, wrap=True,
-                        label="The Activity Log page ships with the "
-                              "rebuild's four-page rail (Phase 4).")
-        page.append(lbl)
-        return page
+        """The Activity Log page (rebuild Phase 4): three tabs over the
+        suite's history, sharing one filter."""
+        from ui.auditlog import ActivityLogPage
+        page = ActivityLogPage(win=self)
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_vexpand(True)
+        scroller.set_child(page)
+        self.auditlog_page = page
+        return scroller
 
     def _defense_view(self):
         """The network defense desk (wave D): blocked addresses, Block Reviewer
@@ -3375,6 +3377,9 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         if shown == "services" \
                 and getattr(self, "services_page", None) is not None:
             self.services_page.refresh(snap)
+        if shown == "auditlog" \
+                and getattr(self, "auditlog_page", None) is not None:
+            self.auditlog_page.refresh(snap)
         self._scan_live = read_live(self.data_dir)
         # The assistant facts source: the very snapshots refresh already
         # loaded — _get_status/_get_recent hand these over, no new reads.
