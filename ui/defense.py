@@ -157,7 +157,8 @@ class DefenseView(Gtk.Box):
         for title, host in (
                 ("Blocked addresses", "blocked"),
                 ("Decisions waiting", "asks"),
-                ("Network armor", "armor")):
+                ("Network armor", "armor"),
+                ("Browser Watch", "watch")):
             head = Gtk.Label(label=title, xalign=0)
             head.add_css_class("gw-page-title")
             box.append(head)
@@ -172,7 +173,7 @@ class DefenseView(Gtk.Box):
 
     def refresh(self, snap=None):
         from ui.decisionlist import _clear
-        for host in (self._blocked, self._asks, self._armor):
+        for host in (self._blocked, self._asks, self._armor, self._watch):
             _clear(host)
         doc = dict(snap or {}).get("defense") or {}
         rows = doc.get("blocked")
@@ -185,6 +186,7 @@ class DefenseView(Gtk.Box):
             asks = doc.get("asks")
         self._paint_asks(asks if isinstance(asks, list) else [])
         self._paint_armor()
+        self._paint_watch((snap or {}).get("browser_watch"))
 
     def _quiet(self, host, text):
         lbl = Gtk.Label(label=text, xalign=0, wrap=True)
@@ -291,29 +293,90 @@ class DefenseView(Gtk.Box):
         if w is not None and hasattr(w, "_run_log_option"):
             w._run_log_option(_btn, dict(opt))
 
+    def _armor_row(self, label, state, helper):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        chip = Gtk.Button(label=f"{label}: {self._ARMOR_WORDS[state]}",
+                          sensitive=False)
+        chip.add_css_class(self._ARMOR_CLASSES[state])
+        row.append(chip)
+        # the button is the row's own fix and lives nowhere else: only an
+        # open or unreadable defense gets one, a good row gets nothing
+        if state is not True:
+            b = Gtk.Button(label=f"Arm: {label}")
+            b.add_css_class("gw-primary")
+            b.connect("clicked", self._run,
+                      {"id": "arm", "label": label, "tone": "primary",
+                       "helper": helper, "args": []})
+            row.append(b)
+        return row
+
+    # -- browser watch panel (rebuild Phase 2) ----------------------------
+
+    def _paint_watch(self, rows):
+        if not isinstance(rows, list):
+            self._quiet(self._watch,
+                        "The daemon has not published a Browser Watch"
+                        " digest yet; restarting the greywatch daemon"
+                        " arms this section.")
+            return
+        rows = [r for r in rows if isinstance(r, dict)]
+        if not rows:
+            self._quiet(self._watch, "No browser findings to review.")
+            return
+        for f in rows:
+            card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            card.add_css_class("gw-card")
+            top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            cat = Gtk.Label(
+                label=(str(f.get("severity") or "FINDING")).upper(), xalign=0)
+            cat.add_css_class("gw-eyebrow")
+            cat.set_hexpand(True)
+            top.append(cat)
+            meta = " - ".join(str(x) for x in (f.get("ts"), f.get("asset"))
+                              if x)
+            if meta:
+                lbl = Gtk.Label(label=meta, xalign=1, wrap=True)
+                lbl.add_css_class("gw-meta")
+                top.append(lbl)
+            card.append(top)
+            title = Gtk.Label(xalign=0, wrap=True, selectable=True)
+            title.set_markup(
+                "<b>" + escape(str(f.get("title") or f.get("rule") or "?"))
+                + "</b>")
+            card.append(title)
+            what = str(f.get("what") or "")
+            if what:
+                d = Gtk.Label(label=what, xalign=0, wrap=True,
+                              selectable=True)
+                d.add_css_class("gw-meta")
+                card.append(d)
+            self._watch.append(card)
+
     # -- armor ------------------------------------------------------------
+
+    # each probe row and the helper that stands the defense up if it is
+    # open or unreadable; a good row carries nothing to click (rebuild
+    # Phase 2: inline actions next to the thing they fix)
+    _ARMOR_PROBES = (
+        ("Sweep watcher feed", "fed", "psad-tune"),
+        ("Inbound log chain", "table", "psad-tune"),
+        ("Auto-block armed", "armed", "psad-tune"),
+        ("psad service", "service", "psad-tune"),
+        ("Router address pinned", "pinned", "hardening-arp"),
+        ("ARP replies closed", "sysctls", "hardening-arp"))
+    _ARMOR_WORDS = {True: "good", False: "open", None: "cannot read"}
+    _ARMOR_CLASSES = {True: "gw-armor-good", False: "gw-armor-open",
+                      None: "gw-armor-unknown"}
 
     def _paint_armor(self):
         psad = psad_status()
         arp = arp_status()
-        word = {True: "good", False: "open", None: "cannot read"}
-        cls = {True: "gw-armor-good", False: "gw-armor-open",
-               None: "gw-armor-unknown"}
         wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         wrap.add_css_class("gw-armor")
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        for label, state in (
-                ("Sweep watcher feed", psad.get("fed")),
-                ("Inbound log chain", psad.get("table")),
-                ("Auto-block armed", psad.get("armed")),
-                ("psad service", psad.get("service")),
-                ("Router address pinned", arp.get("pinned")),
-                ("ARP replies closed", arp.get("sysctls"))):
-            chip = Gtk.Button(label=f"{label}: {word[state]}",
-                              sensitive=False)
-            chip.add_css_class(cls[state])
-            row.append(chip)
-        wrap.append(row)
+        for label, key, helper in self._ARMOR_PROBES:
+            state = (psad if key in ("fed", "table", "armed", "service")
+                     else arp).get(key)
+            wrap.append(self._armor_row(label, state, helper))
         self._armor.append(wrap)
         rules = cve_rows(getattr(self._win, "data_dir", "") or ".")
         if rules is None:

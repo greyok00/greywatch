@@ -603,6 +603,17 @@ class Daemon:
             snap["defense"] = page_digest(evs, self.data_dir, answered)
         except Exception as e:
             self.count_failure("status", "defense digest", e)
+        # Browser Watch digest: the GUI reads only status.json, so the
+        # hunter's findings (minus the ones already quieted) are published
+        # here; rebuild Phase 2's panel renders this and only this.
+        try:
+            from hunter import store as hunter_store
+            quiet = hunter_store.quieted_ids(self.data_dir)
+            snap["browser_watch"] = [
+                f for f in hunter_store.read_findings(self.data_dir, 30)
+                if str(f.get("id", "")) not in quiet]
+        except Exception as e:
+            self.count_failure("status", "browser watch digest", e)
         snap["dropped"] = self.queue.dropped
         snap["failures"] = {k: v["count"]
                             for k, v in self._fail_counts.items()}
