@@ -1918,6 +1918,13 @@ class MainWindow(Gtk.Window):
         self.logs_pick.connect("changed", lambda _c: self._refresh_logs())
         row.append(Gtk.Label(label="Show:"))
         row.append(self.logs_pick)
+        clear_btn = Gtk.Button(label="Clear the log")
+        clear_btn.add_css_class("gw-quiet")
+        clear_btn.set_tooltip_text(
+            "Empties this event log. Answers, scan results and quarantine "
+            "records are not touched.")
+        clear_btn.connect("clicked", self._clear_log_pressed)
+        row.append(clear_btn)
         self.logs_status = Gtk.Label(xalign=0)
         self.logs_status.set_xalign(0)
         self.logs_status.set_text(
@@ -1990,6 +1997,47 @@ class MainWindow(Gtk.Window):
         # The log table pages inside its own card; the page itself never
         # scrolls, so its filter row can never be pushed off-screen.
         return box
+
+    def _clear_log_pressed(self, _btn):
+        d = Gtk.MessageDialog(transient_for=self, modal=False,
+                              message_type=Gtk.MessageType.WARNING)
+        d.set_destroy_with_parent(True)
+        d.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        d.add_button("Clear the log", Gtk.ResponseType.OK)
+        d.set_text("Empty the event log?")
+
+        def _filled(_dlg):
+            note = Gtk.Label(xalign=0, wrap=True)
+            note.set_text("Just the log. Your answers, scan results and "
+                          "quarantine records stay.")
+            note.set_margin_top(6)
+            d.get_message_area().append(note)
+
+        d.connect("map", _filled)
+        d.connect("response", self._on_clear_response)
+        present_now(d)
+
+    def _on_clear_response(self, d, rid):
+        d.destroy()
+        if rid != Gtk.ResponseType.OK:
+            return
+
+        def worker():
+            try:
+                from wiz import common
+                rc = common.run_helper("clear-events", [], timeout=60)
+            except Exception:
+                rc = -1
+            GLib.idle_add(self._after_clear, rc)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _after_clear(self, rc):
+        self._refresh_logs()
+        self.logs_status.set_text(
+            "Log cleared." if rc == 0 else
+            f"Clearing did not finish (helper rc {rc}).")
+        return False
 
     def _refresh_logs(self):
         tool = self.logs_pick.get_active_id() or None
