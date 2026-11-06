@@ -89,10 +89,11 @@ class ServicesPage(Gtk.Box):
                 for name, info in comps.items() if isinstance(info, dict)]
         bad = [(n, s, r) for n, s, r in rows if s not in ("running",)]
         if not bad:
-            self._healer.append(Gtk.Label(
+            ok = Gtk.Label(
                 xalign=0, wrap=True,
-                label="every component the healer watches is running"))
-            self._healer[-1].add_css_class("gw-meta")
+                label="every component the healer watches is running")
+            ok.add_css_class("gw-meta")
+            self._healer.append(ok)
             return
         for name, state, restarts in bad:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)

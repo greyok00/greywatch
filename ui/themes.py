@@ -1258,6 +1258,41 @@ def _g_harden(cr, s):
     cr.fill()
 
 
+@_glyph("overview")
+def _g_overview(cr, s):
+    # a screen with a pulse line across it: the suite at a glance
+    cr.rectangle(3.5 * s, 4.5 * s, 17 * s, 14 * s)
+    cr.stroke()
+    cr.move_to(6.5 * s, 12 * s)
+    cr.line_to(9.5 * s, 12 * s)
+    cr.line_to(11 * s, 8.5 * s)
+    cr.line_to(13.5 * s, 15.5 * s)
+    cr.line_to(15 * s, 12 * s)
+    cr.line_to(17.5 * s, 12 * s)
+    cr.stroke()
+
+
+@_glyph("services")
+def _g_services(cr, s):
+    import math
+    # three service rows, each led by a state dot
+    for y0 in (7, 12, 17):
+        cr.move_to(4 * s, y0 * s)
+        cr.line_to(20 * s, y0 * s)
+        cr.stroke()
+        cr.arc(4 * s, y0 * s, 0.9 * s, 0, 2 * math.pi)
+        cr.fill()
+
+
+@_glyph("auditlog")
+def _g_auditlog(cr, s):
+    # a ledger: ruled lines, the last one shorter (still being written)
+    for y0, x1 in ((6.5, 19), (10.5, 19), (14.5, 19), (18.5, 13)):
+        cr.move_to(5 * s, y0 * s)
+        cr.line_to(x1 * s, y0 * s)
+    cr.stroke()
+
+
 @_glyph("logs")
 def _g_logs(cr, s):
     for y0 in (6.5, 10.5, 14.5, 18.5):

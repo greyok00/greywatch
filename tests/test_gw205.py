@@ -197,17 +197,17 @@ def test_cve_rules_never_patch_anything():
 # ---- the rail data ----------------------------------------------------------
 def test_rail_groups_follow_the_two_system_design():
     from ui import shell
-    groups = {g: tuple(k for k, _l in rows) for g, rows in shell.RAIL}
-    assert tuple(groups) == ("Watch", "Firewall", "Care", "System")
-    # the Defense group carries BOTH threat desks, and Defense has a row
-    assert groups["Firewall"][0] == "thunter"
-    assert "defense" in groups["Firewall"]
+    # Phase 4: the four-page rail plus the footer pair; the group-tuple
+    # format survives with no heading ("" renders nothing).
+    keys = [k for _g, rows in shell.RAIL for k, _l in rows]
+    assert keys == ["overview", "defense", "services", "auditlog"]
+    footer = [k for _g, rows in (shell.RAIL_FOOTER,) for k, _l in rows]
+    assert footer == ["settings", "help"]
     # every rail key is unique and resolvable in the pane stack
-    keys = [k for keys in groups.values() for k in keys]
     assert len(keys) == len(set(keys))
     for k in keys:
-        assert k in ("home", "thunter", "defense", "scans", "protect",
-                     "tools", "harden", "logs", "settings", "help")
+        assert k in ("overview", "defense", "services", "auditlog",
+                     "settings", "help")
 
 
 def test_rail_keys_all_have_a_drawn_glyph():

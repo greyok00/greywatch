@@ -140,6 +140,6 @@ def test_footer_open_moves_inside_settings(win):
 def test_footer_open_moves_across_pages(win):
     win._settings_open(None, "logs")
     pump()
-    assert win.stack.get_visible_child_name() == "logs"
+    assert win.stack.get_visible_child_name() == "auditlog"
     win._show("settings")
     pump()

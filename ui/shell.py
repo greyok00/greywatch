@@ -7,17 +7,17 @@ from gi.repository import Gtk    # noqa: E402
 from ui import metrics
 
 
-# The rail: pages grouped the way the two-system directive thinks.
-# Watch is the landing, Defense holds every threat-facing desk, Care holds
-# the suite the keeper runs, System holds the service's own surfaces.
+# The rail (rebuild Phase 4): the four pages, then a footer pair. The
+# group-tuple format survives (the collapse code keys off headed rows)
+# but the four-page rail needs no headings.
 RAIL = (
-    ("Watch", (("home", "Home"),)),
-    ("Firewall", (("thunter", "Browser Watch"), ("defense", "Firewall"))),
-    ("Care", (("scans", "Scans"), ("protect", "Protections"),
-              ("tools", "Tools"), ("harden", "Harden"))),
-    ("System", (("logs", "Activity log"), ("settings", "Settings"),
-                ("help", "Help"))),
+    ("", (("overview", "Overview"), ("defense", "Firewall"),
+          ("services", "Services"), ("auditlog", "Activity Log"))),
 )
+
+# The footer pair is rendered after a spacer so it always sits at the
+# bottom of the bar, whatever the page count grows to.
+RAIL_FOOTER = ("", (("settings", "Settings"), ("help", "Help")))
 
 RAIL_KEYS = tuple(key for _g, rows in RAIL for key, _l in rows)
 
@@ -40,11 +40,18 @@ def build_rail(win):
     bar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
     bar.add_css_class("gw-rail")
     win._rail_rows = {}
-    for group, rows in RAIL:
-        head = Gtk.Label(label=group, xalign=0)
-        head.add_css_class("gw-rail-head")
-        win._rail_rows[f"@{group}"] = head
-        bar.append(head)
+    for group, rows in (RAIL + (RAIL_FOOTER,)):
+        if group:
+            head = Gtk.Label(label=group, xalign=0)
+            head.add_css_class("gw-rail-head")
+            win._rail_rows[f"@{group}"] = head
+            bar.append(head)
+        else:
+            # the four-page rail wants breathing room above the footer;
+            # an expanding spacer is what pins the footer pair down
+            spacer = Gtk.Box()
+            spacer.set_vexpand(True)
+            bar.append(spacer)
         for key, label in rows:
             b = Gtk.Button()
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)

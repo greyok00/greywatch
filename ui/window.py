@@ -66,12 +66,18 @@ WIZARD_FOR = {"appfw": "appfw", "ufw": "ufw", "fail2ban": "fail2ban",
               "tetragon": "tetragon", "arpwatch": "arpwatch",
               "yara-watch": "yara", "yara-tmp-scan": "yara"}
 
-# The rail lives in ui/shell.py since wave D; old callers that named the
-# six-tab keys keep working through _LEGACY_PAGE below and the pane stack.
-# Retired rail keys resolve once, centrally: 'security' and 'deep' were the
-# two pages that split one job (the assistant's page words, and any caller
-# that stored the key) — their content now lives on Protections.
-_LEGACY_PAGE = {"security": "protect", "deep": "protect"}
+# The rail lives in ui/shell.py since wave D; old callers that named any
+# retired page key keep working through _LEGACY_PAGE below and the pane
+# stack. The rebuild (Phase 4) folds the ten-row rail into four pages, so
+# every retired key resolves once, centrally, to the page that absorbed it
+# (the fold-in map: Threat Hunter to Firewall, Scans/Protections/Tools/
+# Harden to Services, logs to Activity Log, Home to Overview; 'security'
+# and 'deep' were pre-wave-D names for the same Protections page).
+_LEGACY_PAGE = {"home": "overview", "thunter": "defense",
+                "scans": "services", "protect": "services",
+                "tools": "services", "harden": "services",
+                "logs": "auditlog",
+                "security": "services", "deep": "services"}
 
 # The settings panes' related-in-suite footers (approved mockup):
 # where/what/Open hand-offs to pages that genuinely hold the subject.
@@ -178,8 +184,8 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         self._theme_store = ThemeStore(self)
         self._apply_saved_theme()
         self._build_all()
-        self._show("home")
-        self._tabs["home"].grab_focus()
+        self._show("overview")
+        self._tabs["overview"].grab_focus()
         self._watchers()
         self.refresh()
         self._glib_ids = []
@@ -304,7 +310,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         # caller (assistant words, wizard, tick code) resolves the same way.
         key = _LEGACY_PAGE.get(key, key)
         if key not in self._builders:
-            key = "home"
+            key = "overview"
         if key not in self._views:
             self._add_view(key, self._builders[key]())
         self.stack.set_visible_child_name(key)
@@ -392,7 +398,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
                           "overview": self._overview_view,
                           "services": self._services_view,
                           "auditlog": self._auditlog_view}
-        self._add_view("home", self._builders["home"]())
+        self._add_view("overview", self._builders["overview"]())
 
     def _add_view(self, key, widget):
         # One cap and one center for every page (ui/desk.aperture): with
@@ -832,10 +838,11 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         refresh)."""
         self._selected_tool = key
         self._selected_from = "tools"
-        if key:
-            self.sel_note.set_text(f"Selected: {friendly_name(key)}")
-        else:
-            self.sel_note.set_text("Select a tool.")
+        if getattr(self, "sel_note", None) is not None:
+            if key:
+                self.sel_note.set_text(f"Selected: {friendly_name(key)}")
+            else:
+                self.sel_note.set_text("Select a tool.")
         self._sync_selection_buttons()
         tools = getattr(self, "tools_desk", None)
         if tools is not None:
@@ -849,10 +856,11 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         on click, then the dossier fills (facts from the last refresh)."""
         self._selected_tool = key
         self._selected_from = "protect"
-        if key:
-            self.sel_note.set_text(f"Selected: {friendly_name(key)}")
-        else:
-            self.sel_note.set_text("Select a protection.")
+        if getattr(self, "sel_note", None) is not None:
+            if key:
+                self.sel_note.set_text(f"Selected: {friendly_name(key)}")
+            else:
+                self.sel_note.set_text("Select a protection.")
         self.protect_desk.select(key)
         self._sync_selection_buttons()
         if self.protect_desk._facts:
@@ -1056,7 +1064,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         panel = getattr(self, "assistant_panel", None)
         if panel is None:
             return
-        self._show("home")
+        self._show("overview")
         if finding:
             panel.ask(question, finding=finding)
         else:
@@ -3211,7 +3219,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         # colours after a switch unless they are told to repaint.
         for sym in getattr(self, "_symbols", {}).values():
             sym.queue_draw()
-        self._show(visible or "home")
+        self._show(visible or "overview")
         self.refresh()
         return False
 
@@ -3387,9 +3395,12 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         self._recent_snapshot = events
         if events != self._recent_seen:
             self._recent_seen = events
-            self.recent_store.clear()
-            for e in recent_rows(events, 6):
-                self.recent_store.append(self._plain_row(e))
+            # the recent feed belongs to the retired Home page; it only
+            # paints while that page still exists (Phase 4 retires it)
+            if getattr(self, "recent_store", None) is not None:
+                self.recent_store.clear()
+                for e in recent_rows(events, 6):
+                    self.recent_store.append(self._plain_row(e))
         if self.on_status_change:
             self.on_status_change(events)
         tools = snap.get("tools", {})
@@ -3453,6 +3464,14 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         # or unverified sits at the top, paused next, healthy last. A flat
         # alphabetical table makes the one broken tool the 14th row.
         _rank = {"RED": 0, "YELLOW": 1, "UNKNOWN": 1}
+        def tools_desk_any():
+            """The one registry desk in play: the retired Tools page's or
+            the Services page's (Phase 4) — whichever is mounted."""
+            desk = getattr(self, "tools_desk", None)
+            if desk is None:
+                desk = getattr(getattr(self, "services_page", None),
+                               "tools_desk", None)
+            return desk
         def _urgency(t):
             paused = self.paused.is_paused(t["name"])
             state = self._display_state(t["name"], tools.get(t["name"], {}),
@@ -3470,7 +3489,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         # (the status snapshot, this refresh's event list, one history
         # read); nothing new is invented and nothing new starts.
         history_docs: dict = {}
-        if getattr(self, "tools_desk", None) is not None or (
+        if tools_desk_any() is not None or (
                 getattr(self, "protect_desk", None) is not None
                 and self.card_widgets):
             for doc in read_history(self.data_dir):
@@ -3482,8 +3501,9 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
                     history_docs["yara-tmp-scan"]
 
         # The Tools table builds on demand like every page now, so the
-        # whole table pass is conditional.
-        tools_desk = getattr(self, "tools_desk", None)
+        # whole table pass is conditional. Phase 4: the Services page
+        # carries the same desk, so whichever instance is mounted wins.
+        tools_desk = tools_desk_any()
         if tools_desk is not None:
             unknown_n = sum(
                 1 for t in self.registry
@@ -3548,15 +3568,17 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
                 # while the desk that holds it still shows it.
                 self._selected_tool = None
                 self._selected_from = None
-                self.sel_note.set_text("Select a tool.")
+                if getattr(self, "sel_note", None) is not None:
+                    self.sel_note.set_text("Select a tool.")
                 self._sync_selection_buttons()
             elif self._selected_tool and self._selected_from == "tools":
                 tools_desk.fill_dossier(self._selected_tool)
-        # The Browser Watch tab shows its unread count before it is
+        # The Firewall rail row shows its unread count before it is
         # opened. The badge and the pinned digest must agree, so both
-        # count the same pointer-relative list (home_unread, homepage.py).
+        # count the same pointer-relative list (home_unread, homepage.py);
+        # the hunter's unread now rides the Firewall page's badge (Phase 4).
         if getattr(self, "_badges", None):
-            self.set_badge("thunter", len(home_unread(self.data_dir)))
+            self.set_badge("defense", len(home_unread(self.data_dir)))
         # The suite verdict leads Home; it repaints on the same
         # cycle as the digest so neither can drift from status.json.
         if getattr(self, "suite_card", None) is not None:
@@ -3763,7 +3785,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
 
         def open_dashboard():
             present_now(self)
-            self._show("home")
+            self._show("overview")
 
         def open_chooser():
             # "Set up something else" hands back to the hub; the baseline

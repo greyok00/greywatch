@@ -134,8 +134,9 @@ def main_win(tmp_path, monkeypatch):
 def test_chat_feed_keeps_a_floor(main_win):
     """Wave-3 sweep: at the 1028x706 window floor the transcript scroller
     squeezed to a ~30px slit (one clipped line). A 160px size-request
-    floor keeps a turn readable; the activity table below yields."""
-    panel = main_win.assistant_panel
+    floor keeps a turn readable; the activity table below yields.
+    (Phase 4: the chat terminal lives on the Overview page now.)"""
+    panel = main_win.overview_page._assistant
     req_w, req_h = panel._stream_scroll.get_size_request()
     assert req_h == 160
 

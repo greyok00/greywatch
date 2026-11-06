@@ -57,19 +57,20 @@ def win():
 
 
 def test_launch_shows_exactly_one_screen(win):
-    assert win.stack.get_visible_child_name() == "home"
+    # Phase 4: the Overview page is the landing.
+    assert win.stack.get_visible_child_name() == "overview"
 
 
 def test_unknown_view_key_cannot_grey_the_app(win):
     win._show("status")          # the old fatal key
     pump()
-    assert win.stack.get_visible_child_name() == "home"
-    assert win._views["home"].get_visible()
+    assert win.stack.get_visible_child_name() == "overview"
+    assert win._views["overview"].get_visible()
 
 
 def test_every_tab_switches(win):
-    for key in ("home", "thunter", "scans", "protect", "tools",
-                "settings", "harden", "logs", "help"):
+    from ui import shell
+    for key in shell.RAIL_KEYS + ("settings", "help"):
         win._show(key)
         pump(5)
         assert win.stack.get_visible_child_name() == key
@@ -98,9 +99,11 @@ def test_scan_buttons_write_a_request_the_daemon_picks_up(win):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_a_scan_button_opens_the_protections_page(win):
+def test_a_scan_button_opens_the_services_page(win):
     # One page now: the progress rows and the findings live together
     # (owner 2026-10-30 — two pages showed the same scan twice).
+    # Phase 4: the request lands on the Services page, where the scan
+    # console lives.
     from ui.cards import SCAN_MODES
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="gw-scan-test-"))
     old = win.data_dir
@@ -109,7 +112,7 @@ def test_a_scan_button_opens_the_protections_page(win):
         mode = next(m for m in SCAN_MODES if m["key"] == "yara-tmp-scan")
         win._start_scan(None, mode)
         pump(10)
-        assert win.stack.get_visible_child_name() == "scans"
+        assert win.stack.get_visible_child_name() == "services"
         assert "asked" in win.scan_status.get_text() or \
             "Progress below" in win.scan_status.get_text()
     finally:
@@ -161,9 +164,9 @@ def test_wizard_chooser_has_working_cancel(win):
 def test_row_selection_carries_the_registry_key(win):
     # The registry desk's rows carry the real name in their own meta, so
     # find responderd by its row instead of assuming it sits first.
-    win._show("tools")
+    win._show("services")
     pump(5)
-    desk = win.tools_desk
+    desk = win.services_page.tools_desk
     assert "responderd" in desk.feed.rows(), sorted(str(
         r) for r in desk.feed.rows())
     desk.feed.select("responderd")
@@ -172,9 +175,9 @@ def test_row_selection_carries_the_registry_key(win):
 
 
 def test_selection_survives_a_live_refresh(win):
-    win._show("tools")
+    win._show("services")
     pump(5)
-    desk = win.tools_desk
+    desk = win.services_page.tools_desk
     # The row the test picks must stay mounted across the refresh: a
     # show-all switch a sibling test flipped would drop the healthy row
     # and clear the selection (that contract has its own desk test).
@@ -189,16 +192,17 @@ def test_selection_survives_a_live_refresh(win):
     win.refresh()
     pump(5)
     assert win._selected_tool == chosen
-    assert win.sel_note.get_text().startswith("Selected:")
+    assert win._selected_from == "tools"
+    assert desk.selected == chosen
     assert key in desk.feed.rows()
 
 
 def test_pause_button_uses_the_selected_tool(win):
     calls = []
     win._pause_tool = lambda name: calls.append(name)
-    win._show("tools")
+    win._show("services")
     pump(5)
-    desk = win.tools_desk
+    desk = win.services_page.tools_desk
     key = next(iter(desk.feed.rows()), None)
     assert key is not None, "rows painted"
     desk.feed.select(key)
@@ -525,20 +529,20 @@ def test_yara_error_text_cannot_break_the_done_page(monkeypatch):
 
 def test_missing_status_snapshot_is_not_reported_as_a_fault(win, monkeypatch):
     import ui.window as W
-    win._show("protect")          # headline + table pages first
-    pump(3)
-    win._show("tools")
+    win._show("services")         # the registry desk lives here now
     pump(3)
     monkeypatch.setattr(W.daemon_mod, "load_status",
                         lambda *a, **k: {"updated": None, "tools": {}})
     win.refresh()
     pump(5)
-    words = win.status_words.get_text()
-    assert "no status yet" in words.lower(), words
+    words = win.header_pill.get_label()
+    # the surviving surface is the header pill: no snapshot means the
+    # monitor has not reported, not that anything is broken
+    assert "waiting for monitor" in words.lower(), words
     assert "need attention" not in words.lower(), words
     # The shipped list's row said "could not check"; the desk's rows say
     # the same thing now, so assert the registry's own row by name.
-    row = win.tools_desk.feed.rows().get("responderd")
+    row = win.services_page.tools_desk.feed.rows().get("responderd")
     assert row is not None, sorted(str(k)
                                    for k in win.tools_desk.feed.rows())
 
@@ -567,6 +571,7 @@ def test_theme_switch_on_another_page_keeps_the_activity_feed(win, monkeypatch):
     monkeypatch.setattr(
         W.daemon_mod, "load_status",
         lambda *a, **k: {"updated": "2026-10-31T00:00:00+00:00",
+                         "recent": [ev],
                          "tools": {t["name"]: {"label": t["label"],
                                                "state": "GREEN",
                                                "last_event": None}
@@ -576,9 +581,11 @@ def test_theme_switch_on_another_page_keeps_the_activity_feed(win, monkeypatch):
     pump(10)
     win._retheme()                 # theme changed while Settings is visible
     pump(20)
-    win._show("tools")
+    # GW-105 re-rooted (Phase 4): the activity feed is the Overview page's
+    # tool lane now, and a rebuilt Overview must fill it.
+    win._show("overview")
     pump(20)
-    assert len(win.recent_store) == 1
+    assert len(list(win.overview_page._feed["tool"]._rows)) == 1
 
 
 def test_verdict_names_the_decisions_waiting(win, monkeypatch):
@@ -592,9 +599,10 @@ def test_verdict_names_the_decisions_waiting(win, monkeypatch):
     monkeypatch.setattr(W.daemon_mod, "read_events", lambda *a, **k: [])
     win.refresh()
     pump(5)
-    words = win.status_words.get_text()
+    # GW-104 re-rooted (Phase 4): the header pill carries the verdict.
+    words = win.header_pill.get_label()
     assert "18 decisions waiting" in words, words
-    assert "All clear" not in words, words
+    assert "all clear" not in words.lower(), words
 
 
 def test_the_chip_tally_does_not_repeat_the_decision_count(win, monkeypatch):
@@ -608,14 +616,15 @@ def test_the_chip_tally_does_not_repeat_the_decision_count(win, monkeypatch):
                       for t in win.registry}}
     monkeypatch.setattr(W.daemon_mod, "load_status", lambda *a, **k: snap)
     monkeypatch.setattr(W.daemon_mod, "read_events", lambda *a, **k: [])
-    win._show("tools")
+    win._show("overview")
     pump(5)
     win.refresh()
     pump(5)
-    assert "50 decisions waiting" in win.status_words.get_text()
-    tally = win.counts.get_text()
-    assert "decisions waiting" not in tally, tally
-    assert "running" in tally and "paused" in tally, tally
+    # GW-167 re-rooted (Phase 4): the verdict sentence lives in the header
+    # pill once; the Overview ribbon's own card carries the bare count.
+    assert "50 decisions waiting" in win.header_pill.get_label()
+    card = win.overview_page._stats["pending decisions"]
+    assert card._value.get_text() == "50"
 
 
 def test_saved_theme_is_applied_at_startup(win):
@@ -1063,15 +1072,21 @@ def test_appfw_choice_builds_appfw_pages_not_the_ufw_ones():
 def test_baseline_keeps_its_own_page(win):
     # Owner 2026-10-30: the baseline pass is its own page, named
     # Endpoint Hardening — not a card at the bottom of the tool list.
+    # Phase 4 re-root: the page dissolves into the suite; old callers
+    # still saying "harden" land on Services through the one legacy map,
+    # and the key is gone from the rail.
+    from ui import shell
     assert "harden" in win._builders
-    assert not hasattr(win, "_baseline_card")
+    assert "harden" not in shell.RAIL_KEYS
     win._show("harden")
     pump(5)
-    assert win.stack.get_visible_child_name() == "harden"
-    assert isinstance(win.harden_view, Gtk.Box)
+    assert win.stack.get_visible_child_name() == "services"
 
 
 def test_tool_card_shows_plain_name_and_real_tool_name(win):
+    # Phase 4: the protection cards build on demand; the test builds the
+    # page through the same builder the stack uses.
+    win._ensure_view("protect")
     frame = win.card_widgets["responderd"]
     found = []
     todo = [frame]
@@ -1187,7 +1202,7 @@ def test_service_state_column_fits_its_longest_phrase(win):
         assert natural <= STATE_COLUMN_PX, (words, natural, STATE_COLUMN_PX)
 
     # And the real rows must use that column width, not their own number.
-    win._show("protect")
+    win._ensure_view("protect")
     for _ in range(5):
         while GLib.main_context_default().iteration(False):
             pass
