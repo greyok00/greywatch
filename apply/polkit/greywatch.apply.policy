@@ -73,4 +73,22 @@
     <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
     <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/hardening-arp.sh</annotate>
   </action>
+  <action id="com.greywatch.apply.block-ip">
+    <description>greywatch hold one address out of the firewall for good (keeper decision, recorded in the blocked-IP ledger)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/block-ip.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.lift-block">
+    <description>greywatch release one blocked address (keeper decision; the only path that un-blocks)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/lift-block.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.block-review">
+    <description>greywatch record the keeper's verdict on a sidekick block review (ledger note only, never acts on the firewall)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/block-review.sh</annotate>
+  </action>
 </policyconfig>

@@ -19,6 +19,7 @@ HELPERS = frozenset({
     "restore-quarantine", "keep-quarantine",    # responderd quarantine
     "delete-quarantine", "file-action",         # purge (owner 2026-11-06)
     "unban-ip", "keep-scan-ban", "widen-scan-ban",  # scanner-ban / fail2ban
+    "block-ip", "lift-block", "block-review",   # blocked-IP ledger (wave B)
     "none",                                     # investigate/no-op
 })
 
@@ -65,6 +66,27 @@ def interaction_for(ev) -> dict | None:
                     {"id": "delete", "label": "Delete permanently",
                      "tone": "danger",
                      "helper": "delete-quarantine", "args": [target]},
+                ]}
+
+    # psad's auto-block lines (wave A parser): the block already happened
+    # at sustained-attack danger level 5, so the question is only whether
+    # to convert it to a keeper-held "for good" block or release it early.
+    if tool == "psad" and "auto-block" in text and ip:
+        digest = hashlib.md5(ip.encode()).hexdigest()[:6]
+        return {"id": f"psad:{digest}",
+                "eyebrow": "Attack blocked",
+                "subject": f"{ip} was locked out after a sustained attack",
+                "detail": ev.text[:160],
+                "question": "Hold this address out for good, or lift the "
+                            "block now? Ignoring the card lets psad's "
+                            "expiry timer release it.",
+                "options": [
+                    {"id": "forever", "label": "Block for good",
+                     "tone": "danger", "helper": "block-ip",
+                     "args": [ip]},
+                    {"id": "lift", "label": "Lift the block",
+                     "tone": "neutral", "helper": "lift-block",
+                     "args": [ip]},
                 ]}
 
     # Ban prompts get the same treatment: name the file or address, quote what

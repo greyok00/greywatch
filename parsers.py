@@ -298,6 +298,10 @@ def parse_auditd(line: str) -> Optional[Event]:
 # lines carry its own ident ("psad[1234]:" or "psad:"), whatever prefix the
 # transport puts in front of them, so the payload is everything after it.
 _PSAD_IDENT = _re.compile(r"psad(?:\[\d+\])?: (?P<msg>.*)$")
+# the three real auto-block syslog phrases, verified in the psad 2.4.6
+# package source (ipt_block's sys_log calls): added / renewed / removed
+_PSAD_BLOCK_RE2 = _re.compile(
+    r"\b(added|renewed|removed)\s+iptables auto-block against (\S+)")
 
 
 def parse_psad(line: str) -> Optional[Event]:
@@ -314,6 +318,14 @@ def parse_psad(line: str) -> Optional[Event]:
     if any(k in low for k in ("kmsgsd", "psadwatchd", "started psad",
                               "status:", "restart ")):
         return None                      # daemon chatter: silence
+    bl = _PSAD_BLOCK_RE2.search(msg)
+    if bl:
+        verb, ip = bl.group(1).lower(), bl.group(2)
+        if verb == "added":
+            return _ev("psad", "CRITICAL", msg[:200], None)
+        if verb == "renewed":
+            return _ev("psad", "HIGH", msg[:200], None)
+        return _ev("psad", "MEDIUM", msg[:200], None)
     if "warning:" in low or "could not" in low:
         return _ev("psad", "MEDIUM", msg[:200], None)
     if "signature match" in low:

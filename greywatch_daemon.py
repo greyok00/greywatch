@@ -168,6 +168,7 @@ class Daemon:
                                   "(headless fallback, NOT user-approved)")
         self.healer = None       # built in run_forever (needs log/alert)
         self._notice_at = {}     # generic notice dedupe table
+        self._sidekick_cards = set()   # question ids already raised (wave B)
         # Scans belong to the daemon: it spawns them, parses their output
         # and writes the live/findings/summary files the GUI reads. The GUI
         # holds no scan state, so a GUI crash loses nothing.
@@ -236,6 +237,11 @@ class Daemon:
         try:
             self._ban_heuristic(ev)
             enrich(ev)
+            try:                # blocked-IP ledger: psad/fail2ban blocks land here
+                import blockledger
+                blockledger.classify_event(ev, self.data_dir)
+            except Exception as e:
+                self.count_failure("ledger", "classify", e)
             try:
                 if getattr(self, "netwatch", None) is None:
                     from netwatch import NetWatch
@@ -298,6 +304,83 @@ class Daemon:
             lines.append(json.dumps(ev, separators=(",", ":")))
         with self._lock:
             self._outbox.extend(lines)
+
+    VERIFY_INTERVAL_S = 900
+
+    def verify_blocks(self, probe=None, rearm=None) -> list:
+        """Periodic verification over the blocked-address ledger (owner
+        2026-11-06, wave B): 1) a "block for good" that fell out of the
+        firewall is re-armed and announced; 2) a block that matches the
+        sidekick's baselines (own network, content networks) and has no
+        verdict yet raises ONE question card. The sidekick questions, it
+        never auto-fixes: nothing here lifts a block."""
+        import blockledger
+        import sidekick
+        done = []
+        active = blockledger.active_blocks(self.data_dir)
+        verdicts = blockledger.reviews(self.data_dir)
+        if probe is None:
+            probe = self._firewall_has_block
+        if rearm is None:
+            rearm = self._rearm_forever_block
+        for ip, rec in active.items():
+            try:
+                if rec.get("forever") and not probe(ip):
+                    try:
+                        rearm(ip)
+                        self._notice("sidekick", "MEDIUM",
+                                     f"re-armed the block for {ip} after it "
+                                     "fell out of the firewall rules")
+                        done.append(("rearm", ip))
+                    except Exception as e:
+                        self.count_failure("ledger", "rearm", e)
+                if verdicts.get(ip):
+                    continue
+                if (card := sidekick.review_block(
+                        ip, rec.get("reason", ""))) is not None:
+                    if card["id"] in self._sidekick_cards:
+                        continue
+                    self._sidekick_cards.add(card["id"])
+                    self._sidekick_card(card)
+                    done.append(("question", ip))
+            except Exception as e:
+                self.count_failure("ledger", "verify", e)
+        return done
+
+    def _firewall_has_block(self, ip: str) -> bool:
+        try:
+            r = subprocess.run(
+                ["nft", "get", "element", "inet", "greywatch_blocks",
+                 "deny_v4", "{", ip, "}"],
+                capture_output=True, timeout=10)
+            return r.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return True          # cannot prove it left; never churn a block
+
+    def _rearm_forever_block(self, ip: str) -> None:
+        helper = pathlib.Path(__file__).resolve().parent / "apply" \
+            / "block-ip.sh"
+        if not helper.exists():
+            return
+        subprocess.run([str(helper), ip], capture_output=True, timeout=30)
+        # the helper is idempotent; the ledger line it appends is harmless
+
+    def _sidekick_card(self, spec: dict) -> None:
+        """Emit one sidekick question as a carded event (threat lane,
+        like every decision card; wave 1 pinned that pairing)."""
+        try:
+            from events import Event
+            ev = Event(from_tool="sidekick", severity="MEDIUM",
+                       text=spec.get("subject", "a block needs review"),
+                       ts=_dt.datetime.now(_dt.timezone.utc)
+                       .isoformat(timespec="seconds"))
+            ev.interaction = sanitize(spec)
+            enrich(ev)
+            with self._lock:
+                self._outbox.append(json.dumps(ev.to_dict(),
+                                               separators=(",", ":")))
+        except Exception as e:
+            self.count_failure("write", "sidekick card", e)
 
     def _ban_heuristic(self, ev):
         if ev.from_tool != "fail2ban" or not ev.text.startswith("Ban"):
@@ -972,6 +1055,7 @@ class Daemon:
         status_at = time.monotonic() + unit_interval
         trim_at = time.monotonic() + trim_interval
         heartbeat_at = time.monotonic() + 900      # every tool: 15-min check-in
+        verify_at = time.monotonic() + self.VERIFY_INTERVAL_S   # wave B
         engine_check_at = time.monotonic() + 10
         engine_fails: list[float] = []
         scan_arm_at = time.monotonic() + 30
@@ -1057,6 +1141,12 @@ class Daemon:
                     elif not armed_now and eng is not None and eng.running:
                         self.stop_appfw()
                         print("greywatch appfw engine: stopped (switch off)")
+                if now >= verify_at:
+                    verify_at = now + self.VERIFY_INTERVAL_S
+                    try:
+                        self.verify_blocks()
+                    except Exception as e:
+                        self.count_failure("ledger", "verify", e)
                 if now >= trim_at:
                     trim_at = now + trim_interval    # deadline first (A11)
                     self.trim_events()
