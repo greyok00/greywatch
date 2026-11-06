@@ -290,7 +290,11 @@ class NotifyAlert:
                     {"country": code, "country_name": name}, 64)
             title = pathlib.Path(app or "").name
             if title and title != "<unknown>":
-                return visuals.program_tile("", title, 64, binary=title)
+                # a brighter card than the in-app default: notification
+                # bubbles are not the app's dark cards, and a dark tile
+                # on a grey bubble reads as a shapeless blob
+                return visuals.program_tile("", title, 64, binary=title,
+                                            accent="#54687c")
             if is_private(identity._addr_only(host)):
                 return visuals.local_tile(64)
             return visuals.shield_tile(64)
@@ -326,12 +330,17 @@ class NotifyAlert:
                 self._n = cls.Notification.new(self.SUMMARY, text)
                 self._n.set_timeout(8000)
                 self._attach_image(self._n, picture)
-                for add in ("add_action",):
-                    if hasattr(self._n, add):
-                        self._n.add_action(
-                            "unblock-all", "Unblock all", self._on_unblock)
-                        self._n.add_action(
-                            "review", "Review", self._on_review)
+                if hasattr(self._n, "add_action"):
+                    self._n.add_action(
+                        "block-site", "Block address", self._on_block_site)
+                    self._n.add_action(
+                        "block-app", "Block program", self._on_block_app)
+                    self._n.add_action(
+                        "snooze", "Snooze 30 min", self._on_snooze)
+                    self._n.add_action(
+                        "unblock-all", "Unblock all", self._on_unblock)
+                    self._n.add_action(
+                        "review", "Review", self._on_review)
                 self._n.show()
             else:
                 self._attach_image(self._n, picture)
@@ -339,6 +348,45 @@ class NotifyAlert:
                 self._n.show()
         except Exception:
             self._n = None               # a bus hiccup must never loop
+
+    def _on_block_site(self, *_a):
+        """Deny this destination forever: a rule on the address itself."""
+        host = getattr(self, "_last_host", "")
+        ip = ""
+        try:
+            from ui import identity
+            ip = identity._addr_only(host)
+        except Exception:
+            pass
+        if not ip:
+            return []
+        s = RuleStore(self.blocked.data_dir / "appfw" / "rules")
+        s.add(R.validate(f"appfw-ip-{ip}", "deny", "always", "dst.ip", ip))
+        self.show(f"⛔ Every connection to {ip} now denied.\n"
+                  "Undo it from Settings, Trusted sites.", gate=False)
+        return [ip]
+
+    def _on_block_app(self, *_a):
+        """Deny this program's connections forever — only when it is one
+        we could name."""
+        app = getattr(self, "_last_app", "")
+        if not app or app == "<unknown>":
+            self.show("Nothing to block: the program was never named.\n"
+                      "Block the address instead.", gate=False)
+            return []
+        s = RuleStore(self.blocked.data_dir / "appfw" / "rules")
+        s.add(R.validate(f"appfw-deny-{pathlib.Path(app).name}",
+                         "deny", "always", "process.path", app))
+        self.show(f"⛔ {pathlib.Path(app).name} can no longer connect.\n"
+                  "Undo it from Settings, Trusted programs.", gate=False)
+        return [app]
+
+    def _on_snooze(self, *_a):
+        snooze_alerts(30)
+        self.show("🔕 Popups quiet for 30 minutes.\n"
+                  "They come back by themselves; the switch lives in "
+                  "Settings, Notifications.", gate=False)
+        return True
 
     def _on_unblock(self, *_a):
         done = self.blocked.unblock_all()
@@ -352,7 +400,9 @@ class NotifyAlert:
         subprocess.Popen([sys.executable, str(ROOT / "ui" / "app.py")])
 
     def handle_deny(self, app: str, host: str, now=None) -> str:
-        text, kind, _rec = self.blocked.add_deny(app, host, now=now)
+        text, kind, rec = self.blocked.add_deny(app, host, now=now)
+        self._last_app = app                  # what Block program acts on
+        self._last_host = host                # what Block address acts on
         if kind == "repeat-quiet":
             return ""                    # same pair, already on screen
         place = place_words(host)

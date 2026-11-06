@@ -143,6 +143,15 @@ class SelfHealer:
                 continue
             if unit_state in ("", "unknown") and state != "RED":
                 continue
+            # A tool with no unit (rkhunter, lynis: log-only scanners) can
+            # never be restarted into health; its verdict lives in its
+            # logs. Its snapshot state is never "active", so the two skip
+            # rules above missed it and the healer treated a healthy
+            # scanner as down, ran repair attempts and raised one "down
+            # and could not be repaired (unknown)" alarm per window
+            # (owner live finding, 2026-11-05).
+            if tool.get("unit") is None and state != "RED":
+                continue
             res = self.repair(name, now)
             if res:
                 done.append(res)

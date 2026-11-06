@@ -141,7 +141,7 @@ def test_one_square_replaces_itself_and_never_stacks(tmp_path, monkeypatch):
     assert len(FakeNotification.instances) == 1   # ONE square, replaced
     first = FakeNotification.instances[0]
     assert first.shown >= 3 and first.updates     # updated in place
-    assert [a[0] for a in first.actions[:2]] == ["unblock-all", "review"]
+    assert [a[0] for a in first.actions[:2]] == ["block-site", "block-app"]
 
 
 def test_unblock_all_writes_allow_rules_and_clears_burst(tmp_path):
