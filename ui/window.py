@@ -2058,12 +2058,21 @@ class MainWindow(Gtk.Window):
         return box
 
     def _clear_log_pressed(self, _btn):
-        d = Gtk.MessageDialog(transient_for=self, modal=False,
-                              message_type=Gtk.MessageType.WARNING)
+        d = Gtk.Dialog(title="Empty the event log?", transient_for=self,
+                       modal=False)
         d.set_destroy_with_parent(True)
+        body = d.get_content_area()
+        body.set_margin_start(18); body.set_margin_end(18)
+        body.set_margin_top(12); body.set_margin_bottom(12)
+        ask = Gtk.Label(xalign=0, wrap=True)
+        ask.set_xalign(0)
+        ask.set_text("Just the log. Your answers, scan results and "
+                     "quarantine records stay.")
+        body.append(ask)
         d.add_button("Cancel", Gtk.ResponseType.CANCEL)
         d.add_button("Clear the log", Gtk.ResponseType.OK)
-        d.set_text("Empty the event log?")
+        d.connect("response", self._on_clear_response)
+        present_now(d)
 
         def _filled(_dlg):
             note = Gtk.Label(xalign=0, wrap=True)

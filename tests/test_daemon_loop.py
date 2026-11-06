@@ -119,6 +119,7 @@ def test_interaction_specs_generated_and_sanitized():
         for o in spec["options"]:
             assert o["helper"] in ("drop-listener", "allow-listener",
                                    "restore-quarantine", "keep-quarantine",
+                                   "delete-quarantine", "file-action",
                                    "unban-ip", "keep-scan-ban", "widen-scan-ban", "none")
 
 
@@ -301,8 +302,9 @@ def test_quarantine_prompt_names_the_file_and_suppresses_the_alert_copy():
     # line carries the signature and path; the question is now one short line.
     assert "evil.txt" in spec["subject"]
     assert "Eicar-Test-Signature" in spec["detail"]
+    # GW-198: purge is a first-class answer alongside keep and restore.
     assert [o["label"] for o in spec["options"]] == [
-        "Keep quarantined", "Put it back"]
+        "Keep quarantined", "Put it back", "Delete permanently"]
 
     repeat = Event(from_tool="responderd", severity="HIGH",
                    text=main.text, ts="2026-10-27T10:05:00+00:00")

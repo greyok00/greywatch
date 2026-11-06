@@ -38,7 +38,9 @@ def test_critical_filter_picks_only_named_classes():
         {"from_tool": "rkhunter", "severity": "CRITICAL", "text": "RTKT"},
     ]
     picked = critical_filter(events)
-    assert picked == [("rkhunter", "RTKT")]      # newest of matched classes
+    # GW-197: critical_filter returns dicts (lane, tool, text), one per
+    # lane, newest per lane. RTKT (no tool markers, CRITICAL) sorts threat.
+    assert picked == [{"lane": "threat", "tool": "rkhunter", "text": "RTKT"}]
     assert critical_filter([]) == []
     assert critical_filter([None, {}]) == []
 
@@ -85,8 +87,8 @@ def test_critical_square_replaces_itself(tmp_path, monkeypatch):
         Notification = FakeNotification
 
     sq = CriticalSquare(CriticalEvents(), notifier=FakeNotify)
-    sq.show(sq.blocked.add("fail2ban", "Ban 5.6.7.8"))
-    sq.show(sq.blocked.add("rkhunter", "RTKT found"))
+    sq.show(sq.blocked.add("fail2ban", "Ban 5.6.7.8"), lane="threat")
+    sq.show(sq.blocked.add("rkhunter", "RTKT found"), lane="threat")
     assert len(FakeNotification.instances) == 1   # ONE square, replaced
     first = FakeNotification.instances[0]
     assert first.shown >= 2
