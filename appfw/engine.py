@@ -249,6 +249,14 @@ class Engine:
     def _ensure_worker_binary(self) -> bool:
         if os.access(self._worker_bin, os.X_OK):
             return True
+        # gcc cannot create the output when the bin directory is absent
+        # from the installed tree; it reported the build "failed" for that
+        # missing directory alone (owner live finding, 2026-11-05 - the
+        # engine logged a refused arm since before the popup waves).
+        try:
+            self._worker_bin.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return False
         try:
             gcc = subprocess.run(
                 ["gcc", "-O2", "-Wall", "-o", str(self._worker_bin),
