@@ -99,9 +99,14 @@ def test_tool_control_scan_all_branch_runs_every_scanner():
     assert 'if [ $# -eq 1 ] && [ "$1" = "scan-all" ]; then' in script
     # rkhunter/lynis log where the daemon's registry.json points: /var/log.
     # (scan-now.sh's /var/log redirects work because the helper runs as
-    # root via pkexec — same for scan-all.)
-    assert ">> /var/log/rkhunter.log" in script
-    assert ">> /var/log/lynis.log" in script
+    # root via pkexec — same for scan-all. The defaults ride in the env-
+    # overridable LOG variables so tests can redirect them to tmp.)
+    assert 'RKHUNTER_LOG="${RKHUNTER_LOG:-/var/log/rkhunter.log}"' in script
+    assert 'LYNIS_LOG="${LYNIS_LOG:-/var/log/lynis.log}"' in script
+    # each scanner holds a lock for its whole run: scan-all clicked twice
+    # never double-runs a scanner (the 2026-11-06 orphan-storm finding)
+    for lock in ("clam-scan.lock", "rkhunter.lock", "lynis.lock"):
+        assert lock in script, lock
     # clamav logs into the user-writable GH tree, matching scan-now.sh
     assert '--log="$GH/security-hardening/clam-scan.log"' in script
 

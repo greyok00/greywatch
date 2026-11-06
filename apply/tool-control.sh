@@ -31,18 +31,41 @@ if [ $# -eq 1 ] && [ "$1" = "scan-all" ]; then
   # and made every scan-all run exit 1. Root reaches the user manager via
   # the machine-qualified form, with a runuser fallback.
   GW_USER_NAME="${GW_USER:-grey}"
+  CLAMSCAN_BIN="${CLAMSCAN_BIN:-/usr/bin/clamscan}"
+  RKHUNTER_BIN="${RKHUNTER_BIN:-/usr/bin/rkhunter}"
+  LYNIS_BIN="${LYNIS_BIN:-/usr/sbin/lynis}"
+  RKHUNTER_LOG="${RKHUNTER_LOG:-/var/log/rkhunter.log}"
+  LYNIS_LOG="${LYNIS_LOG:-/var/log/lynis.log}"
+  SH_DIR="$GH/security-hardening"
+  mkdir -p "$SH_DIR" 2>&1
   systemctl --user --machine="${GW_USER_NAME}@.host" start yara-tmp-scan.service 2>/dev/null \
     || runuser -u "$GW_USER_NAME" -- env \
          XDG_RUNTIME_DIR="/run/user/$(id -u "$GW_USER_NAME")" \
          systemctl --user start yara-tmp-scan.service 2>/dev/null \
     || rc=1
   systemctl start aide-check.service 2>/dev/null || rc=1
-  /usr/bin/clamscan -r --infected \
-          --log="$GH/security-hardening/clam-scan.log" \
-          "$GH" /tmp /var/tmp >/dev/null 2>&1 &
-  /usr/bin/rkhunter --check --sk --report-warnings-only \
-          >> /var/log/rkhunter.log 2>&1 &
-  /usr/sbin/lynis audit system >> /var/log/lynis.log 2>&1 &
+  # Each scanner refuses to double-run: the lock stays held inside the
+  # subshell for the scanner's whole lifetime, so a scan-all clicked while
+  # one is in flight skips that scanner instead of piling a second
+  # full-home scan on top of the first (the 2026-11-06 CPU-storm finding).
+  (
+    exec 9>"$SH_DIR/clam-scan.lock"
+    flock -n 9 || { echo "clamav already running; skipped" >&2; exit 0; }
+    "$CLAMSCAN_BIN" -r --infected \
+            --log="$GH/security-hardening/clam-scan.log" \
+            "$GH" /tmp /var/tmp >/dev/null 2>&1
+  ) &
+  (
+    exec 9>"$SH_DIR/rkhunter.lock"
+    flock -n 9 || { echo "rkhunter already running; skipped" >&2; exit 0; }
+    "$RKHUNTER_BIN" --check --sk --report-warnings-only \
+            >> "$RKHUNTER_LOG" 2>&1
+  ) &
+  (
+    exec 9>"$SH_DIR/lynis.lock"
+    flock -n 9 || { echo "lynis already running; skipped" >&2; exit 0; }
+    "$LYNIS_BIN" audit system >> "$LYNIS_LOG" 2>&1
+  ) &
   exit "$rc"
 fi
 
