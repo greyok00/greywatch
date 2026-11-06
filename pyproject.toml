@@ -4,7 +4,7 @@
 # --version reads this file.
 [project]
 name = "greywatch"
-version = "0.1.26"
+version = "0.1.27"
 description = "Linux endpoint monitoring and hardening suite"
 readme = "README.md"
 requires-python = ">=3.12"
