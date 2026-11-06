@@ -325,6 +325,40 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
             # tab could open on its empty state for up to a second.
             self._hunter_tick()
 
+    def _overview_view(self):
+        """Overview (rebuild Phase 3): the anchor desk - ribbon, advisory
+        strip, two-lane feed, assistant terminal, action gate rows.
+        Reads only the daemon's published digest."""
+        from ui.console import OverviewPage
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_vexpand(True)
+        self.overview_page = OverviewPage(win=self)
+        scroller.set_child(self.overview_page)
+        return scroller
+
+    def _services_view(self):
+        """Services (rebuild Phase 3): lane two - scan actions, the scan
+        console, the tool grid, Service Healer rows. Lifecycle only."""
+        from ui.toolhealth import ServicesPage
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_vexpand(True)
+        page = ServicesPage(win=self)
+        scroller.set_child(page)
+        self.services_page = page
+        return scroller
+
+    def _auditlog_view(self):
+        """Activity Log placeholder until Phase 4 builds the real desk;
+        the builder must exist so the stack never keys into None."""
+        page = self._page_box(8)
+        lbl = Gtk.Label(xalign=0, wrap=True,
+                        label="The Activity Log page ships with the "
+                              "rebuild's four-page rail (Phase 4).")
+        page.append(lbl)
+        return page
+
     def _defense_view(self):
         """The network defense desk (wave D): blocked addresses, Block Reviewer
         questions and the wave-A armor chain, fed by the daemon's public
@@ -349,7 +383,13 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
                           "harden": self._harden_view,
                           "defense": self._defense_view,
                           "logs": self._logs_view,
-                          "help": self._help_view}
+                          "help": self._help_view,
+                          # rebuild Phase 3: the new anchor pages build on
+                          # demand like every other page; the rail swap
+                          # (Phase 4) promotes them
+                          "overview": self._overview_view,
+                          "services": self._services_view,
+                          "auditlog": self._auditlog_view}
         self._add_view("home", self._builders["home"]())
 
     def _add_view(self, key, widget):
@@ -3326,6 +3366,15 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
         if self.stack.get_visible_child_name() == "defense" \
                 and getattr(self, "defense_view", None) is not None:
             self.defense_view.refresh(snap)
+        # rebuild Phase 3: the anchor pages feed off the same digest, and
+        # only while they are shown (same cost rule as Defense)
+        shown = self.stack.get_visible_child_name()
+        if shown == "overview" \
+                and getattr(self, "overview_page", None) is not None:
+            self.overview_page.refresh(snap)
+        if shown == "services" \
+                and getattr(self, "services_page", None) is not None:
+            self.services_page.refresh(snap)
         self._scan_live = read_live(self.data_dir)
         # The assistant facts source: the very snapshots refresh already
         # loaded — _get_status/_get_recent hand these over, no new reads.
