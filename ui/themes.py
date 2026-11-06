@@ -114,6 +114,15 @@ def gtk_css(tokens: dict) -> str:
     ok = tok("--el-ok", "#4dd07a")
     warn = tok("--el-warn", "#ffc940")
     fail = tok("--el-fail", "#ff5a52")
+    # Lane tokens, wave D: threat surfaces vs tool surfaces read apart.
+    lane_t = tok("--el-lane-threat", fail)
+    lane_u = tok("--el-lane-tool", ok)
+    # The spacing scale (wave D): new components use steps, not ad-hoc px.
+    s2 = tok("--el-s-2", "4px")
+    s3 = tok("--el-s-3", "8px")
+    s4 = tok("--el-s-4", "12px")
+    s5 = tok("--el-s-5", "18px")
+    s6 = tok("--el-s-6", "26px")
     mono = tok("--el-font-mono", "monospace")
     display = tok("--el-font-display", "Inter")
     mute = tok("--el-mute", "#8b9bb0")
@@ -804,34 +813,36 @@ button.gw-send {{
 button.gw-send label {{ color: {onaccent}; }}
 button.gw-send:hover {{ background-color: {accent_hover}; }}
 
-/* --- tab shell, symbol plates (, ------ */
-/* Each tab is a raised plate: its drawn symbol over an uppercase mono
-   name. The active plate tints accent-soft with an accent border; resting
-   glyphs draw in ink_soft and the active one in accent (the glyph itself
-   picks its ink at paint time). */
-.gw-tabs {{
-  background-color: transparent; border-bottom: 1px solid {hair};
-  padding: 6px 10px 0;
+/* --- the rail (wave D shell) ------ */
+/* Grouped pages down the left edge: group headings are small uppercase
+   mono, rows keep the glyph-plus-label language the plates had, and the
+   active row tints in the accent. The collapsed rail hides labels but
+   never the badges. */
+.gw-rail {{
+  background-color: {panel}; border-right: 1px solid {hair};
+  padding: 10px 6px;
 }}
-.gw-tabs button {{
-  background-color: {panel}; border: 1px solid {line};
-  border-radius: 10px; box-shadow: none;
-  padding: 8px 14px 7px; min-height: 30px;
-}}
-.gw-tabs button:hover {{ background-color: {hover}; }}
-.gw-tabs button.gw-tab-on {{
-  background-color: {accent_soft}; border-color: {accent}; box-shadow: none;
-}}
-/* Uppercase mono labels (the mockup's 11px); the active tab gets the ink,
-   resting ones stay muted - matching their symbols. */
-.gw-tabs .gw-tab-label {{
-  font-size: 11px; font-weight: 600; letter-spacing: 1.2px;
+.gw-rail-head {{
+  font-size: 10px; font-weight: 700; letter-spacing: 1.4px;
   text-transform: uppercase; font-family: {mono}; color: {mute};
+  margin: 10px 6px 2px 8px;
 }}
-.gw-tabs button.gw-tab-on .gw-tab-label {{ color: {ink}; }}
-.gw-tabs button:focus, .gw-tabs button:focus-visible {{ outline: none; }}
-.gw-tabs button:focus-visible .gw-tab-label {{ text-decoration: underline; }}
-/* Unread pill on a tab: fail red, white number (mockup spec). */
+.gw-rail button {{
+  background-color: transparent; border: none; border-radius: {radius};
+  padding: 7px 8px; min-height: 26px; margin: 0;
+}}
+.gw-rail button:hover {{ background-color: {hover}; }}
+.gw-rail button.gw-active {{
+  background-color: {accent_soft}; box-shadow: none; border: none;
+}}
+.gw-rail button:focus, .gw-rail button:focus-visible {{ outline: none; }}
+.gw-rail .gw-rail-label {{
+  font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: {ink};
+}}
+.gw-rail button.gw-active .gw-rail-label {{
+  color: {accent}; font-weight: 700;
+}}
+/* Unread pill on a rail row: fail red, white number (mockup spec). */
 .gw-badge {{
   background-color: {fail}; color: #ffffff; font-size: 9px;
   font-weight: 700; border-radius: 999px; padding: 1px 6px; min-height: 0;
@@ -939,6 +950,25 @@ button.gw-send:hover {{ background-color: {accent_hover}; }}
 /* --- popups --------------------------------------------------------- */
 .gw-popup, .gw-popup > contents {{ border-radius: 14px; }}
 .gw-idcard {{ border-radius: 12px; }}
+
+/* --- wave D: lanes, defense desk, armor chips ------------------------ */
+/* The two-system directive made visible: threat surfaces carry the
+   danger side-line, tool surfaces the care side-line. */
+.gw-lane-threat .gw-card {{ border-left: 3px solid {lane_t}; }}
+.gw-lane-tool .gw-card {{ border-left: 3px solid {lane_u}; }}
+.gw-page-title {{
+  font-size: 15px; font-weight: 650; color: {ink}; margin-top: 2px;
+}}
+.gw-defense .gw-card {{ padding: 10px 12px; }}
+.gw-armor {{ background-color: {panel2}; border-radius: {radius};
+  padding: {s3}; }}
+.gw-armor button {{
+  background-color: {panel3}; border: 1px solid {hair};
+  border-radius: 6px; padding: 4px 9px; font-size: 11px;
+}}
+.gw-armor-good {{ color: {ok}; }}
+.gw-armor-open {{ color: {fail}; }}
+.gw-armor-unknown {{ color: {mute}; }}
 """.replace("{css_bg(bg)}", "")
 
 
@@ -1197,6 +1227,55 @@ def _g_settings(cr, s):
     cr.stroke()
     for x, y in ((9.5, 7.5), (15.5, 12), (10.5, 16.5)):
         cr.arc(x * s, y * s, 1.9 * s, 0, 2 * math.pi)
+    cr.fill()
+
+
+@_glyph("defense")
+def _g_defense(cr, s):
+    import math
+    cr.move_to(12 * s, 3.2 * s)
+    cr.line_to(19.5 * s, 6.4 * s)
+    cr.line_to(19.5 * s, 12.4 * s)
+    cr.curve_to(19.5 * s, 17.4 * s, 16.4 * s, 20.6 * s, 12 * s, 21.4 * s)
+    cr.curve_to(7.6 * s, 20.6 * s, 4.5 * s, 17.4 * s, 4.5 * s, 12.4 * s)
+    cr.line_to(4.5 * s, 6.4 * s)
+    cr.close_path()
+    cr.stroke()
+    cr.move_to(12 * s, 8.2 * s)
+    cr.line_to(12 * s, 14.6 * s)
+    cr.stroke()
+
+
+@_glyph("harden")
+def _g_harden(cr, s):
+    import math
+    cr.rectangle(5.5 * s, 10.5 * s, 13 * s, 9.5 * s)
+    cr.stroke()
+    for cx, cy in ((6.5, 10.8), (17.5, 10.8)):
+        cr.arc(cx * s, cy * s, 2.9 * s, math.pi, 2 * math.pi)
+    cr.stroke()
+    cr.arc(12 * s, 15.2 * s, 1.7 * s, 0, 2 * math.pi)
+    cr.fill()
+
+
+@_glyph("logs")
+def _g_logs(cr, s):
+    for y0 in (6.5, 10.5, 14.5, 18.5):
+        cr.move_to(5 * s, y0 * s)
+        cr.line_to(19 * s, y0 * s)
+    cr.stroke()
+
+
+@_glyph("help")
+def _g_help(cr, s):
+    import math
+    cr.arc(12 * s, 12 * s, 8.6 * s, 0, 2 * math.pi)
+    cr.stroke()
+    cr.move_to(9.6 * s, 9.4 * s)
+    cr.curve_to(10.2 * s, 7.6 * s, 13.9 * s, 7.6 * s, 13.9 * s, 9.9 * s)
+    cr.curve_to(13.9 * s, 11.6 * s, 12 * s, 11.9 * s, 12 * s, 13.6 * s)
+    cr.stroke()
+    cr.arc(12 * s, 17 * s, 0.7 * s, 0, 2 * math.pi)
     cr.fill()
 
 

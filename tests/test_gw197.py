@@ -52,7 +52,8 @@ import subprocess
 
 
 def test_the_clear_contract_is_pinned_in_source():
-    src = (ROOT / "ui" / "window.py").read_text()
+    # The logs page lives in ui/logsdesk.py since the wave D split.
+    src = (ROOT / "ui" / "logsdesk.py").read_text()
     assert '"Clear the log"' in src
     assert "_clear_log_pressed" in src
     helper = ROOT / "apply" / "clear-events.sh"
@@ -135,7 +136,8 @@ def test_threat_card_options_offer_delete_only_for_real_targets():
 
 
 def test_the_lanes_never_mix_their_controls():
-    src = (ROOT / "ui" / "window.py").read_text()
+    # The row controls moved to ui/logsdesk.py with the wave D split.
+    src = (ROOT / "ui" / "logsdesk.py").read_text()
     tool_fn = src.split("def _log_tool_actions")[1].split("def ")[0]
     threat_fn = src.split("def _log_threat_actions")[1].split("def ")[0]
     for word in ("delete", "quarantine", "file-action"):

@@ -146,3 +146,44 @@ def classify_event(ev, data_dir) -> dict | None:
         return record_block(data_dir, m.group(0), "fail2ban",
                             "repeated login failures")
     return None
+
+
+def page_digest(evs, data_dir, answered=None) -> dict:
+    """What the Defense page needs to draw, in one readable payload.
+
+    Both the events store and this ledger are root-owned 0600, so the
+    daemon publishes the same digest shape inside status.json that the
+    recent-activity snapshot rides on; the desktop app reads status.json
+    and never touches these files directly. Rows carry the sidekick's
+    plain-language class so the page explains WHY each address is held.
+    """
+    import sidekick
+
+    verdicts = reviews(data_dir)
+    rows = []
+    for ip, rec in active_blocks(data_dir).items():
+        verdict = sidekick.classify(ip)
+        rows.append({
+            "ip": ip, "source": str(rec.get("source", "")),
+            "reason": str(rec.get("reason", "")),
+            "forever": bool(rec.get("forever")),
+            "cls": verdict["cls"], "why": verdict["why"],
+            "reviewed": verdicts.get(ip) or "",
+            "ts": str(rec.get("ts", "")),
+        })
+    rows.sort(key=lambda r: (r["ts"],), reverse=True)
+    asks, seen = [], set()
+    for ev in reversed(list(evs or [])):
+        if str(ev.get("from_tool", "")) != "sidekick":
+            continue
+        spec = ev.get("interaction")
+        if not (isinstance(spec, dict) and spec.get("id")):
+            continue
+        sid = str(spec["id"])
+        if sid in seen or sid in (answered or ()):
+            continue
+        seen.add(sid)
+        asks.append({"id": sid, "ts": str(ev.get("ts", "")), "spec": spec})
+        if len(asks) >= 50:
+            break
+    return {"blocked": rows[:200], "asks": asks}

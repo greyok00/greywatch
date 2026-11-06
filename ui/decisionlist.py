@@ -132,6 +132,75 @@ def _clear(box):
         child = nxt
 
 
+def card_widget(spec, ts, on_answer):
+    """One decision card: eyebrow, subject, detail, and the option buttons
+    wired to a caller-provided click handler (btn, spec, opt, buttons,
+    state). Shared by the decisions window and the Defense page's
+    sidekick section, so both keep their own answer bookkeeping."""
+    card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+    card.add_css_class("gw-card")
+
+    top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+    cat = Gtk.Label(
+        label=(spec.get("eyebrow") or str(spec["id"]).split(":")[0]
+               ).upper(), xalign=0)
+    cat.add_css_class("gw-eyebrow")
+    cat.set_hexpand(True)
+    top.append(cat)
+    age = _age_text(ts)
+    if age:
+        lbl = Gtk.Label(label=age, xalign=1)
+        lbl.add_css_class("gw-meta")
+        top.append(lbl)
+    card.append(top)
+
+    subject = (spec.get("subject")
+               or spec.get("question", "").split("\n", 1)[0]) or "?"
+    title = Gtk.Label(xalign=0, wrap=True, selectable=True)
+    title.set_markup("<b>" + GLib.markup_escape_text(str(subject))
+                     + "</b>")
+    card.append(title)
+
+    detail = spec.get("detail")
+    if detail:
+        d = Gtk.Label(label=str(detail), xalign=0, wrap=True,
+                      selectable=True)
+        d.add_css_class("gw-meta")
+        card.append(d)
+
+    opts = [o for o in spec.get("options", []) if o.get("helper")]
+    buttons, state = [], Gtk.Label(xalign=0)
+    state.add_css_class("gw-meta")
+    state.set_visible(False)
+    if opts:
+        buttons_box = Gtk.FlowBox()
+        buttons_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        buttons_box.set_hexpand(True)
+        buttons_box.set_max_children_per_line(2)
+        buttons_box.set_min_children_per_line(1)
+        buttons_box.set_column_spacing(8)
+        buttons_box.set_row_spacing(6)
+        buttons_box.set_homogeneous(False)
+        for opt in opts:
+            b = Gtk.Button(label=str(opt.get("label", opt.get("id"))))
+            b.add_css_class("gw-" + _tone(opt))
+            buttons_box.append(b)
+            buttons.append(b)
+            b.connect("clicked", on_answer, spec, opt, buttons, state)
+        card.append(buttons_box)
+    card.append(state)
+    return card
+
+
+def answer_record(data_dir, sid, oid):
+    """Close a decision for every surface that shows it: one recorded
+    answer is what pending_rows reads back."""
+    try:
+        record_answer(pathlib.Path(data_dir) / "decisions.jsonl", sid, oid)
+    except Exception:
+        pass
+
+
 class DecisionsWindow(Gtk.Dialog):
     """Headline count, one card per pending decision, working answer buttons."""
 
@@ -301,60 +370,7 @@ class DecisionsWindow(Gtk.Dialog):
     # -- rendering -------------------------------------------------------
 
     def _card(self, spec, ts):
-        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        card.add_css_class("gw-card")
-
-        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        cat = Gtk.Label(
-            label=(spec.get("eyebrow") or str(spec["id"]).split(":")[0]
-                   ).upper(), xalign=0)
-        cat.add_css_class("gw-eyebrow")
-        cat.set_hexpand(True)
-        top.append(cat)
-        age = _age_text(ts)
-        if age:
-            lbl = Gtk.Label(label=age, xalign=1)
-            lbl.add_css_class("gw-meta")
-            top.append(lbl)
-        card.append(top)
-
-        subject = (spec.get("subject")
-                   or spec.get("question", "").split("\n", 1)[0]) or "?"
-        title = Gtk.Label(xalign=0, wrap=True, selectable=True)
-        title.set_markup("<b>" + GLib.markup_escape_text(str(subject))
-                         + "</b>")
-        card.append(title)
-
-        detail = spec.get("detail")
-        if detail:
-            d = Gtk.Label(label=str(detail), xalign=0, wrap=True,
-                          selectable=True)
-            d.add_css_class("gw-meta")
-            card.append(d)
-
-        opts = [o for o in spec.get("options", []) if o.get("helper")]
-        buttons, state = [], Gtk.Label(xalign=0)
-        state.add_css_class("gw-meta")
-        state.set_visible(False)
-        if opts:
-            buttons_box = Gtk.FlowBox()
-            buttons_box.set_selection_mode(Gtk.SelectionMode.NONE)
-            buttons_box.set_hexpand(True)
-            buttons_box.set_max_children_per_line(2)
-            buttons_box.set_min_children_per_line(1)
-            buttons_box.set_column_spacing(8)
-            buttons_box.set_row_spacing(6)
-            buttons_box.set_homogeneous(False)
-            for opt in opts:
-                b = Gtk.Button(label=str(opt.get("label", opt.get("id"))))
-                b.add_css_class("gw-" + _tone(opt))
-                buttons_box.append(b)
-                buttons.append(b)
-                b.connect("clicked", self._on_answer, spec, opt, buttons,
-                          state)
-            card.append(buttons_box)
-        card.append(state)
-        return card
+        return card_widget(spec, ts, self._on_answer)
 
     # -- answering -------------------------------------------------------
 

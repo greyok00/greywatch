@@ -18,6 +18,8 @@
   --el-info: #4e5d68; --el-live: #9c4018; --el-teal: #2f6b62;
   --el-overlay: rgba(23,23,21,0.50);
   --el-focus-ring: rgba(23,23,21,0.50);
+  --el-lane-threat: #a83a2a; --el-lane-tool: #2f6b62;
+  --el-s-2: 4px; --el-s-3: 8px; --el-s-4: 12px; --el-s-5: 18px; --el-s-6: 26px;
   --el-radius: 4px;
   --el-r-sm: 2px; --el-r-md: 2px; --el-r-lg: 4px; --el-r-xl: 6px;
   --el-font-body: 'Inter', system-ui, sans-serif;
@@ -40,6 +42,8 @@
   --el-info: #7aa2ff; --el-live: #ff7a1a; --el-teal: #48c5ac;
   --el-overlay: rgba(10,9,8,0.70);
   --el-focus-ring: rgba(255,122,26,0.62);
+  --el-lane-threat: #ff4a33; --el-lane-tool: #48c5ac;
+  --el-s-2: 4px; --el-s-3: 8px; --el-s-4: 12px; --el-s-5: 18px; --el-s-6: 26px;
   --el-radius: 4px;
   --el-r-sm: 2px; --el-r-md: 3px; --el-r-lg: 4px; --el-r-xl: 6px;
   --el-font-body: 'Inter', system-ui, sans-serif;

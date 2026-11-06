@@ -583,6 +583,11 @@ class Daemon:
                 info["last_event"] = ev["ts"]
         # Every pending decision, not just the ones inside the recent window.
         snap["pending_decisions"] = self._pending_decisions(answered)
+        try:
+            from blockledger import page_digest
+            snap["defense"] = page_digest(evs, self.data_dir, answered)
+        except Exception as e:
+            self.count_failure("status", "defense digest", e)
         snap["dropped"] = self.queue.dropped
         snap["failures"] = {k: v["count"]
                             for k, v in self._fail_counts.items()}

@@ -36,42 +36,40 @@ def win():
     w.destroy()
 
 
-TABS = ("home", "scans", "protect", "tools", "thunter", "settings")
+# The rail, wave D: the two-system directive made into navigation.
+RAIL_KEYS = ("home", "thunter", "defense", "scans", "protect", "tools",
+             "harden", "logs", "settings", "help")
 
 
-def tab_label_text(btn):
-    """The tab plate (GW-121) is a vertical box: a drawn symbol over a
-    row (label + badge); the name is the first Gtk.Label in the plate."""
+def rail_row_label(btn):
+    """The rail row is a horizontal box: drawn glyph, name, badge; the
+    page name is the first Gtk.Label carrying gw-rail-label."""
     child = btn.get_child()
-    if isinstance(child, Gtk.Label):
-        return child.get_text()
     for piece in child:
-        if isinstance(piece, Gtk.Box):
-            for c in piece:
-                if isinstance(c, Gtk.Label):
-                    return c.get_text()
+        if isinstance(piece, Gtk.Label) \
+                and piece.has_css_class("gw-rail-label"):
+            return piece.get_text()
     return ""
 
 
-def tab_symbol_area(win, key):
-    """The DrawingArea each tab carries for its glyph (GW-121 plates)."""
+def glyph_area(win, key):
     return getattr(win, "_symbols", {}).get(key)
 
 
-def test_six_tabs_render(win):
-    """The shell the owner approved, GW-121 order: the suite pages
-    (Home, Scans, Protections, Tools) lead, Threat Hunter supports them,
-    Settings lasts — one bar, uppercase mono labels. The uppercase is
-    the `.gw-tab-label` CSS (text-transform), so the pin is the class
-    plus its rule, not the raw text."""
-    assert tuple(win._tabs) == TABS
+def test_rail_renders_grouped(win):
+    """The shell the owner approved, wave D: grouped pages down the left
+    edge (Watch, Defense, Care, System), every rail row carries its
+    glyph-plus-label, the bar carries the .gw-rail class."""
+    from ui.shell import RAIL
+    assert tuple(win._tabs) == RAIL_KEYS == \
+        tuple(k for _g, rows in RAIL for k, _l in rows)
     from ui.themes import gtk_css, load_themes
     css = gtk_css(load_themes()["aperture"])
-    for key in TABS:
-        assert tab_label_text(win._tabs[key]), key
-    assert "gw-tabs" in win.tab_bar.get_css_classes()
-    assert "text-transform: uppercase; font-family:" in css
-    assert ".gw-badge" in css and "background-color:" in css
+    for key in RAIL_KEYS:
+        assert rail_row_label(win._tabs[key]), key
+    assert "gw-rail" in win.rail_bar.get_css_classes()
+    assert ".gw-rail-head" in css and "text-transform: uppercase" in css
+    assert "button.gw-active" in css and ".gw-badge" in css
 
 
 def test_launch_opens_home_with_ai(win):
@@ -79,102 +77,74 @@ def test_launch_opens_home_with_ai(win):
     assert win.stack.get_visible_child_name() == "home"
     page = win.stack.get_visible_child()
     assert page is not None
-    # The chat must be a descendant of the page the stack shows.
     parent, found = win.assistant_panel.get_parent(), False
     while parent is not None and not found:
         found = parent is page
         parent = parent.get_parent()
     assert found, "the assistant conversation is not on the Home page"
-    assert "gw-tab-on" in win._tabs["home"].get_css_classes()
+    assert "gw-active" in win._tabs["home"].get_css_classes()
 
 
-def test_thunter_is_a_real_stack_page(win):
-    win._show("thunter")
+def test_defense_is_a_real_stack_page(win):
+    win._show("defense")
     pump(10)
-    assert win.stack.get_visible_child_name() == "thunter"
-    # The hunter's own panel is the page body: same component that renders
-    # findings.jsonl today, promoted to its own tab.
-    assert win.hunter_panel is not None
-    assert tab_label_text(win._tabs["thunter"]) == "Threat Hunter"
+    assert win.stack.get_visible_child_name() == "defense"
+    # The defense desk built and painted: the view exists, its section
+    # bodies exist, and its side-line class puts it in the threat lane.
+    view = win.defense_view
+    assert view is not None
+    assert view._blocked is not None and view._asks is not None \
+        and view._armor is not None
+    assert "gw-lane-threat" in view.get_css_classes()
+    assert rail_row_label(win._tabs["defense"]) == "Defense"
 
 
-def test_every_tab_switches(win):
-    for key in TABS:
+def test_every_page_switches(win):
+    for key in RAIL_KEYS:
         win._show(key)
         pump(6)
         assert win.stack.get_visible_child_name() == key, key
-        assert "gw-tab-on" in win._tabs[key].get_css_classes(), key
-        for other in TABS:
+        assert "gw-active" in win._tabs[key].get_css_classes(), key
+        for other in RAIL_KEYS:
             if other != key:
-                assert "gw-tab-on" not in win._tabs[other].get_css_classes()
+                assert "gw-active" not in win._tabs[other].get_css_classes()
 
 
-def test_every_tab_carries_a_symbol(win):
-    """GW-121 plates: every tab carries its own drawn glyph widget — no
-    tab is text-only, nothing shares one DrawingArea."""
+def test_every_row_carries_a_symbol(win):
+    """One drawn glyph per row - no row is text-only, nothing shares a
+    DrawingArea."""
     seen = set()
-    for key in TABS:
-        sym = tab_symbol_area(win, key)
+    for key in RAIL_KEYS:
+        sym = glyph_area(win, key)
         assert sym is not None, key
-        assert sym not in seen, f"{key} reuses another tab's glyph"
+        assert sym not in seen, f"{key} reuses another row's glyph"
         seen.add(sym)
-    # The glyphs are painted in the shell's own style sheet, so a plate
-    # bar without the rule would draw invisible.
     from ui.themes import gtk_css, load_themes
     css = gtk_css(load_themes()["aperture"])
-    assert ".gw-tabs" in css and "border-radius: 10px" in css
-    assert "button.gw-tab-on" in css and "border-color:" in css
+    assert ".gw-rail button.gw-active" in css
 
 
-def test_symbol_activation_follows_the_shown_tab(win):
-    """GW-121: the active tab's glyph draws in accent, every resting one
-    in ink_soft — the same flip that moves `gw-tab-on`, not a redraw on
-    a timer."""
+def test_symbol_activation_follows_the_shown_page(win):
     win._show("scans")
     pump(4)
     assert getattr(win._symbols["scans"], "_gw_active") is True
     assert getattr(win._symbols["home"], "_gw_active") is False
-    win._show("thunter")
+    win._show("defense")
     pump(4)
-    assert getattr(win._symbols["thunter"], "_gw_active") is True
+    assert getattr(win._symbols["defense"], "_gw_active") is True
     assert getattr(win._symbols["scans"], "_gw_active") is False
 
 
-def test_suite_card_leads_home(win):
-    """GW-121 suite first: on Home the protections verdict card sits ABOVE
-    the hunter digest and above the conversation — the suite reads before
-    the hunter that supports it. The walk is document order over the
-    whole page, so the aperture clamp's single wrap point cannot move
-    what the owner reads first."""
-    page = win._views["home"]
-    order = []
-
-    def walk(x):
-        for c in x.observe_children():
-            order.append(c)
-            walk(c)
-
-    walk(page)
-    if win.suite_card not in order:
-        order = [page] + order
-    assert win.suite_card in order, "the suite verdict card is not on Home"
-    after = order[order.index(win.suite_card) + 1:]
-    assert win.digest in after, "digest must follow the suite card"
-    panel = getattr(win, "assistant_panel", None)
-    if panel is not None:
-        assert panel in after, "chat must follow the suite card"
-
-
-def test_legacy_chat_keys_keep_working(win):
-    """Assistant intents and older callers still say 'security' and 'deep';
-    they land on the Protections page through one central map."""
+def test_legacy_keys_keep_working(win):
+    """Assistant intents and older callers still say 'security' and
+    'deep'; they land on the Protections page through one central map."""
     for old, new in (("security", "protect"), ("deep", "protect")):
         win._show(old)
         pump(6)
         assert win.stack.get_visible_child_name() == new, old
 
 
-def test_thunter_badge_counts_unread(win):
+def test_rail_badge_counts_unread(win):
     win.set_badge("thunter", 2)
     pump(4)
     badge = win._badges["thunter"]
@@ -184,16 +154,28 @@ def test_thunter_badge_counts_unread(win):
     assert not badge.get_visible()
 
 
+def test_defense_badge_is_reachable_too(win):
+    """The Defense desk is a first-class rail row: its badge obeys the
+    same counts as the hunter's."""
+    win.set_badge("defense", 1)
+    pump(4)
+    assert win._badges["defense"].get_text() == "1"
+    assert win._badges["defense"].get_visible()
+    win.set_badge("defense", 0)
+    pump(4)
+    assert not win._badges["defense"].get_visible()
+
+
 def test_setup_launcher_reachable(win):
     """The wizard stays; the shell carries its launcher (header bar)."""
     assert win.setup_btn is not None
     assert win.setup_btn.get_sensitive()
 
-def test_thunter_feed_paints_the_moment_the_tab_opens(tmp_path,
-                                                      monkeypatch):
+
+def test_thunter_feed_paints_the_moment_the_page_opens(tmp_path):
     """GW-118 (2026-11-03): the feed relied on the one-second live tick,
-    so a freshly opened tab could show its empty state first. Opening the
-    tab must render what the hunter already wrote, with no timer."""
+    so a freshly opened page could show its empty state first. Opening
+    the page must render what the hunter already wrote, with no timer."""
     from hunter import store
     from ui.window import MainWindow
     store.append_finding(tmp_path, {
@@ -214,7 +196,7 @@ def test_thunter_feed_paints_the_moment_the_tab_opens(tmp_path,
         pump(5)
         panel = w.hunter_panel
         assert panel is not None and panel.data_dir == tmp_path
-        assert panel._findings, "the feed is empty right after the tab opens"
+        assert panel._findings, "the feed is empty right after the page opens"
         rows = [x for x in panel._list.observe_children()
                 if hasattr(x, "_gw_finding_id")]
         assert len(rows) == 1

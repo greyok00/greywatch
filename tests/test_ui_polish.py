@@ -99,8 +99,11 @@ def test_a_scan_is_never_called_clean_over_its_own_warning_summary():
 
 def test_every_page_starts_at_the_same_inset():
     # Source-level: no page builder may keep a one-off margin of its own.
-    src = (pathlib.Path(__file__).resolve().parents[1]
-           / "ui" / "window.py").read_text(encoding="utf-8")
+    ui = (pathlib.Path(__file__).resolve().parents[1] / "ui")
+    # Wave D split: pages live in their own modules, the shell in window.py.
+    src = "\n".join((ui / n).read_text(encoding="utf-8")
+                    for n in ("window.py", "logsdesk.py", "helpdesk.py",
+                              "defense.py"))
     for stale in ("set_margin_start(34)", "set_margin_end(34)",
                   "set_margin_top(26); box.set_margin_start(30)"):
         assert stale not in src, stale

@@ -40,6 +40,9 @@ PAGES = {
     "home": "home",
     "hunter": "thunter",
     "threat hunter": "thunter",
+    "defense": "defense",
+    "network": "defense",
+    "hardening": "harden",
 }
 
 _JSON = re.compile(r"\{[^{}]*\}")

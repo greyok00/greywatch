@@ -41,62 +41,16 @@ from ui.settings import (TrustList, PausedStore, LearningStore,
                          FirewallModeStore)
 from ui import discover, metrics
 from ui.blocklist import BlockList
+from ui.threatcards import (log_row_values, threat_card_options,
+                            _fixed)
+from ui.logsdesk import LogsDeskMixin
+from ui.helpdesk import HelpDeskMixin
 import greywatch_daemon as daemon_mod
 
 DATA_DIR = daemon_mod.DATA_DIR
 PAINT_MERGE_MS = 250
 
-QUARANTINE_HELPERS = ("keep-quarantine", "restore-quarantine")
 
-
-def log_row_values(ev, time_tool, event_text, severity_ink):
-    """The Full logs row's display values plus the raw event and its lane
-    (GW-197): the row carries what happened, so a click can fix it right
-    there instead of sending the reader hunting for the lever."""
-    return ([tool_icon(str(ev.get("from_tool", ""))),
-             pc_severity_word(str(ev.get("severity", ""))),
-             severity_ink, time_tool, event_text],
-            ev, lane_for(ev))
-
-
-def _threat_target(ev) -> str:
-    """The file a threat event is about, from its decision's first or its
-    quarantine line (GW-197). Only absolute-looking paths count."""
-    spec = ev.get("interaction") or {}
-    opts = [o for o in (spec.get("options") or []) if o.get("helper")]
-    if opts:
-        args = opts[0].get("args") or []
-        if args and str(args[0]).startswith("/"):
-            return str(args[0])
-    text = str(ev.get("text", ""))
-    if text.startswith("quarantine:"):
-        tail = text.split(":", 1)[1].strip()
-        first = tail.split(" ", 1)[0] if " " in tail else tail
-        if first.startswith("/"):
-            return first
-    return ""
-
-
-def threat_card_options(ev) -> list:
-    """The threat row's real controls (GW-197): the stored decision's own
-    options first, then Delete permanently when this lane holds a copy
-    (quarantine helpers present) or the file still sits at its path.
-    Tool controls never appear here, and a quarantine ask gains delete
-    instead of staying locked to keep-or-restore forever."""
-    spec = ev.get("interaction") or {}
-    opts = [dict(o) for o in (spec.get("options") or []) if o.get("helper")]
-    target = _threat_target(ev)
-    if any(o.get("helper") in QUARANTINE_HELPERS for o in opts) and target:
-        opts.append({"id": "delete", "label": "Delete permanently",
-                     "tone": "danger", "helper": "delete-quarantine",
-                     "args": [target]})
-    elif target and not any(o.get("helper") == "file-action"
-                            for o in opts) \
-            and pathlib.Path(target).exists():
-        opts.append({"id": "delete", "label": "Delete permanently",
-                     "tone": "danger", "helper": "file-action",
-                     "args": ["delete", target]})
-    return opts
 
 # Recent-activity table geometry. The header row in `_security_view` draws
 # plain labels over these widths, so they are shared rather than guessed in
@@ -112,14 +66,8 @@ WIZARD_FOR = {"appfw": "appfw", "ufw": "ufw", "fail2ban": "fail2ban",
               "tetragon": "tetragon", "arpwatch": "arpwatch",
               "yara-watch": "yara", "yara-tmp-scan": "yara"}
 
-# The six-tab shell: Home carries the AI, Threat Hunter
-# carries every hunter output, the rest keep their jobs.  keeps the
-# same six but orders them suite-first — the security suite reads before
-# the hunter that supports it.
-TABS = (("home", "Home"), ("scans", "Scans"), ("protect", "Protections"),
-        ("tools", "Tools"), ("thunter", "Threat Hunter"),
-        ("settings", "Settings"))
-
+# The rail lives in ui/shell.py since wave D; old callers that named the
+# six-tab keys keep working through _LEGACY_PAGE below and the pane stack.
 # Retired rail keys resolve once, centrally: 'security' and 'deep' were the
 # two pages that split one job (the assistant's page words, and any caller
 # that stored the key) — their content now lives on Protections.
@@ -164,13 +112,7 @@ _SETTINGS_RELATED = {
 }
 
 
-def _fixed(col, width):
-    col.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
-    col.set_fixed_width(width)
-    return col
-
-
-class MainWindow(Gtk.Window):
+class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
     def __init__(self, on_status_change=None, tray_available=True,
                  quit_cb=None):
         super().__init__(title="GreyWatch - Linux Endpoint Security")
@@ -220,13 +162,17 @@ class MainWindow(Gtk.Window):
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.set_child(outer)
         self._header(outer)
-        self._tab_bar(outer)
+        body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        body.set_hexpand(True)
+        body.set_vexpand(True)
+        outer.append(body)
+        self._rail(body)
 
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
         self.stack.set_hexpand(True)
         self.stack.set_vexpand(True)
-        outer.append(self.stack)
+        body.append(self.stack)
 
         self._views = {}
         self._theme_store = ThemeStore(self)
@@ -329,44 +275,17 @@ class MainWindow(Gtk.Window):
             else dark_default(self._theme_store.names())
         self._theme_store.apply(name)
 
-    def _tab_bar(self, parent):
-        """The main window shell, redrawn for :
-        six symbol plates across the top — each tab shows its drawn symbol
-        over the name, the active plate tints in the voice's accent, and
-        Threat Hunter keeps the unread badge."""
-        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        bar.add_css_class("gw-tabs")
-        parent.append(bar)
-        self.tab_bar = bar
-        self._tabs = {}
-        self._badges = {}
-        self._symbols = {}
-        for key, label in TABS:
-            b = Gtk.Button()
-            plate = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-            plate.set_halign(Gtk.Align.CENTER)
-            sym = tab_symbol(key)
-            sym.set_halign(Gtk.Align.CENTER)
-            sym.set_valign(Gtk.Align.CENTER)
-            plate.append(sym)
-            self._symbols[key] = sym
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-            lb = Gtk.Label(label=label)
-            lb.xalign = 0.5
-            lb.add_css_class("gw-tab-label")
-            row.append(lb)
-            badge = Gtk.Label(label="0")
-            badge.add_css_class("gw-badge")
-            badge.set_visible(False)
-            badge.set_valign(Gtk.Align.CENTER)
-            row.append(badge)
-            plate.append(row)
-            b.set_child(plate)
-            b.set_tooltip_text(label)
-            b.connect("clicked", self._tab_pick, key)
-            bar.append(b)
-            self._tabs[key] = b
-            self._badges[key] = badge
+    def _rail(self, parent):
+        """The sidebar shell, redrawn for wave D: grouped pages down the
+        left edge (Watch, Defense, Care, System) instead of a plate bar
+        across the top. Rows keep the shell's per-key API _tabs/_badges/
+        _symbols, so unread counts and activation styling stay the same
+        code the tab shell used."""
+        from ui import shell
+        self.rail_collapsed = False
+        shell.build_rail(self)
+        parent.append(self.rail_bar)
+        self.rail_bar.set_size_request(shell.rail_size(self), -1)
 
     def _tab_pick(self, _b, key):
         self._show(key)
@@ -392,9 +311,9 @@ class MainWindow(Gtk.Window):
         for k, b in self._tabs.items():
             on = k == key
             if on:
-                b.add_css_class("gw-tab-on")
+                b.add_css_class("gw-active")
             else:
-                b.remove_css_class("gw-tab-on")
+                b.remove_css_class("gw-active")
             tab_symbol_active(self._symbols.get(k), on)
         # A page built on demand starts with placeholder text ("checking…")
         # and the periodic refresh is up to five seconds away, so the user
@@ -405,6 +324,14 @@ class MainWindow(Gtk.Window):
             # The hunter feed redraws only on the one-second tick, so the
             # tab could open on its empty state for up to a second.
             self._hunter_tick()
+
+    def _defense_view(self):
+        """The network defense desk (wave D): blocked addresses, sidekick
+        questions and the wave-A armor chain, fed by the daemon's public
+        status digest since the ledger and event store stay root-only."""
+        from ui.defense import DefenseView
+        self.defense_view = DefenseView(win=self)
+        return self.defense_view
 
     def _build_all(self):
         self._views = {}
@@ -420,6 +347,7 @@ class MainWindow(Gtk.Window):
                           "tools": self._tools_view,
                           "settings": self._settings_view,
                           "harden": self._harden_view,
+                          "defense": self._defense_view,
                           "logs": self._logs_view,
                           "help": self._help_view}
         self._add_view("home", self._builders["home"]())
@@ -1955,648 +1883,7 @@ class MainWindow(Gtk.Window):
                  f"{escape(suffix)}   "
                  f"[{escape(e.get('text', '')[:160])}]"])
 
-    def _logs_view(self):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        box.set_margin_top(metrics.PAGE_TOP)
-        box.set_margin_start(metrics.PAGE_X)
-        box.set_margin_end(metrics.PAGE_X)
-        box.append(self._h1("Full logs: every tool, raw"))
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.logs_pick = Gtk.ComboBoxText()
-        self.logs_pick.append("", "All tools")
-        for t in self.registry:
-            self.logs_pick.append(t["name"], friendly_name(t["name"]))
-        self.logs_pick.set_active_id("")
-        self.logs_pick.set_size_request(280, -1)
-        self.logs_pick.connect("changed", lambda _c: self._refresh_logs())
-        row.append(Gtk.Label(label="Show:"))
-        row.append(self.logs_pick)
-        clear_btn = Gtk.Button(label="Clear the log")
-        clear_btn.add_css_class("gw-quiet")
-        clear_btn.set_tooltip_text(
-            "Empties this event log. Answers, scan results and quarantine "
-            "records are not touched.")
-        clear_btn.connect("clicked", self._clear_log_pressed)
-        row.append(clear_btn)
-        self.logs_status = Gtk.Label(xalign=0)
-        self.logs_status.set_xalign(0)
-        self.logs_status.set_text(
-            "Identical consecutive lines are grouped; newest first.")
-        self.logs_status.set_hexpand(True)
-        row.append(self.logs_status)
-        box.append(row)
 
-        # 0 tool icon name, 1 severity word, 2 severity ink, 3 time/tool,
-        # 4 event, 5 raw event, 6 lane. The severity used to be an emoji
-        # (🔴/🟡/🟢); it is now the tool's own drawn symbol plus a word in
-        # the theme's status ink. GW-197 adds the raw event and its lane,
-        # so clicking a row can fix it right there, with that lane's
-        # controls only.
-        self.logs_store = Gtk.ListStore(str, str, str, str, str, object,
-                                        str)
-        view = Gtk.TreeView(model=self.logs_store, headers_visible=False)
-        log_icon = Gtk.CellRendererPixbuf()
-        log_icon.set_property("width", 22)
-        view.append_column(_fixed(
-            Gtk.TreeViewColumn(None, log_icon, icon_name=0), 44))
-        sev = Gtk.CellRendererText()
-        view.append_column(_fixed(
-            Gtk.TreeViewColumn(None, sev, text=1, foreground=2), 86))
-        view.append_column(_fixed(
-            Gtk.TreeViewColumn(None, Gtk.CellRendererText(), text=3), 300))
-        # The event column takes whatever width is left, and ellipsises
-        # inside it. Without the ellipsis a long apparmor line measured the
-        # column wider than the card and the row ran under the window edge,
-        # cut mid-word with no hint that there was more.
-        event_cell = Gtk.CellRendererText()
-        event_cell.set_property("ellipsize", Pango.EllipsizeMode.END)
-        last = Gtk.TreeViewColumn(None, event_cell, text=4)
-        last.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
-        # A fixed floor plus expand: the floor keeps the table's MINIMUM
-        # width inside the card, expand hands it every pixel left over.
-        # Without the floor the column asked for the longest line's width,
-        # which pushed the whole card past the page edge.
-        last.set_fixed_width(200)
-        last.set_expand(True)
-        view.append_column(last)
-        # GW-197: a row is clickable. Activation opens that row's lane
-        # card, so fixing happens here instead of hunting for the lever.
-        view.connect("row-activated", self._log_row_activated)
-        # Same header treatment as Recent activity: plain labels over the
-        # fixed column widths, so "State" sits over the severity words.
-        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        head.add_css_class("gw-th-row")
-        head.set_margin_start(10)
-        head.set_margin_end(10)
-        pad = Gtk.Box()
-        pad.set_size_request(44, -1)
-        head.append(pad)
-        for title, width in (("State", 86), ("Time / tool", 300),
-                             ("Event", 0)):
-            lbl = Gtk.Label(label=title, xalign=0)
-            lbl.set_xalign(0)
-            lbl.add_css_class("gw-th")
-            if width:
-                lbl.set_size_request(width, -1)
-            else:
-                lbl.set_hexpand(True)
-            head.append(lbl)
-        lbody = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        lbody.append(head)
-        wrap = self._wrap(view)
-        wrap.set_hexpand(True)
-        lbody.append(wrap)
-        lcard = Gtk.Frame()
-        lcard.add_css_class("gw-card")
-        lcard.set_child(lbody)
-        lcard.set_vexpand(True)
-        box.append(lcard)
-        box.set_vexpand(True)
-        self._refresh_logs()
-        # The log table pages inside its own card; the page itself never
-        # scrolls, so its filter row can never be pushed off-screen.
-        return box
-
-    def _clear_log_pressed(self, _btn):
-        d = Gtk.Dialog(title="Empty the event log?", transient_for=self,
-                       modal=False)
-        d.set_destroy_with_parent(True)
-        body = d.get_content_area()
-        body.set_margin_start(18); body.set_margin_end(18)
-        body.set_margin_top(12); body.set_margin_bottom(12)
-        ask = Gtk.Label(xalign=0, wrap=True)
-        ask.set_xalign(0)
-        ask.set_text("Just the log. Your answers, scan results and "
-                     "quarantine records stay.")
-        body.append(ask)
-        d.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        d.add_button("Clear the log", Gtk.ResponseType.OK)
-        d.connect("response", self._on_clear_response)
-        present_now(d)
-
-        def _filled(_dlg):
-            note = Gtk.Label(xalign=0, wrap=True)
-            note.set_text("Just the log. Your answers, scan results and "
-                          "quarantine records stay.")
-            note.set_margin_top(6)
-            d.get_message_area().append(note)
-
-        d.connect("map", _filled)
-        d.connect("response", self._on_clear_response)
-        present_now(d)
-
-    def _on_clear_response(self, d, rid):
-        d.destroy()
-        if rid != Gtk.ResponseType.OK:
-            return
-
-        def worker():
-            try:
-                from wiz import common
-                rc = common.run_helper("clear-events", [], timeout=60)
-            except Exception:
-                rc = -1
-            GLib.idle_add(self._after_clear, rc)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _after_clear(self, rc):
-        self._refresh_logs()
-        self.logs_status.set_text(
-            "Log cleared." if rc == 0 else
-            f"Clearing did not finish (helper rc {rc}).")
-        return False
-
-    def _log_row_activated(self, _view, path, _col):
-        ev = self.logs_store[path][-2]          # the raw event, GW-197
-        lane = self.logs_store[path][-1]
-        if isinstance(ev, dict):
-            self._log_action_card(ev, str(lane))
-
-    def _log_action_card(self, ev, lane):
-        """One row, one card, controls from its lane only: a tool row
-        starts/updates its tool, a threat row answers the decision it
-        carries. Neither lane ever borrows the other's controls."""
-        title = "Threat" if lane == "threat" else "Fix this"
-        dlg = Gtk.Dialog(transient_for=self, modal=False, title=title)
-        dlg.set_destroy_with_parent(True)
-        body = dlg.get_content_area()
-        body.set_margin_top(12); body.set_margin_bottom(12)
-        body.set_margin_start(18); body.set_margin_end(18)
-        what = Gtk.Label(xalign=0, wrap=True)
-        what.set_xalign(0)
-        what.set_text(str(ev.get("text", ""))[:400])
-        body.append(what)
-        acts = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        acts.set_margin_top(10)
-        if lane == "threat":
-            self._log_threat_actions(ev, acts)
-        else:
-            self._log_tool_actions(ev, acts)
-        copy = Gtk.Button(label="Copy details")
-        copy.add_css_class("gw-quiet")
-        copy.connect("clicked", self._copy_log_row, ev)
-        acts.append(copy)
-        body.append(acts)
-        dlg.connect("response", lambda d, _r: d.destroy())
-        present_now(dlg)
-
-    def _log_tool_actions(self, ev, acts):
-        name = str(ev.get("from_tool", ""))
-        tools = {t["name"]: t for t in self.registry}
-        known = tools.get(name)
-        if not known:
-            return
-        from ui.toolsdesk import control_label
-        b = Gtk.Button(label=control_label({
-            "name": name, "unit": known.get("unit"),
-            "paused": self.paused.is_paused(name)}))
-        b.add_css_class("gw-primary")
-        b.connect("clicked", lambda *_a, k=name: self._control_requested(k))
-        acts.append(b)
-
-    def _log_threat_actions(self, ev, acts):
-        for o in threat_card_options(ev):
-            b = Gtk.Button(label=o.get("label") or o.get("id"))
-            b.add_css_class("gw-primary" if o.get("tone") == "primary"
-                            else "gw-danger")
-            b.connect("clicked", self._run_log_option, dict(o))
-            acts.append(b)
-        target = _threat_target(ev)
-        if target and pathlib.Path(target).exists():
-            show = Gtk.Button(label="Show in folder")
-            show.add_css_class("gw-quiet")
-            show.connect("clicked", lambda *_a, p=target: self._show_folder(p))
-            acts.append(show)
-
-    def _run_log_option(self, _btn, opt):
-        d = Gtk.Dialog(title=f"{opt.get('label')} : are you sure?",
-                       transient_for=self, modal=False)
-        d.set_destroy_with_parent(True)
-        body = d.get_content_area()
-        body.set_margin_start(18); body.set_margin_end(18)
-        body.set_margin_top(12); body.set_margin_bottom(12)
-        lbl = Gtk.Label(xalign=0, wrap=True)
-        lbl.set_xalign(0)
-        args = ", ".join(str(a) for a in (opt.get("args") or []))
-        lbl.set_text(f"{opt.get('helper')} {args}\n\n"
-                     "You will be asked for your password.")
-        body.append(lbl)
-        d.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        d.add_button(opt.get("label") or "Run", Gtk.ResponseType.OK)
-        d.connect("response", self._on_log_option_response, opt)
-        present_now(d)
-
-    def _on_log_option_response(self, d, rid, opt):
-        d.destroy()
-        if rid != Gtk.ResponseType.OK:
-            return
-
-        def worker():
-            from ui import decisionlist as dl
-            try:
-                rc = dl._helper_exec(opt.get("helper"),
-                                     list(opt.get("args", [])))
-            except Exception:
-                rc = -1
-            GLib.idle_add(self._after_log_option, opt.get("label"), rc)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _after_log_option(self, label, rc):
-        self._refresh_logs()
-        status = getattr(self, "logs_status", None)
-        if status is not None:
-            status.set_text(
-                f"{label}: done." if rc == 0 else
-                f"{label}: the helper exited {rc}.")
-        return False
-
-    def _copy_log_row(self, _btn, ev):
-        detail = (f"{ev.get('severity', '')} - "
-                  f"{friendly_name(ev.get('from_tool', ''))}"
-                  f" ({ev.get('from_tool', '')})\n{ev.get('text', '')}")
-        try:
-            from gi.repository import Gdk
-            Gdk.Display.get_default().get_clipboard().set(detail)
-            self.logs_status.set_text("Copied. Paste it into a note.")
-        except Exception:
-            self.logs_status.set_text("Could not reach the clipboard.")
-
-    def _refresh_logs(self):
-        tool = self.logs_pick.get_active_id() or None
-        try:
-            events = daemon_mod.read_events(DATA_DIR / "events.jsonl", 4000)
-        except OSError:
-            events = []
-        grouped = []
-        ordered = sorted(events, key=lambda e: str(e.get("ts", "")),
-                         reverse=True)
-        for e in ordered:
-            if tool and e.get("from_tool") != tool:
-                continue
-            key = (e.get("from_tool"), e.get("text", ""))
-            if grouped and grouped[-1]["key"] == key:
-                grouped[-1]["count"] += 1
-                continue
-            grouped.append({"key": key, "count": 1, "ev": e})
-            if len(grouped) >= 500:
-                break
-        self.logs_store.clear()
-        for g in grouped:
-            e = g["ev"]
-            sev = e.get("severity", "")
-            suffix = f"   ×{g['count']}" if g["count"] > 1 else ""
-            values, raw, lane = log_row_values(
-                e, f"{local_clock(e.get('ts', ''))} "
-                   f"{friendly_name(e.get('from_tool', ''))}",
-                str(e.get("text", ""))[:400] + suffix,
-                pc_severity_colour(sev))
-            self.logs_store.append([*values, raw, lane])
-
-    def _help_view(self):
-        """Help as an index and a pane, matching Settings.
-
-        The old page was one long column: a six-row key, seventeen
-        protection cards in two columns, then ten questions and a command
-        table — it ran on and lost its shape at the end. Each part is now
-        its own section, one at a time, with nothing to scroll.
-        """
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        page.set_vexpand(True)
-
-        head = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        head.set_margin_top(metrics.PAGE_TOP)
-        head.set_margin_start(metrics.PAGE_X)
-        head.set_margin_end(metrics.PAGE_X)
-        head.set_margin_bottom(14)
-        head.append(self._h1("Help"))
-        intro = Gtk.Label(xalign=0)
-        intro.set_xalign(0)
-        intro.set_wrap(True)
-        intro.set_markup(
-            f"<span size='13000' font_family='Inter' color='{pc_muted()}'>"
-            "Every protection on this computer, in one place. Plain words "
-            "here; raw detail is one click away.</span>")
-        head.append(intro)
-        page.append(head)
-
-        body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        body.set_vexpand(True)
-        index = Gtk.ListBox()
-        index.add_css_class("gw-index")
-        index.set_selection_mode(Gtk.SelectionMode.SINGLE)
-        index.set_size_request(190, -1)
-        index.set_valign(Gtk.Align.START)
-        index.set_margin_start(20); index.set_margin_end(12)
-        index.set_margin_bottom(metrics.PAGE_BOTTOM)
-        stack = Gtk.Stack()
-        stack.set_transition_type(Gtk.StackTransitionType.NONE)
-        stack.set_hexpand(True); stack.set_vexpand(True)
-        stack.set_margin_start(12)
-        stack.set_margin_end(metrics.PAGE_X)
-        stack.set_margin_bottom(metrics.PAGE_BOTTOM)
-
-        self._help_stack = stack
-        self._help_index = index
-        for key, icon, label, builder in (
-                ("start", "help-contents-symbolic", "Using it",
-                 self._help_start),
-                ("tools", "applications-system-symbolic", "Security Tools",
-                 self._help_tools),
-                ("questions", "dialog-question-symbolic", "Questions",
-                 self._help_questions),
-                ("terminal", "utilities-terminal-symbolic", "Terminal",
-                 self._help_terminal),
-                ("about", "help-about-symbolic", "About",
-                 self._help_about)):
-            row = Gtk.ListBoxRow()
-            row._key = key
-            line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
-            ic = Gtk.Image.new_from_icon_name(icon)
-            ic.set_pixel_size(15)
-            line.append(ic)
-            name = Gtk.Label(label=label, xalign=0)
-            name.set_xalign(0)
-            name.add_css_class("gw-index-label")
-            line.append(name)
-            row.set_child(line)
-            index.append(row)
-            stack.add_named(builder(), key)
-
-        def _picked(_lb, row):
-            if row is not None:
-                stack.set_visible_child_name(row._key)
-
-        index.connect("row-selected", _picked)
-        index.select_row(index.get_row_at_index(0))
-        body.append(index)
-        body.append(stack)
-        page.append(body)
-        return page
-
-    def _help_start(self):
-        """Where each page is and what it is for, in one glance."""
-        guide = Gtk.Grid()
-        guide.set_column_spacing(22)
-        guide.set_row_spacing(8)
-        for row, (name, what) in enumerate((
-                ("Wizard", "Guided setup, one task at a time."),
-                ("Home", "The assistant, plus what just happened."),
-                ("Protections", "One row per protection, every state."),
-                ("Scans", "Every scan: buttons, progress, and the log."),
-                ("Tools", "The whole tool table, with live status."),
-                ("Threat Hunter", "The hunter's findings and what they mean."),
-                ("Endpoint Hardening", "Baseline checks, apply, verify, undo."),
-                ("Logs", "The raw record, newest first."),
-                ("Settings", "Theme, app firewall, trusted items, updates."),
-                ("Help", "What each protection does, in plain words."))):
-            left = Gtk.Label(xalign=0)
-            left.set_xalign(0)
-            left.set_markup(f"<span size='13500' font_family='Inter' "
-                            f"weight='600'>{escape(name)}</span>")
-            right = Gtk.Label(xalign=0)
-            right.set_xalign(0)
-            right.set_wrap(True)
-            # A minimum width, so the wrapped minimum HEIGHT is measured at
-            # a readable width and not one word per line (see the Questions
-            # pane: without it the page's minimum height doubles).
-            right.set_width_chars(24)
-            right.set_markup(f"<span size='13000' font_family='Inter' "
-                             f"color='{pc_muted()}'>{escape(what)}</span>")
-            guide.attach(left, 0, row, 1, 1)
-            guide.attach(right, 1, row, 1, 1)
-        card, inner = self._settings_card(
-            "How to use it",
-            "Six places, one job each. Nothing here needs a command.")
-        inner.append(guide)
-        return self._settings_section(card)
-
-    def _help_tools(self):
-        """One line per protection: what it is, in a sentence.
-
-        Two columns, one line of copy each, is the only shape in which all
-        seventeen entries fit the 720px floor with every sentence intact —
-        two-line rows need 65px each, which is 828px of window. The copy in
-        ui/plain.py is written to that line (see the note there). On a wide
-        pane the grid becomes three columns, where there is room to spare.
-        """
-        from ui.plain import FRIENDLY
-        card, inner = self._settings_card("What each protection does")
-        grid = Gtk.Grid()
-        grid.set_column_spacing(12)
-        grid.set_row_spacing(2)
-        grid.set_column_homogeneous(True)
-        cells = []
-        for name, (fname, what) in FRIENDLY.items():
-            if name not in self.by_name:
-                continue
-            cell = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            cell.add_css_class("gw-help-row")
-            ic = Gtk.Image.new_from_icon_name(tool_icon(name))
-            ic.set_pixel_size(14)
-            ic.set_valign(Gtk.Align.CENTER)
-            cell.append(ic)
-            words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-            words.set_hexpand(True)
-            title = Gtk.Label(xalign=0)
-            title.set_xalign(0)
-            title.set_ellipsize(Pango.EllipsizeMode.END)
-            title.set_markup(f"<span size='12500' font_family='Inter' "
-                             f"weight='600'>{escape(fname)}</span>")
-            words.append(title)
-            body = Gtk.Label(xalign=0)
-            body.set_xalign(0)
-            # One line per tool, and the copy in ui/plain.py is written to
-            # fit it — seventeen entries at two lines each need 65px a row,
-            # which is 828px of window, past the 720px floor. width-chars
-            # raises the label's MINIMUM width so the pane's minimum height
-            # is measured at a readable width, not at a single word.
-            body.set_wrap(True)
-            body.set_lines(1)
-            body.set_width_chars(16)
-            body.set_max_width_chars(46)
-            body.set_ellipsize(Pango.EllipsizeMode.END)
-            body.set_markup(f"<span size='11000' font_family='Inter' "
-                            f"color='{pc_muted()}'>{escape(what)}</span>")
-            words.append(body)
-            cell.append(words)
-            cell.set_tooltip_text(f"{fname} ({name}) - {what}")
-            cells.append(cell)
-
-        # Two columns is the shape the page is measured in, so its minimum
-        # height is right from the first layout. The grid widens to three
-        # only on a wide pane, keyed on the grid's own width: that width is
-        # the size the parent gives it, which does not change with the
-        # column count (the columns are homogeneous and hexpanding), so the
-        # decision cannot feed back into itself.
-        cols = {"n": 2}
-        for i, cell in enumerate(cells):
-            grid.attach(cell, i % 2, i // 2, 1, 1)
-
-        def _flow(_widget, _clock):
-            width = grid.get_width()
-            if width <= 0:
-                return True
-            want = 3 if width >= 1000 else 2
-            if want == cols["n"]:
-                return True
-            cols["n"] = want
-            for cell in cells:
-                if cell.get_parent() is grid:
-                    grid.remove(cell)
-            for i, cell in enumerate(cells):
-                grid.attach(cell, i % want, i // want, 1, 1)
-            return True
-
-        grid.add_tick_callback(_flow)
-        inner.append(grid)
-        return self._settings_section(card)
-
-    def _help_questions(self):
-        """The ten questions users ask most, two columns of five."""
-        faq_lines = [
-            ("What does greywatch do?",
-             "One dashboard for every protection already on this computer."),
-            ("How do I run a scan?",
-             "Scans: press a scan button; each scanner shows "
-             "its own progress."),
-            ("How do I pause a protection?",
-             "Protections or the Tools table: press Pause on its row; "
-             "Resume brings it back."),
-            ("What does At risk mean?",
-             "A protection that should be running is not. Not a detection."),
-            ("A detection appeared - what now?",
-             "Read the Recent line or Logs. Quarantine what you didn't cause."),
-            ("How do I isolate my machine?",
-             "No one-click panic. Keep the firewall on; unplug to disconnect."),
-            ("How do I change the theme?",
-             "Settings - Appearance - Dark or Light."),
-            ("Why is my antivirus quiet?",
-             "Its full scan runs daily. Quiet means nothing bad was found."),
-            ("Is my disk encrypted - how do I check?",
-             "Not checked today. Run lsblk in a terminal; LUKS shows crypto."),
-            ("How do I undo a wizard change?",
-             "Endpoint Hardening - Undo last change."),
-        ]
-        card, inner = self._settings_card(
-            "Questions",
-            "The ten things owners ask most, each answered in one sentence.")
-        grid = Gtk.Grid()
-        grid.set_column_spacing(24)
-        grid.set_row_spacing(10)
-        grid.set_column_homogeneous(True)
-        for i, (q, a) in enumerate(faq_lines):
-            row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-            qlabel = Gtk.Label(xalign=0)
-            qlabel.set_xalign(0)
-            qlabel.set_wrap(True)
-            # max-width-chars sets the label's MINIMUM width, so GTK measures
-            # the wrapped minimum HEIGHT at a readable width. Without it the
-            # minimum height is computed at one character per line and this
-            # pane alone reported 1162px — enough to force the whole window
-            # taller than its 720px minimum.
-            qlabel.set_width_chars(30)
-            qlabel.set_max_width_chars(34)
-            qlabel.set_markup(f"<span size='12500' font_family='Inter' "
-                              f"weight='600'>{escape(q)}</span>")
-            alabel = Gtk.Label(xalign=0)
-            alabel.set_xalign(0)
-            alabel.set_wrap(True)
-            alabel.set_width_chars(30)
-            alabel.set_max_width_chars(40)
-            alabel.set_markup(f"<span size='12000' font_family='Inter' "
-                              f"color='{pc_muted()}'>{escape(a)}</span>")
-            row.append(qlabel)
-            row.append(alabel)
-            grid.attach(row, i % 2, i // 2, 1, 1)
-        inner.append(grid)
-        return self._settings_section(card)
-
-    def _help_terminal(self):
-        card, inner = self._settings_card(
-            "From a terminal",
-            "Optional. Everything the window shows can be read from a shell.")
-        cmds = (("greywatch status", "Every protection and its state."),
-                ("greywatch events", "The newest log lines."),
-                ("greywatch tail", "Follow the log as it grows."),
-                ("greywatch decisions", "What the app firewall decided."),
-                ("greywatch rules", "The rules currently enforced."))
-        cmd_grid = Gtk.Grid()
-        cmd_grid.set_column_spacing(20)
-        cmd_grid.set_row_spacing(7)
-        for r, (cmd, what) in enumerate(cmds):
-            cl = Gtk.Label(xalign=0)
-            cl.set_xalign(0)
-            cl.set_markup(f"<span size='12500' font_family='monospace'>"
-                          f"{escape(cmd)}</span>")
-            wl = Gtk.Label(xalign=0)
-            wl.set_xalign(0)
-            wl.set_wrap(True)
-            wl.set_markup(f"<span size='12500' font_family='Inter' "
-                          f"color='{pc_muted()}'>{escape(what)}</span>")
-            cmd_grid.attach(cl, 0, r, 1, 1)
-            cmd_grid.attach(wl, 1, r, 1, 1)
-        inner.append(cmd_grid)
-        where = Gtk.Label(xalign=0)
-        where.set_xalign(0)
-        where.set_wrap(True)
-        where.set_markup(
-            f"<span size='11500' font_family='Inter' color='{pc_soft()}'>"
-            "The root watch daemon is greywatch.service. Events live in "
-            "data/events.jsonl, status in data/status.json. Every privileged "
-            "change runs through a helper with a backup and rollback."
-            "</span>")
-        inner.append(where)
-        return self._settings_section(card)
-
-    def _help_about(self):
-        """The suite itself: what it is, which version, where to reach it.
-
-        The About page lives here, next to the protections
-        it explains, not in a separate dialog.
-        """
-        card, inner = self._settings_card(
-            "About GreyWatch",
-            "Linux endpoint security, with a local assistant.")
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-        mark = Gtk.Image()
-        mark.set_pixel_size(48)          # a pixbuf on its own paints at 16px
-        wolf = (pathlib.Path(__file__).resolve().parents[1] / "assets"
-                / "logo" / "greywatch-icon-128.png")
-        if wolf.exists():
-            mark.set_from_file(str(wolf))
-        row.append(mark)
-        words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-        name = Gtk.Label(xalign=0)
-        name.set_xalign(0)
-        name.set_markup(f"<span size='13500' font_family='Inter' "
-                        f"weight='700'>GreyWatch {escape(self._version())}"
-                        "</span>")
-        words.append(name)
-        why = Gtk.Label(xalign=0)
-        why.set_xalign(0)
-        why.set_wrap(True)
-        why.set_width_chars(24)          # measure minimum height at a width
-        why.set_markup(
-            f"<span size='12500' font_family='Inter' "
-            f"color='{pc_muted()}'>GreyWatch's protections watch this machine, the "
-            "event trail stays on this machine, and the assistant's "
-            "answers are composed from your own logs by a model that "
-            "runs on your own CPU.</span>")
-        words.append(why)
-        row.append(words)
-        inner.append(row)
-        for uri, label in (
-                ("https://github.com/greyok00/greywatch",
-                 "Source and releases - github.com/greyok00/greywatch"),
-        ):
-            link = Gtk.LinkButton(uri=uri)
-            link.set_label(label)
-            link.add_css_class("gw-quiet")
-            link.set_halign(Gtk.Align.START)
-            inner.append(link)
-        return self._settings_section(card)
 
     def _version(self) -> str:
         try:
@@ -4001,6 +3288,9 @@ class MainWindow(Gtk.Window):
             self._monitors.append(m)
 
     def _periodic_refresh(self):
+        from ui import shell
+        shell.collapse_rail(self, not shell.rail_pinned(self))
+        self.rail_bar.set_size_request(shell.rail_size(self), -1)
         self.refresh()
         return True
 
@@ -4031,6 +3321,11 @@ class MainWindow(Gtk.Window):
             events = []
         if not events:                    # the event store is root-only (0600)
             events = snap.get("recent") or []   # → the daemon's public digest
+        # The Defense page repaints only while shown: its armor probes run
+        # subprocesses and must not cost every 5-second cycle.
+        if self.stack.get_visible_child_name() == "defense" \
+                and getattr(self, "defense_view", None) is not None:
+            self.defense_view.refresh(snap)
         self._scan_live = read_live(self.data_dir)
         # The assistant facts source: the very snapshots refresh already
         # loaded — _get_status/_get_recent hand these over, no new reads.
