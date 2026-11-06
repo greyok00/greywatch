@@ -24,6 +24,7 @@ ICONS = {
     "auditd": "gw-tool-auditd-symbolic",
     "appfw": "gw-tool-appfw-symbolic",
     "arpwatch": "gw-tool-arpwatch-symbolic",
+    "psad": "gw-tool-psad-symbolic",
     "aide": "gw-tool-aide-symbolic",
     "apparmor": "gw-tool-apparmor-symbolic",
     "lynis": "gw-tool-lynis-symbolic",

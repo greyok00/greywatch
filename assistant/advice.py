@@ -227,6 +227,36 @@ _RULES = {
               "low risk on its own; a burst of them is what the blocker "
               "reacts to", steps=()),
     ],
+    "psad": [
+        _rule(r"danger level: 5|auto.?ids|auto.?block",
+              "a sustained attack was confirmed and the source was blocked",
+              "psad only blocks at the highest danger level (a long, "
+              "repeated sweep) and never blocks your own network, so a "
+              "block here is a real outside scanner that was stopped",
+              steps=(("command", "sudo psad --Status | head -n 20"),)),
+        _rule(r"signature match",
+              "traffic matched a known attack fingerprint",
+              "one signature hit is a probe; repeated signature hits from "
+              "the same source mean someone is running attack tooling "
+              "against this machine",
+              scan=True),
+        _rule(r"src:.*ports|src:.*proto",
+              "a machine outside your network was seen scanning ports",
+              "internet scanners sweep all day and most move on; it matters "
+              "only when the same source escalates, which the danger level "
+              "tracks", scan=True),
+        _rule(r"danger level",
+              "a low-level scan was recorded",
+              "single probes never trigger a block; this is background "
+              "noise unless it repeats from one source", steps=()),
+        _rule(r"warning|could not",
+              "the scan watcher reports a configuration problem",
+              "with psad misconfigured, port sweeps go unnoticed, so fix "
+              "the warning promptly - most often it means the kernel log "
+              "is not being written",
+              steps=(("app", "Run the Harden page's psad card to arm the "
+                             "scan watcher again."),)),
+    ],
     "ufw": [
         _rule(r"BLOCK_UNKNOWN",
               "the firewall blocked traffic from an unexpected source",

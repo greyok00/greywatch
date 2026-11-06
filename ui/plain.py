@@ -19,6 +19,7 @@ FRIENDLY = {
     "auditd": ("System event log", "Records system events."),
     "appfw": ("App firewall", "Asks before programs go online."),
     "arpwatch": ("WiFi watcher", "Reports devices on the network."),
+    "psad": ("Scan watcher", "Flags port sweeps and attack attempts."),
     "aide": ("File integrity", "Alerts on system file changes."),
     "apparmor": ("Program jail", "Limits each program's access."),
     "lynis": ("Security auditor", "Grades security, lists fixes."),

@@ -8,11 +8,11 @@ REGISTRY = load_registry()
 NAMES = {"responderd", "tetragon", "yara-watch", "yara-tmp-scan", "clamav",
          "fail2ban", "ufw", "auditd", "appfw", "arpwatch", "aide",
          "apparmor", "lynis", "rkhunter", "net-watch", "cve-updater",
-         "freshclam"}
+         "freshclam", "psad"}
 
 
 def test_registry_has_all_seventeen_real_tools():
-    assert len(REGISTRY) == 17
+    assert len(REGISTRY) == 18
     assert {t["name"] for t in REGISTRY} == NAMES
 
 

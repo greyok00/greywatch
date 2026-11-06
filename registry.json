@@ -92,6 +92,16 @@
    }
   },
   {
+   "name": "psad",
+   "label": "PSAD (port scan attack detector)",
+   "unit": "psad.service",
+   "scope": "root",
+   "logs": [],
+   "journal": {
+    "filter": "-t psad"
+   }
+  },
+  {
    "name": "aide",
    "label": "AIDE (integrity check)",
    "unit": "aide-check.timer",

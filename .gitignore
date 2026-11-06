@@ -21,6 +21,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 *.so
+# compiled at runtime by appfw/engine.py from nfq_worker.c
+appfw/bin/
 # cython build intermediates
 build/
 

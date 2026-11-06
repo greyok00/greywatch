@@ -294,6 +294,43 @@ def parse_auditd(line: str) -> Optional[Event]:
     return _ev("auditd", sev, f"{rtype} {m.group('rest')[:160]}", ts)
 
 
+# GW-199 (owner 2026-11-06): psad joins the managed tools. Its syslog/journal
+# lines carry its own ident ("psad[1234]:" or "psad:"), whatever prefix the
+# transport puts in front of them, so the payload is everything after it.
+_PSAD_IDENT = _re.compile(r"psad(?:\[\d+\])?: (?P<msg>.*)$")
+
+
+def parse_psad(line: str) -> Optional[Event]:
+    """parse_psad: sweep and signature alerts become threat-lane events;
+    psad's own noise (daemon talk, status chatter) stays silent. No
+    false positives: a single port probe (danger level 1) is MEDIUM and
+    never pops; danger level 2+ and signature matches are HIGH; danger
+    level 5 is a CRITICAL sustained attack."""
+    m = _PSAD_IDENT.search(line.strip())
+    if not m:
+        return None
+    msg = m.group("msg").strip()
+    low = msg.lower()
+    if any(k in low for k in ("kmsgsd", "psadwatchd", "started psad",
+                              "status:", "restart ")):
+        return None                      # daemon chatter: silence
+    if "warning:" in low or "could not" in low:
+        return _ev("psad", "MEDIUM", msg[:200], None)
+    if "signature match" in low:
+        return _ev("psad", "HIGH", msg[:200], None)
+    dl = _re.search(r"danger level: (\d+)", low)
+    if dl:
+        level = int(dl.group(1))
+        if level >= 5:
+            return _ev("psad", "CRITICAL", msg[:200], None)
+        if level >= 2:
+            return _ev("psad", "HIGH", msg[:200], None)
+        return _ev("psad", "MEDIUM", msg[:200], None)
+    if "src:" in low and ("ports" in low or "proto" in low):
+        return _ev("psad", "HIGH", msg[:200], None)
+    return None                          # unknown line: silence, never guess
+
+
 PARSERS = {
     "cve-updater": None,        # synthetic: mirrored from the cache
     "responderd": parse_responderd,
@@ -304,6 +341,7 @@ PARSERS = {
     "fail2ban": parse_fail2ban,
     "ufw": parse_ufw,
     "auditd": parse_auditd,
+    "psad": parse_psad,
     "appfw": parse_appfw,
     "net-watch": parse_netwatch,
     "arpwatch": parse_arpwatch,

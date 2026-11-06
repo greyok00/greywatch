@@ -50,7 +50,7 @@ def test_state_marks():
 
 def test_registry_seventeen_in_gui_sidebar_model():
     names = {t["name"] for t in load_registry()}
-    assert len(names) == 17
+    assert len(names) == 18
     assert "suricata" not in names
 
 def test_feed_hides_routine_shows_bad_and_scans():

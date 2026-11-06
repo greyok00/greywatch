@@ -60,4 +60,4 @@ def test_suricata_fully_removed_from_registry():
     reg = registry.load_registry()
     names = {t["name"] for t in reg}
     assert "suricata" not in names
-    assert len(reg) == 17
+    assert len(reg) == 18
