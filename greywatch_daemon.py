@@ -511,7 +511,11 @@ class Daemon:
                 continue
             spec = ev.get("interaction")
             if isinstance(spec, dict) and spec.get("id"):
-                self._ix[spec["id"]] = None
+                # the index now carries the whole spec, not just the id:
+                # the same pass feeds both the count and the published
+                # pending list (rebuild Phase 1, the 12-vs-0 fix)
+                self._ix[spec["id"]] = {"spec": spec,
+                                        "ts": str(ev.get("ts", ""))}
         return sum(1 for i in self._ix if i not in answered)
 
     def write_status(self):
@@ -583,6 +587,17 @@ class Daemon:
                 info["last_event"] = ev["ts"]
         # Every pending decision, not just the ones inside the recent window.
         snap["pending_decisions"] = self._pending_decisions(answered)
+        # The ONE list every surface renders: the pill counts its length,
+        # and the drawer, the pages and the popups read it from here, so
+        # the count and the visible rows can never disagree again (the
+        # 12-vs-0 mismatch class, killed at the publish point).
+        try:
+            from decisions_factory import enrich_pending
+            snap["pending_list"] = enrich_pending(self._ix, answered)
+        except Exception as e:
+            self.count_failure("status", "pending list", e)
+        else:
+            snap["pending_decisions"] = len(snap["pending_list"])
         try:
             from blockledger import page_digest
             snap["defense"] = page_digest(evs, self.data_dir, answered)

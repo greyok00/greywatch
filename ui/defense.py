@@ -156,7 +156,7 @@ class DefenseView(Gtk.Box):
         self.append(box)
         for title, host in (
                 ("Blocked addresses", "blocked"),
-                ("Block Reviewer questions", "asks"),
+                ("Decisions waiting", "asks"),
                 ("Network armor", "armor")):
             head = Gtk.Label(label=title, xalign=0)
             head.add_css_class("gw-page-title")
@@ -177,7 +177,12 @@ class DefenseView(Gtk.Box):
         doc = dict(snap or {}).get("defense") or {}
         rows = doc.get("blocked")
         self._paint_blocked(rows if isinstance(rows, list) else [])
-        asks = doc.get("asks")
+        # the ONE decision list, all sources (rebuild Phase 1): the page no
+        # longer reads reviewer-only digest asks, so a quarantine question
+        # or a scanner-ban prompt shows here exactly as the pill counts it
+        asks = (snap or {}).get("pending_list")
+        if asks is None:            # older daemon that has not published
+            asks = doc.get("asks")
         self._paint_asks(asks if isinstance(asks, list) else [])
         self._paint_armor()
 
@@ -232,7 +237,7 @@ class DefenseView(Gtk.Box):
     def _paint_asks(self, asks):
         from ui.decisionlist import card_widget
         if not asks:
-            self._quiet(self._asks, "The Block Reviewer has nothing to ask.")
+            self._quiet(self._asks, "Nothing is waiting for your answer.")
             return
         for ask in asks:
             spec = ask.get("spec") if isinstance(ask, dict) else None

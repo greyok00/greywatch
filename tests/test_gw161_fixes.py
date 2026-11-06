@@ -155,7 +155,10 @@ def test_decisions_window_answer_records_and_clears(store, monkeypatch,
     btn = row._gw_first_button() if hasattr(row, "_gw_first_button") \
         else _first_button(row)
     btn.emit("clicked")
-    _pump()
+    # the answer runs on a worker thread; the record lands through
+    # idle_add only once its subprocess has finished, so wait for it the
+    # way test_decisions_window_failed_helper_keeps_row_open already does
+    _wait_for(lambda: (store / "decisions.jsonl").exists(), 2.0)
     assert (store / "decisions.jsonl").exists()
     rec = json.loads((store / "decisions.jsonl").read_text().splitlines()[0])
     assert rec["id"] == "responderd:abc" and rec["option"] == "keep"

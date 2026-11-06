@@ -13,7 +13,6 @@ decisions waiting".
 from __future__ import annotations
 
 import datetime as _dt
-import json
 import pathlib
 import threading
 
@@ -22,7 +21,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
 import greywatch_daemon as dm  # noqa: F401  (patch target for older tests)
-from decisions_factory import pending_ids, record_answer
+from decisions_factory import record_answer
 from gwpaths import data_dir as _resolve_data_dir
 from ui import metrics
 
@@ -59,59 +58,16 @@ def _age_text(ts):
     return f"asked {mins // (60 * 24)} d ago"
 
 
-def _iter_interaction_events(data_dir):
-    """Events carrying a decision spec: whole file, daemon's counting rule.
-
-    The pill's count indexes every line of events.jsonl, not a capped tail;
-    the cli reader caps its scan, so a long backlog would show fewer rows
-    than the pill claims. Same fallback as the broker's pump: when
-    events.jsonl is not readable by the desktop user, status.json's recent
-    snapshot stands in instead of going blind.
-    """
-    try:
-        raw = (data_dir / "events.jsonl").read_bytes().split(b"\n")
-    except OSError:
-        raw = []
-    if not raw:
-        try:
-            snap = json.loads((data_dir / "status.json").read_text())
-            events = snap.get("recent") or []
-        except (OSError, ValueError):
-            events = []
-        raw = [json.dumps(ev).encode("utf-8", "replace") for ev in events]
-    for line in raw:
-        if b'"interaction"' not in line:
-            continue
-        try:
-            ev = json.loads(line.decode("utf-8", "replace"))
-        except ValueError:
-            continue
-        if isinstance(ev, dict):
-            yield ev
-
-
 def pending_rows(data_dir=None):
     """[(spec, ts)] of unanswered decisions, oldest asked first, one per id.
 
-    Repeated detections of the same subject re-emit the same id (the id is
-    keyed on the subject, not the moment); the newest occurrence wins so the
-    age shown reads "still seeing this", not "first saw this on Tuesday".
+    The rule (whole file, dedupe by id, repeats show the newest encounter)
+    lives in the shared decisions_factory since rebuild Phase 1 so the
+    GUI, the daemon counter and the published list can never drift.
     """
-    # Resolved at call time, not import time: a module-global bound the
-    # live store, so import order decided which store a widget read, and
-    # one page could show facts from two stores at once.
     data_dir = _resolve_data_dir() if data_dir is None else data_dir
-    answered = pending_ids(data_dir / "decisions.jsonl")
-    by_id, order = {}, []
-    for ev in _iter_interaction_events(data_dir):
-        spec = ev.get("interaction")
-        if not (isinstance(spec, dict) and spec.get("id")):
-            continue
-        sid = spec["id"]
-        if sid not in by_id:
-            order.append(sid)
-        by_id[sid] = (spec, ev.get("ts", ""))
-    return [(by_id[i][0], by_id[i][1]) for i in order if i not in answered]
+    from decisions_factory import pending_spec_pairs
+    return pending_spec_pairs(data_dir)
 
 
 def _tone(o):
@@ -204,8 +160,13 @@ def answer_record(data_dir, sid, oid):
 class DecisionsWindow(Gtk.Dialog):
     """Headline count, one card per pending decision, working answer buttons."""
 
+    # copy hooks: the Action Gate drawer reuses this whole answer pipeline
+    # with its own face (class attributes, overridden per subclass)
+    _window_title = "greywatch: decisions waiting"
+    _eyebrow = "greywatch · decisions"
+
     def __init__(self, parent=None, on_change=None):
-        super().__init__(title="greywatch: decisions waiting")
+        super().__init__(title=self._window_title)
         self.set_default_size(*metrics.dialog_size())
         self.add_css_class("gw-popup")
         parent = parent if parent is not None else _active_window()
@@ -218,7 +179,7 @@ class DecisionsWindow(Gtk.Dialog):
 
         head = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         head.add_css_class("gw-popup-header")
-        self._cat = Gtk.Label(label="greywatch · decisions", xalign=0)
+        self._cat = Gtk.Label(label=self._eyebrow, xalign=0)
         self._cat.add_css_class("gw-eyebrow")
         self._headline = Gtk.Label(xalign=0, wrap=True, selectable=True)
         self._headline.add_css_class("gw-headline")
@@ -260,16 +221,22 @@ class DecisionsWindow(Gtk.Dialog):
     def build_rows(self):
         rows = self._rows()
         n = len(rows)
-        self._headline.set_text(f"{n} decision{'s' if n != 1 else ''} waiting"
-                                if n else "No decisions waiting")
-        self._meta.set_text(
-            "decisions the suite is holding for your answer · every answer "
-            "is recorded in data/decisions.jsonl and never asked again"
-            if n else "nothing waits on you right now. decisions show up "
-            "when the suite quarantines something or asks about a "
-            "connection, and stay open until answered")
+        headline, meta = self._headline_copy(n)
+        self._headline.set_text(headline)
+        self._meta.set_text(meta)
+        self._list_append_rows(rows)
         self._build_bulk(rows)
 
+    def _headline_copy(self, n):
+        return (f"{n} decision{'s' if n != 1 else ''} waiting"
+                if n else "No decisions waiting",
+                "decisions the suite is holding for your answer · every "
+                "answer is recorded in data/decisions.jsonl and never asked "
+                "again" if n else "nothing waits on you right now. decisions "
+                "show up when the suite quarantines something or asks about "
+                "a connection, and stay open until answered")
+
+    def _list_append_rows(self, rows):
         _clear(self._list)
         if not rows:
             empty = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)

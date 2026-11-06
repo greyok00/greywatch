@@ -3752,8 +3752,10 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, Gtk.Window):
                 self._decisions_win = None
             else:
                 return
-        from ui.decisionlist import DecisionsWindow
-        self._decisions_win = DecisionsWindow(
+        # the drawer reads the ONE published list, so the pill's count and
+        # its rows can never disagree again (rebuild Phase 1)
+        from ui.actiongate import ActionGateWindow
+        self._decisions_win = ActionGateWindow(
             parent=self,
             on_change=lambda: self.refresh())
         self._decisions_win.connect(

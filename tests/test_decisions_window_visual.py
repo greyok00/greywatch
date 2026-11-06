@@ -54,6 +54,9 @@ def _min_widths(widget, out):
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     monkeypatch.setattr(dm, "DATA_DIR", tmp_path)
+    # rebuild Phase 1: the decision pipeline resolves through gwpaths, so
+    # steering lives on the env side (same rule the rest of the suite uses)
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
     return tmp_path
 
 

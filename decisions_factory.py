@@ -186,3 +186,112 @@ def sanitize(spec: dict) -> dict | None:
         return out
     except (AssertionError, KeyError, TypeError):
         return None
+
+
+# -- the ONE pending list (the 12-vs-0 fix, rebuild Phase 1) ------------------
+
+_SOURCE_NAMES = {
+    "hunter": "browser-watch",
+    "blockreviewer": "block-reviewer",
+}
+
+
+def _source_for(spec_id: str) -> str:
+    """The record source for a decision id: role names where the producer
+    is one of the four intelligence roles, the tool name otherwise."""
+    head = str(spec_id).split(":", 1)[0]
+    return _SOURCE_NAMES.get(head, head)
+
+
+def _kind_for(spec: dict) -> str:
+    """question = the keeper must answer through a helper; advisory =
+    carries context only. Derived from the options, never claimed."""
+    if any(o.get("helper") for o in spec.get("options", [])
+           if isinstance(o, dict)):
+        return "question"
+    return "advisory"
+
+
+def enrich_decision(spec, ts: str = "") -> dict:
+    """One item of the published pending list: the raw spec plus the flat
+    fields status consumers sort and count on (source, kind, title)."""
+    spec = spec if isinstance(spec, dict) else {}
+    options = [o for o in spec.get("options", []) if isinstance(o, dict)]
+    title = (spec.get("subject")
+             or str(spec.get("question", "")).split("\n", 1)[0]) or "?"
+    return {"id": str(spec.get("id") or ""),
+            "source": _source_for(spec.get("id") or ""),
+            "kind": _kind_for(spec),
+            "title": title,
+            "detail": spec.get("detail") or "",
+            "ts": ts,
+            "options": options,
+            "spec": spec}
+
+
+def iter_interaction_events(data_dir):
+    """Events carrying a decision spec: whole file, the daemon's counting
+    rule. Same fallback as the desktop list module: when events.jsonl is
+    not readable, status.json's recent snapshot stands in so the list can
+    never go blind while the daemon is still publishing."""
+    data_dir = pathlib.Path(data_dir)
+    try:
+        raw = (data_dir / "events.jsonl").read_bytes().split(b"\n")
+    except OSError:
+        raw = []
+    if not raw:
+        try:
+            snap = json.loads((data_dir / "status.json").read_text())
+            events = snap.get("recent") or []
+        except (OSError, ValueError):
+            events = []
+        raw = [json.dumps(ev).encode("utf-8", "replace") for ev in events]
+    for line in raw:
+        if b'"interaction"' not in line:
+            continue
+        try:
+            ev = json.loads(line.decode("utf-8", "replace"))
+        except ValueError:
+            continue
+        if isinstance(ev, dict):
+            yield ev
+
+
+def pending_spec_pairs(data_dir) -> list:
+    """[(raw spec, ts)] of unanswered decisions, oldest asked first, one
+    per id (newest occurrence wins for repeats). The same rule the GUI
+    card list and the daemon's counter both follow."""
+    answered = pending_ids(pathlib.Path(data_dir) / "decisions.jsonl")
+    by_id, order = {}, []
+    for ev in iter_interaction_events(data_dir):
+        spec = ev.get("interaction")
+        if not (isinstance(spec, dict) and spec.get("id")):
+            continue
+        sid = str(spec["id"])
+        if sid not in by_id:
+            order.append(sid)
+        by_id[sid] = (spec, str(ev.get("ts", "")))
+    return [(by_id[i][0], by_id[i][1]) for i in order
+            if i not in answered]
+
+
+def pending_decision_list(data_dir) -> list:
+    """The full pending decision list for status.json: every source, each
+    item carrying id, source, kind, title, detail, ts, options, and the
+    raw spec. The header pill counts THIS list's length; the drawer, the
+    pages and the popups render it, so no surface can disagree again."""
+    return [enrich_decision(spec, ts)
+            for spec, ts in pending_spec_pairs(data_dir)]
+
+
+def enrich_pending(index, answered) -> list:
+    """Daemon-side list build from the incremental interaction index (each
+    value is a {"spec", "ts"} pair), oldest first, answered removed."""
+    out = []
+    for sid, val in index.items():
+        if sid in answered:
+            continue
+        spec, ts = (val or (None, "")) if isinstance(val, dict) else (None, "")
+        spec = spec if isinstance(spec, dict) else {"id": sid}
+        out.append(enrich_decision(spec, ts or ""))
+    return out
