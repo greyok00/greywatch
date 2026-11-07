@@ -217,8 +217,15 @@ def build_pack(status: dict, events: list[dict], question: str,
         for row in search_events(words) + load_event_tail():
             if row not in history:
                 history.append(row)
+    # The Patch the Planet watch file: what this daemon has matched to
+    # installed software (or None when no watch run has arrived).
+    try:
+        from ptp import watch_rows as _ptp_watch_rows
+        ptp_watch = _ptp_watch_rows(gwpaths.data_dir())
+    except Exception:
+        ptp_watch = None
     needs = "needs" if warn == 1 else "need"
     return {"status_line":
             f"{green} of {total} protections green, {warn} {needs} attention",
             "tools": pack_tools, "snippets": snippets, "recent": recent,
-            "history": history}
+            "history": history, "ptp": ptp_watch}

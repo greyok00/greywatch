@@ -526,6 +526,58 @@ _LINE_POINTERS = ("file", "files", "line", "lines", "that", "this",
                   "these", "those", "newest", "latest", "last")
 
 
+def _ptp_watch_summary(pack: dict) -> dict | None:
+    """The watch file the daemon wrote for this machine, read out of the
+    chat pack; None when no watch run has arrived."""
+    watch = (pack or {}).get("ptp")
+    return watch if isinstance(watch, dict) else None
+
+
+def _ptp_concept_text(question: str, pack: dict) -> str | None:
+    """The watchlist rung. 'What is patch the planet?' explains the
+    program; 'am I covered?' reads THIS machine's watch file - the
+    never-fetched state reads as never-fetched, not as safe."""
+    low = (question or "").lower()
+    named = ("patch the planet" in low or "watchlist" in low
+             or "trail of bits" in low
+             or ("cover" in low
+                 and ("am i" in low or "what am i" in low
+                      or "how covered" in low)))
+    if not named:
+        return None          # not a watchlist question: the ladder falls through
+    watch = _ptp_watch_summary(pack)
+    projects = [c for c in (watch.get("projects") if
+                            isinstance(watch, dict) else None) or []]
+    asks_coverage = ("am i" in low or "covered" in low
+                     or "coverage" in low)
+    if asks_coverage:
+        if watch is None:
+            return ("No watch list has been read on this machine yet. Once"
+                    " the daemon runs its daily check it answers this"
+                    " from what it actually finds installed.")
+        if not projects:
+            return ("The watch list has been read, and nothing this"
+                    " machine runs is inside the program's review map.")
+        parts = []
+        for c in projects[:8]:
+            extra = (f", {c['high']} HIGH" if c.get("high") else "")
+            parts.append(f"{c['project']} ({c.get('findings', 0)} public"
+                         f" findings{extra})")
+        more = ("" if len(projects) <= 8
+                else f" and {len(projects) - 8} more")
+        return ("The Patch the Planet reviewers are already inside the"
+                " source of what this machine runs: "
+                + ", ".join(parts) + more
+                + ". Their findings are public, so an installed package on"
+                  " this list deserves an update when you choose to move"
+                  " it; I never apply one.")
+    return ("Patch the Planet is OpenAI's program with Trail of Bits, part"
+            " of the Daybreak effort: security engineers review critical"
+            " open source with AI-assisted discovery and publish every"
+            " finding on a public dashboard. GreyWatch reads that"
+            " dashboard, matches what is installed on this machine, and"
+            " shows the overlap on the Defense page. Ask 'am I covered' to"
+            " see the overlap for this machine.")
 def _concept_answer(question: str, pack: dict, friendly: dict) -> str | None:
     low = (question or "").lower()
     named_tool = _tool_from_question(question, friendly)
@@ -541,6 +593,9 @@ def _concept_answer(question: str, pack: dict, friendly: dict) -> str | None:
                 "and moved it to a safe holding area instead of deleting it. "
                 "Nothing on your computer ran that file, and it can be "
                 "restored if the alert was a mistake." + tail)
+    ptp_text = _ptp_concept_text(question, pack)
+    if ptp_text is not None:
+        return ptp_text
     for word, text in _STATE_MEANINGS.items():
         if re.search(rf"\b{word}\b", low) and (
                 "mean" in low or "what is" in low or "explain" in low
