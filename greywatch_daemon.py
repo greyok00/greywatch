@@ -369,14 +369,31 @@ class Daemon:
     def ptp_watch(self) -> int:
         """The Patch the Planet map as a watchlist lane: refresh the
         dashboard map daily, write the coverage file the pages read,
-        and announce each newly covered installed project once, in the
-        monitors' voice. The keeper still moves every package."""
+        announce each newly covered installed project once, and read out
+        what tonight's map added over yesterday's, in the monitors'
+        voice. The keeper still moves every package."""
         import ptp
         fired = 0
+        try:
+            old_rows = ptp.load_map(self.data_dir)
+        except Exception as e:
+            self.count_failure("ptp", "pre-refresh", e)
+            old_rows = []
         try:
             ptp.refresh(self.data_dir)
         except Exception as e:
             self.count_failure("ptp", "refresh", e)
+        try:
+            for severity, text, _key in ptp.evaluate_delta(
+                    self.data_dir, old_rows, ptp.load_map(self.data_dir)):
+                try:
+                    self._notice("cve-updater", severity, text,
+                                 dedupe_window_s=1.0)
+                    fired += 1
+                except Exception as e:
+                    self.count_failure("ptp", "delta-announce", e)
+        except Exception as e:
+            self.count_failure("ptp", "delta", e)
         try:
             from hardening.detector import prod_runner
             cov = ptp.coverage(ptp.load_map(self.data_dir), prod_runner)

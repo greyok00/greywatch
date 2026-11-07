@@ -299,6 +299,99 @@ def evaluate(data_dir, runner, rows=None) -> list:
     return out
 
 
+def delta_path(data_dir) -> pathlib.Path:
+    return pathlib.Path(data_dir) / "ptp-delta.jsonl"
+
+
+def _finding_key(row: dict) -> str:
+    return "|".join((str(row.get("project") or ""),
+                     str(row.get("severity") or ""),
+                     str(row.get("finding") or "")))
+
+
+def _seen_keys(path: pathlib.Path) -> set:
+    seen = set()
+    try:
+        with open(path, encoding="utf-8") as f:
+            for raw in f:
+                try:
+                    rec = json.loads(raw)
+                except ValueError:
+                    continue
+                if rec.get("key"):
+                    seen.add(rec["key"])
+    except OSError:
+        return set()
+    return seen
+
+
+def map_delta(rows_old, rows_new) -> dict:
+    """What tonight's map carries that yesterday's did not, per project.
+    A finding keeps its identity from project + severity + wording, so
+    edits in place read as new and removals simply vanish."""
+    seen = {_finding_key(r) for r in rows_old or [] if isinstance(r, dict)}
+    out: dict = {}
+    for r in rows_new or []:
+        if not isinstance(r, dict) or not r.get("project"):
+            continue
+        key = _finding_key(r)
+        if key not in seen:
+            out.setdefault(r["project"], []).append(r)
+    return out
+
+
+def evaluate_delta(data_dir, rows_old, rows_new) -> list:
+    """The nightly delta in the monitors' voice: one announcement per
+    newly arriving finding, keyed so a restart never re-reads old news.
+    Returns (severity, text, key) specs; nothing is announced that the
+    ledger already holds, and a ledger that cannot persist keeps the
+    news quiet (the next cycle tries again)."""
+    data_dir = pathlib.Path(data_dir)
+    delta = map_delta(rows_old, rows_new)
+    path = delta_path(data_dir)
+    seen = _seen_keys(path)
+    out, lines = [], []
+    now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+    for project in sorted(delta):
+        for r in delta[project]:
+            key = _finding_key(r)
+            if key in seen:
+                continue
+            sev = "HIGH" if r.get("severity") == "high" else "MEDIUM"
+            text = (f"{DASH_PROSE} map update: '{project}' adds a "
+                    f"{r.get('severity')} finding - {r.get('finding')} "
+                    f"first read at {now}")
+            out.append((sev, text, key))
+            lines.append(json.dumps(
+                {"key": key, "ts": now}, separators=(",", ":")))
+    if lines:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+        except OSError:
+            out.clear()          # cannot persist seen-state: say nothing
+    return out
+
+
+def cross_join(data_dir, name) -> dict | None:
+    """The watch row whose project or installed packages match `name`
+    (a machine tool the CVE lane named), or None: the two lanes meet
+    only where the program actually covers what the flaw touches. A
+    read joins on real coverage, never on word resemblance."""
+    if not name:
+        return None
+    low = str(name).strip().lower()
+    for rec in (watch_rows(pathlib.Path(data_dir)) or {}).get("projects") \
+            or []:
+        if not isinstance(rec, dict):
+            continue
+        pkgs = {str(p).lower() for p in rec.get("packages") or []}
+        if low == str(rec.get("project") or "").lower() or low in pkgs:
+            return rec
+    return None
+
+
 def watch_rows(data_dir) -> dict | None:
     """What the dashboard watch can claim for this machine's pages, or
     None when no map has ever arrived (the page says so, never guesses).

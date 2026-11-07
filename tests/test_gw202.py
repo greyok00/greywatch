@@ -182,3 +182,27 @@ def test_no_wave_code_upgrades_packages():
         src = (ROOT / f).read_text()
         for banned in ("apt upgrade", "apt-get", "apt install"):
             assert banned not in src, (f, banned)
+
+
+# ---- the cross-join (item 8): one announcement tells the whole story ------
+def test_cross_join_tells_a_cve_whose_tool_the_program_covers(tmp_path):
+    p = _cache(tmp_path, [{"id": "CVE-2026-0050", "modified": "m",
+                           "tool": "curl", "score": 8.5,
+                           "severity": "HIGH", "summary": "curl parse"}])
+    (tmp_path / "ptp-watch.json").write_text(json.dumps(
+        {"ts": "t", "projects": [
+            {"project": "curl", "findings": 12, "high": 3, "medium": 6,
+             "low": 3, "via": "deb", "packages": ["curl"]}]}))
+    specs = cverules.evaluate(tmp_path, cache_path=p)
+    assert len(specs) == 1
+    text = specs[0][1]
+    assert "watchlist" in text and "3 HIGH" in text
+    assert "installed versions" in text       # the original rule text stays
+
+
+def test_cross_join_stays_silent_when_nothing_overlaps(tmp_path):
+    p = _cache(tmp_path, [{"id": "CVE-2026-0051", "modified": "m",
+                           "tool": "psad", "score": 8.5,
+                           "severity": "HIGH", "summary": "psad parse"}])
+    text = cverules.evaluate(tmp_path, cache_path=p)[0][1]
+    assert "watchlist" not in text

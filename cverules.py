@@ -95,6 +95,25 @@ def _text(rule: dict) -> str:
     return f"{head} - installed versions need checking against this flaw"
 
 
+def _ptp_note(data_dir, tool: str) -> str:
+    """The cross-join, appended by evaluate() when the program's
+    watchlist already covers the tool the flaw touches: the keeper reads
+    one announcement instead of two halves of the same story."""
+    try:
+        import ptp
+        rec = ptp.cross_join(pathlib.Path(data_dir), tool)
+    except Exception:
+        return ""
+    if not rec:
+        return ""
+    who = rec.get("packages") or [rec.get("project")]
+    high = rec.get("high") or 0
+    tail = (f"{', '.join(str(p) for p in who)} is also on the "
+            f"{ptp.DASH_PROSE} watchlist")
+    return (f"; {tail}, {high} HIGH findings public "
+            if high else f"; {tail}")
+
+
 def evaluate(data_dir, cache_path=None) -> list:
     """Announce every ACTIVE flaw not yet announced. Returns the
     (severity, text, cve, tool) specs for the daemon to emit; writes one
@@ -108,8 +127,9 @@ def evaluate(data_dir, cache_path=None) -> list:
         cid = rule["cve"]
         if not cid or cid in seen:
             continue
-        out.append((_severity(rule["score"]), _text(rule), cid,
-                    rule["tool"]))
+        out.append((_severity(rule["score"]),
+                    _text(rule) + _ptp_note(data_dir, rule["tool"]),
+                    cid, rule["tool"]))
         lines.append(json.dumps(
             {"cve": cid, "tool": rule["tool"],
              "ts": _dt.datetime.now(_dt.timezone.utc)

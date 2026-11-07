@@ -433,12 +433,18 @@ class DefenseView(Gtk.Box):
         meta.set_hexpand(True)
         head.append(meta)
         head.append(Gtk.Button(label="Refresh map"))
+        head.append(Gtk.Button(label="Explain"))
         self._armor.append(head)
-        btn = head.get_last_child()
-        btn.set_tooltip_text(
+        ask_btn = head.get_last_child()          # appended last
+        refresh_btn = ask_btn.get_prev_sibling()
+        refresh_btn.set_tooltip_text(
             "Read the public dashboard map now; coverage matching "
             "catches up either way on the daemon's next cycle.")
-        btn.connect("clicked", self._refresh_watch)
+        refresh_btn.connect("clicked", self._refresh_watch)
+        ask_btn.set_tooltip_text(
+            "Open the assistant with a watchlist question; it answers "
+            "from this machine's own watch file.")
+        ask_btn.connect("clicked", self._ask_watch_explain)
         if rows is None:
             self._quiet(self._armor,
                         f"The {DASH_PROSE} watchlist has never been"
@@ -526,6 +532,16 @@ class DefenseView(Gtk.Box):
         body.append(scroll)
         dialog.connect("response", lambda d, _r: d.destroy())
         dialog.present()
+
+    def _ask_watch_explain(self, _btn=None):
+        """Route a real watchlist question to the assistant: the same
+        channel any other page uses, answered from the machine's own
+        watch file rather than from the page's guesses."""
+        w = self._win
+        if w is not None and hasattr(w, "_ask_assistant"):
+            w._ask_assistant(
+                "explain the Patch the Planet watchlist and whether "
+                "this machine is covered")
 
     def _refresh_watch(self, btn):
         """The user-side refresh channel: the map refetch runs in a child

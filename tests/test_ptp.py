@@ -321,3 +321,69 @@ def test_watch_info_reads_the_daemons_stamp(tmp_path, monkeypatch):
         '{"ts": "2026-11-06T21:00:00+00:00", "projects": [{"a": 1}]}')
     info = updates.ptp_watch_info()
     assert info["count"] == 1 and info["ts"].startswith("2026-11-06")
+
+
+# ---- the nightly delta: tonight's map vs yesterday's -----------------------
+def test_map_delta_reads_tonights_additions_only():
+    old = ptp.parse_dashboard(HTML)
+    new = old + [{"project": "curl", "severity": "high",
+                  "finding": "A brand new header overflow", "status": "New"}]
+    delta = ptp.map_delta(old, new)
+    assert list(delta) == ["curl"] and len(delta["curl"]) == 1
+    assert delta["curl"][0]["finding"].startswith("A brand new header")
+    # unchanged and removed findings are both silent: no re-reading, and
+    # a shrinking map is not news
+    assert ptp.map_delta(old, old) == {}
+    assert ptp.map_delta(old, old[:1]) == {}
+
+
+def test_evaluate_delta_announces_each_new_finding_once(tmp_path):
+    old = ptp.parse_dashboard(HTML)
+    new = old + [{"project": "sqlite", "severity": "high",
+                  "finding": "A fresh WAL race", "status": "New"}]
+    specs = ptp.evaluate_delta(tmp_path, old, new)
+    assert len(specs) == 1 and specs[0] == ("HIGH", specs[0][1],
+                                            specs[0][2])
+    assert "sqlite" in specs[0][1] and "A fresh WAL race" in specs[0][1]
+    assert "map update" in specs[0][1]
+    # the ledger holds the key, so a restart never re-reads old news
+    assert ptp.evaluate_delta(tmp_path, old, new) == []
+    assert ptp.delta_path(tmp_path).exists()
+
+
+def test_evaluate_delta_keeps_quiet_when_ledger_cannot_persist(
+        tmp_path):
+    old = ptp.parse_dashboard(HTML)
+    new = old + [{"project": "zlib", "severity": "medium",
+                  "finding": "A new slow write", "status": "New"}]
+    locked = ptp.delta_path(tmp_path)
+    locked.parent.mkdir(exist_ok=True)
+    locked.mkdir()          # append into a directory -> OSError
+    assert ptp.evaluate_delta(tmp_path, old, new) == []
+
+
+def test_cross_join_matches_on_real_coverage_only(tmp_path):
+    (tmp_path / "ptp-watch.json").write_text(json.dumps(
+        {"ts": "t", "projects": [
+            {"project": "curl", "findings": 12, "high": 3, "via": "deb",
+             "packages": ["curl"]}]}))
+    row = ptp.cross_join(tmp_path, "CURL")
+    assert row["project"] == "curl"
+    assert ptp.cross_join(tmp_path, "psad") is None
+    assert ptp.cross_join(tmp_path, "") is None
+
+
+# ---- the explain intent: Defense hands the chat a real question ------------
+def test_explain_button_routes_a_real_question(defense_view):
+    v = defense_view
+    asked = {}
+    v._win = type("W", (), {
+        "_ask_assistant": (lambda self, q: asked.update(q=q))})()
+    v.refresh({"defense": {}})
+    from gi.repository import Gtk
+    explains = [b for b in _walk_widgets(v._armor)
+                if isinstance(b, Gtk.Button) and b.get_label() == "Explain"]
+    assert explains
+    explains[0].emit("clicked")
+    assert "watchlist" in asked["q"]
+    v.unparent()
