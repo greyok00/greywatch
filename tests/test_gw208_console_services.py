@@ -177,7 +177,23 @@ class TestOverview:
         tool_row = list(page._feed["tool"]._rows)[0]
         tool_row.emit("clicked")
         labels = _labels(page._detail)
-        assert labels == ["Copy details"], labels
+        assert labels == ["Copy details", "Open Services"], labels
+
+    def test_jump_buttons_route_to_the_page_that_owns_the_lane(
+            self, store, monkeypatch):
+        page, win = self._page(store, monkeypatch)
+        page.refresh(page._win._get_status())
+        shown = []
+        page._win._show = lambda key: shown.append(key)
+        page._feed["tool"].picked = None
+        list(page._feed["tool"]._rows)[0].emit("clicked")
+        list(page._detail._acts)[1].emit("clicked")
+        page._feed["threat"].picked = None
+        list(page._feed["threat"]._rows)[0].emit("clicked")
+        jumps = [b for b in list(page._detail._acts)
+                 if b.get_label() == "Open Firewall"]
+        jumps[0].emit("clicked")
+        assert shown == ["services", "defense"]
 
     def test_tool_lane_row_never_carries_start_controls(
             self, store, monkeypatch):

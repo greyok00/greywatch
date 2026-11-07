@@ -381,6 +381,13 @@ class HunterPanel(Gtk.Box):
         har = Gtk.Button(label="Import HAR…")
         har.connect("clicked", self._on_import)
         cmd.append(har)
+        # the same events live in the Activity Log with their fix cards:
+        # one hop, no hunting (the hunter must not be a dead end)
+        rec = Gtk.Button(label="Open the Activity Log")
+        rec.add_css_class("gw-mini")
+        rec.set_tooltip_text("Every hunter event, with a fix card per row.")
+        rec.connect("clicked", self._open_record)
+        cmd.append(rec)
         self._ai_switch = Gtk.Switch()
         self._ai_switch.set_valign(Gtk.Align.CENTER)
         self._ai_switch.connect("state-set", self._on_ai_toggle)
@@ -655,6 +662,10 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
     def _related_open(self, _btn, key: str) -> None:
         if self.on_navigate is not None:
             self.on_navigate(key)
+
+    def _open_record(self, _btn):
+        if self.on_navigate is not None:
+            self.on_navigate("auditlog")
 
     # ------------------------------------------------------------ actions
 

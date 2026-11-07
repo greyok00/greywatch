@@ -48,7 +48,8 @@ class LogsDeskMixin:
         self.logs_status = Gtk.Label(xalign=0)
         self.logs_status.set_xalign(0)
         self.logs_status.set_text(
-            "Identical consecutive lines are grouped; newest first.")
+            "Click a row to resolve it; identical consecutive lines are"
+            " grouped, newest first.")
         self.logs_status.set_hexpand(True)
         row.append(self.logs_status)
         box.append(row)
@@ -89,6 +90,11 @@ class LogsDeskMixin:
         # GW-197: a row is clickable. Activation opens that row's lane
         # card, so fixing happens here instead of hunting for the lever.
         view.connect("row-activated", self._log_row_activated)
+        # the affordance has to be visible, not folklore: the pointer
+        # announces the fix card on any row, and the status line above
+        # says what a click does
+        view.set_has_tooltip(True)
+        view.connect("query-tooltip", self._log_row_tooltip)
         # Same header treatment as Recent activity: plain labels over the
         # fixed column widths, so "State" sits over the severity words.
         head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
@@ -123,6 +129,20 @@ class LogsDeskMixin:
         # The log table pages inside its own card; the page itself never
         # scrolls, so its filter row can never be pushed off-screen.
         return box
+
+    def _log_row_tooltip(self, view, x, y, kb, tip):
+        """Every row announces its fix card where the pointer is: the
+        affordance must be discoverable, not remembered."""
+        try:
+            path, _col, _cx, _cy = view.get_path_at_pos(x, y)
+        except Exception:
+            return False
+        if path is None or tip is None:
+            return False
+        tip.set_text(
+            "Click to open this row's fix card - it offers that lane's"
+            " controls and a link to the page that owns it.")
+        return True
 
     def _clear_log_pressed(self, _btn):
         d = Gtk.Dialog(title="Empty the event log?", transient_for=self,
@@ -204,6 +224,17 @@ class LogsDeskMixin:
         copy.add_css_class("gw-quiet")
         copy.connect("clicked", self._copy_log_row, ev)
         acts.append(copy)
+        # the page that owns this event, one click away: a threat row
+        # resolves fastest on the Firewall page (block ledger, Defense),
+        # a tool row on Services (lifecycle only)
+        jump = Gtk.Button(label="Open Firewall" if lane == "threat"
+                          else "Open Services")
+        jump.add_css_class("gw-quiet")
+        jump.set_tooltip_text(
+            "The page that manages this kind of event.")
+        jump.connect("clicked", lambda *_a, k=("defense" if lane == "threat"
+                                               else "services"): self._show(k))
+        acts.append(jump)
         body.append(acts)
         dlg.connect("response", lambda d, _r: d.destroy())
         present_now(dlg)

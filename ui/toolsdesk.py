@@ -545,7 +545,7 @@ class ToolsDesk(Gtk.Box):
                             lambda *_b, k=name: self.on_control(k))
             actions.append(ctl_btn)
         if self.on_navigate is not None:
-            open_btn = Gtk.Button(label="Open in Logs")
+            open_btn = Gtk.Button(label="Open the Activity Log")
             open_btn.add_css_class("gw-mini")
             open_btn.connect("clicked",
                              lambda *_b, k="logs":

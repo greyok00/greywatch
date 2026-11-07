@@ -151,6 +151,8 @@ class MetadataCard(Gtk.Box):
         self._body.set_visible(False)
         if lane != "threat":
             self._acts.append(self._copy_button(ev))
+            self._acts.append(self._jump_button("Open Services",
+                                                "services"))
             return
         for opt in threat_card_options(ev):
             b = Gtk.Button(label=str(opt.get("label", opt.get("id"))))
@@ -158,6 +160,21 @@ class MetadataCard(Gtk.Box):
                             else "gw-danger")
             b.connect("clicked", on_run_option, dict(opt))
             self._acts.append(b)
+        self._acts.append(self._jump_button("Open Firewall", "defense"))
+
+    def _jump_button(self, label, key):
+        """One click to the page that owns this kind of event. A quiet
+        link, not a control: it changes pages, never state."""
+        b = Gtk.Button(label=label)
+        b.add_css_class("gw-quiet")
+        b.set_tooltip_text("The page that manages this kind of event.")
+
+        def go(_b):
+            win = getattr(self, "_owner", None)
+            if win is not None and hasattr(win, "_show"):
+                win._show(key)
+        b.connect("clicked", go)
+        return b
 
     def _copy_button(self, ev):
         b = Gtk.Button(label="Copy details")
@@ -205,6 +222,7 @@ class OverviewPage(Gtk.Box):
         self.append(self._advisories)
 
         self._detail = MetadataCard()
+        self._detail._owner = win      # the jump links route through the shell
         self._feed = {"threat": _LaneFeed("Threat lane",
                                           self._show_detail),
                       "tool": _LaneFeed("Tool lane", self._show_detail)}

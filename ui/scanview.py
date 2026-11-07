@@ -82,7 +82,7 @@ def finding_path(text: str) -> str | None:
     return None
 
 
-def when_label(raw: str) -> str:
+def when_label(raw) -> str:
     """A history chip reads as a local moment, not raw ISO text."""
     try:
         when = _dt.datetime.fromisoformat(raw)
@@ -378,6 +378,16 @@ class ScanConsole(Gtk.Box):
         self.more_btn.set_visible(False)
         self.more_btn.connect("clicked", self._show_all_findings)
         self._feed.bodyrow(self.more_btn)
+        # the record is one click away: a finding here also lives in the
+        # Activity Log with its fix card, so the same event is resolvable
+        # from either surface
+        self.record_btn = Gtk.Button(label="Open the Activity Log")
+        self.record_btn.add_css_class("gw-mini")
+        self.record_btn.set_halign(Gtk.Align.START)
+        self.record_btn.set_tooltip_text(
+            "Every scan event, with a fix card per row.")
+        self.record_btn.connect("clicked", self._open_record)
+        self._feed.bodyrow(self.record_btn)
         self._last_findings = []
 
         self.routine_expander = Gtk.Expander()
@@ -390,6 +400,10 @@ class ScanConsole(Gtk.Box):
         self.refresh()
 
     # ---- desk side helpers --------------------------------
+    def _open_record(self, _btn):
+        if callable(self.on_navigate):
+            self.on_navigate("auditlog")
+
     def _on_run_pick(self, key: str) -> None:
         """Dossier fill for the picked feed row ("s:<scanner key>")."""
         self._run_key = str(key)
