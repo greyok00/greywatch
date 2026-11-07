@@ -1,10 +1,12 @@
 """Task 1 of the 2026-11-03 full-UI redesign: the app ships exactly two
-themes, and their token tables are the owner's frozen greyok values.
+themes. Rebuild phase 5 set the dark voice's tokens to the approved
+obsidian/slate palette (rebuild gameplan C1).
 
 Agency (light) = the agency-mono-plate voice: warm plate, near-black ink
 where the ink IS the accent, 2px keylines, mono labels. Aperture (dark) =
-the aperture-motion voice: graphite panels, one burnt-orange accent, warm
-ink. The cream/brass palette they replace may not reappear."""
+the dark slate voice on obsidian surfaces with lane accents crimson,
+amber, cyan, emerald. The graphite-orange palette it replaced and the
+cream/brass palette before it may not reappear."""
 
 import pathlib
 import sys
@@ -39,23 +41,23 @@ AGENCY = {
 }
 
 APERTURE = {
-    "--el-bg": "#131313",
-    "--el-panel": "#1a1a1a",
-    "--el-panel-2": "#212121",
-    "--el-panel-3": "#2b2b2b",
-    "--el-line": "#2c2c2c",
-    "--el-line-2": "#242424",
-    "--el-line-strong": "#404040",
-    "--el-ink": "#f4f1eb",
-    "--el-ink-soft": "#aba49a",
-    "--el-mute": "#948b7d",
-    "--el-on-accent": "#131313",
-    "--el-accent": "#ff7a1a",
-    "--el-accent-hover": "#ff9a45",
-    "--el-ok": "#4fd083",
-    "--el-warn": "#ffc53d",
-    "--el-fail": "#ff4a33",
-    "--el-info": "#7aa2ff",
+    "--el-bg": "#0b0e14",
+    "--el-panel": "#121824",
+    "--el-panel-2": "#182234",
+    "--el-panel-3": "#1e2a3f",
+    "--el-line": "#243048",
+    "--el-line-2": "#2c3a55",
+    "--el-line-strong": "#3a4a6b",
+    "--el-ink": "#eff3fa",
+    "--el-ink-soft": "#9faec6",
+    "--el-mute": "#7e90a9",
+    "--el-on-accent": "#0b0e14",
+    "--el-accent": "#00e5ff",
+    "--el-accent-hover": "#85ecff",
+    "--el-ok": "#00e676",
+    "--el-warn": "#ffb020",
+    "--el-fail": "#ff3b5c",
+    "--el-info": "#8ab4ff",
 }
 
 
@@ -82,8 +84,8 @@ def test_aperture_is_the_dark_graphite_voice():
     toks = load_themes()[APPROVED[1]]
     for name, value in APERTURE.items():
         assert toks[name].strip().lower() == value, f"{name}: {toks[name]}"
-    # Dark voice: warm ink and a burnt-orange accent, both far brighter
-    # than the graphite ground they sit on.
+    # Dark voice: bright ink and a high-contrast cyan accent, both far
+    # brighter than the obsidian ground they sit on.
     def channel_sum(hexc):
         h = hexc.strip().lstrip("#")
         return sum(int(h[i:i + 2], 16) for i in (0, 2, 4))
@@ -105,12 +107,12 @@ def test_defaults_point_at_the_two_voices():
 def test_no_accent_bleed_between_themes():
     agency_css = gtk_css(load_themes()[APPROVED[0]])
     aperture_css = gtk_css(load_themes()[APPROVED[1]])
-    # Aperture's burnt orange must never appear in the agency voice, and
-    # agency's paper tones must stay out of the graphite pages.
-    assert "#ff7a1a" not in agency_css
-    assert "#ff7a1a" in aperture_css
-    assert "#131313" not in agency_css
-    assert "#f4f1eb" in aperture_css
+    # Aperture's cyan must never appear in the agency voice, and agency's
+    # paper tones must stay out of the obsidian pages.
+    assert "#00e5ff" not in agency_css
+    assert "#00e5ff" in aperture_css
+    assert "#eff3fa" not in agency_css
+    assert "#eff3fa" in aperture_css
     assert "--el-" not in agency_css and "--el-" not in aperture_css
 
 

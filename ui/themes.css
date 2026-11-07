@@ -5,7 +5,7 @@
    rgba equivalents of the source voices:
      agency accent-soft = ink 7% over transparent (ink #171715)
      agency focus-ring  = ink 50%
-     aperture accent-soft = accent 13% (accent #ff7a1a)
+     aperture accent-soft = accent 13% (accent #00e5ff)
      aperture focus-ring  = accent 62%
 */
 [data-theme="agency"] {
@@ -28,21 +28,22 @@
   --el-font-serif: 'Instrument Serif', 'Georgia', serif;
 }
 
-/* aperture-motion: graphite field, warm ink, one burnt-orange mark.
-   The accent never bleeds into the light voice; the light voice's ink-as-
-   accent never appears here. Dark theme logo = exact inversion of the
-   original wolf badge bytes (see ui/plain.py / the logo helpers). */
+/* aperture-motion: obsidian slate field, bright ink, lane accents
+   crimson/amber/cyan/emerald. The accent never bleeds into the light
+   voice; the light voice's ink-as-accent never appears here. Dark theme
+   logo = exact inversion of the original wolf badge bytes (see ui/plain.py
+   / the logo helpers). */
 [data-theme="aperture"] {
-  --el-bg: #131313; --el-panel: #1a1a1a; --el-panel-2: #212121; --el-panel-3: #2b2b2b;
-  --el-line: #2c2c2c; --el-line-2: #242424; --el-line-strong: #404040;
-  --el-ink: #f4f1eb; --el-ink-soft: #aba49a; --el-mute: #948b7d;
-  --el-on-accent: #131313;
-  --el-accent: #ff7a1a; --el-accent-hover: #ff9a45; --el-accent-soft: rgba(255,122,26,0.13);
-  --el-ok: #4fd083; --el-warn: #ffc53d; --el-fail: #ff4a33;
-  --el-info: #7aa2ff; --el-live: #ff7a1a; --el-teal: #48c5ac;
-  --el-overlay: rgba(10,9,8,0.70);
-  --el-focus-ring: rgba(255,122,26,0.62);
-  --el-lane-threat: #ff4a33; --el-lane-tool: #48c5ac;
+  --el-bg: #0b0e14; --el-panel: #121824; --el-panel-2: #182234; --el-panel-3: #1e2a3f;
+  --el-line: #243048; --el-line-2: #2c3a55; --el-line-strong: #3a4a6b;
+  --el-ink: #eff3fa; --el-ink-soft: #9faec6; --el-mute: #7e90a9;
+  --el-on-accent: #0b0e14;
+  --el-accent: #00e5ff; --el-accent-hover: #85ecff; --el-accent-soft: rgba(0,229,255,0.13);
+  --el-ok: #00e676; --el-warn: #ffb020; --el-fail: #ff3b5c;
+  --el-info: #8ab4ff; --el-live: #00e5ff; --el-teal: #00e5ff;
+  --el-overlay: rgba(5,8,14,0.70);
+  --el-focus-ring: rgba(0,229,255,0.62);
+  --el-lane-threat: #ff3b5c; --el-lane-tool: #00e5ff;
   --el-s-2: 4px; --el-s-3: 8px; --el-s-4: 12px; --el-s-5: 18px; --el-s-6: 26px;
   --el-radius: 4px;
   --el-r-sm: 2px; --el-r-md: 3px; --el-r-lg: 4px; --el-r-xl: 6px;
