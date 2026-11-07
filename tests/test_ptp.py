@@ -234,5 +234,90 @@ def test_defense_page_stays_quiet_without_covered_software(
     monkeypatch.setattr(defense, "ptp_rows", lambda _dd: [])
     v.refresh({"defense": {}})
     text = " ".join(_walk_labels(v._armor))
-    assert "Patch the Planet watchlist" not in text
+    # the section keeps its head and refresh channel now, but it never
+    # claims coverage: no per-project rows when nothing is covered
+    assert "Patch the Planet watchlist" in text          # head remains
+    assert "nothing this machine runs is inside the review map" in text
+    assert "(as " not in text
     v.unparent()
+
+
+# ---- the UI wave: drill-down, refresh channel, badge, tile -----------------
+def test_ptp_high_count_sums_only_real_watch_rows(tmp_path):
+    (tmp_path / "ptp-watch.json").write_text(json.dumps(
+        {"ts": "2026-11-06T21:00:00+00:00",
+         "projects": [{"project": "curl", "high": 3},
+                      {"project": "vllm", "high": 2}]}))
+    assert defense.ptp_high_count(tmp_path) == 5
+    # never fetched reads as 0: the badge counts defense news
+    assert defense.ptp_high_count(tmp_path / "none") == 0
+
+
+def test_watch_stamp_formats_the_last_watch_run(tmp_path):
+    (tmp_path / "ptp-watch.json").write_text(
+        '{"ts": "2026-11-01T21:05:00+00:00"}')
+    assert "Nov 01" in defense.ptp_watch_stamp(tmp_path)
+    assert defense.ptp_watch_stamp(tmp_path / "none") == ""
+
+
+def test_watch_rows_render_as_buttons_opening_the_drill_down(
+        monkeypatch, defense_view):
+    v = defense_view
+    monkeypatch.setattr(defense, "ptp_rows", lambda _dd: [
+        {"project": "curl", "findings": 2, "high": 1, "medium": 1,
+         "low": 0, "via": "deb", "packages": ["curl"]}])
+    v.refresh({"defense": {}})
+    from gi.repository import Gtk
+    btns = [w for w in _walk_widgets(v._armor) if isinstance(w, Gtk.Button)]
+    assert any("Show the map rows for curl" ==
+               (btn.get_tooltip_text() or "") for btn in btns)
+    v.unparent()
+
+
+def _walk_widgets(widget):
+    out = []
+    c = widget.get_first_child()
+    while c is not None:
+        out.append(c)
+        out.extend(_walk_widgets(c))
+        c = c.get_next_sibling()
+    return out
+
+
+def test_project_findings_filters_the_freshest_map(monkeypatch,
+                                                   defense_view):
+    v = defense_view
+    monkeypatch.setattr(defense, "ptp_load_map", lambda _p: [
+        {"project": "curl", "severity": "high", "finding": "one",
+         "status": "Issue"},
+        {"project": "sqlite", "severity": "low", "finding": "two"}])
+    rows = v._project_findings(".", "curl")
+    assert len(rows) == 1 and rows[0]["finding"] == "one"
+    assert v._project_findings(".", "") == []
+
+
+def test_refresh_channel_runs_the_child_process(monkeypatch):
+    import ui.updates as updates
+    seen = {}
+    def fake_run(argv, **_k):
+        seen["argv"] = argv
+        seen["kw"] = _k
+        class R:
+            returncode = 0
+        R.stdout = "map refreshed: 472 findings; 3 projects covered\n"
+        R.stderr = ""
+        return R
+    monkeypatch.setattr(updates.subprocess, "run", fake_run)
+    rc, msg = updates.refresh_ptp()
+    assert rc == 0 and "3 projects covered" in msg
+    assert seen["argv"][1].endswith("ptp.py")
+
+
+def test_watch_info_reads_the_daemons_stamp(tmp_path, monkeypatch):
+    import ui.updates as updates
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    assert updates.ptp_watch_info() is None
+    (tmp_path / "ptp-watch.json").write_text(
+        '{"ts": "2026-11-06T21:00:00+00:00", "projects": [{"a": 1}]}')
+    info = updates.ptp_watch_info()
+    assert info["count"] == 1 and info["ts"].startswith("2026-11-06")

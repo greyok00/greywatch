@@ -1522,7 +1522,11 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         # count the same pointer-relative list (home_unread, homepage.py);
         # the hunter's unread now rides the Firewall page's badge (Phase 4).
         if getattr(self, "_badges", None):
-            self.set_badge("defense", len(home_unread(self.data_dir)))
+            from ui.defense import ptp_high_count
+            # additive: unread notes plus any HIGH findings the watchlist
+            # is carrying; no watch run contributes nothing
+            self.set_badge("defense", len(home_unread(self.data_dir))
+                           + ptp_high_count(self.data_dir))
         # The suite verdict leads Home; it repaints on the same
         # cycle as the digest so neither can drift from status.json.
         self._refresh_fw()

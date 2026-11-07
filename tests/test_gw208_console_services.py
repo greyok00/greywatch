@@ -144,7 +144,17 @@ class TestOverview:
         values = {cap: card._value.get_text()
                   for cap, card in page._stats.items()}
         assert values == {"blocked": "1", "tools online": "5 / 10",
+                          "watchlist": "not read",
                           "CVE rules": "2", "pending decisions": "2"}
+
+    def test_watchlist_tile_counts_covered_projects(self, store,
+                                                    monkeypatch):
+        (store / "ptp-watch.json").write_text(json.dumps(
+            {"ts": "2026-11-06T21:00:00+00:00",
+             "projects": [{"project": "curl"}, {"project": "vllm"}]}))
+        page, _win = self._page(store, monkeypatch)
+        page.refresh(page._win._get_status())
+        assert page._stats["watchlist"]._value.get_text() == "2"
 
     def test_feed_splits_the_two_lanes(self, store, monkeypatch):
         page, _win = self._page(store, monkeypatch)

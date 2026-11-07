@@ -191,8 +191,8 @@ class OverviewPage(Gtk.Box):
 
         ribbon = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self._stats = {cap: _StatCard(cap) for cap in
-                       ("blocked", "tools online", "CVE rules",
-                        "pending decisions")}
+                       ("blocked", "tools online", "watchlist",
+                        "CVE rules", "pending decisions")}
         for cap, card in self._stats.items():
             ribbon.append(card)
         self.append(ribbon)
@@ -304,7 +304,7 @@ class OverviewPage(Gtk.Box):
         self._paint_gate()
 
     def _paint_ribbon(self, snap):
-        from ui.defense import cve_rows
+        from ui.defense import cve_rows, ptp_rows
         tools = snap.get("tools") or {}
         online = sum(1 for t in tools.values()
                      if t.get("state") == "GREEN")
@@ -316,6 +316,9 @@ class OverviewPage(Gtk.Box):
             asks = snap.get("pending_decisions") or 0
         self._stats["pending decisions"].set_value(
             str(len(asks) if isinstance(asks, list) else asks))
+        watch = ptp_rows(self._data_dir())
+        self._stats["watchlist"].set_value(
+            str(len(watch)) if isinstance(watch, list) else "not read")
         rules = cve_rows(self._data_dir())
         self._stats["CVE rules"].set_value(
             str(len(rules)) if rules is not None else "not fetched")

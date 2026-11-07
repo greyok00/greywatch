@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import os
 import pathlib
 import re
@@ -11,7 +12,8 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk    # noqa: E402
 
 from cverules import active_rules, TOOL_LABEL
-from ptp import watch_rows as ptp_watch_rows, DASH_PROSE
+from ptp import (watch_rows as ptp_watch_rows, load_map as ptp_load_map,
+                 DASH_PROSE)
 from ui import metrics
 from ui.plain import escape
 
@@ -117,6 +119,37 @@ def ptp_rows(data_dir):
     if rows is None:
         return None
     return rows.get("projects") if isinstance(rows, dict) else []
+
+
+def ptp_high_count(data_dir):
+    """How many HIGH findings the covered projects carry, for the rail
+    badge riding the Defense count. Never fetched reads as 0: the badge
+    counts defense news, and no watch run is no defense news."""
+    rows = ptp_rows(data_dir)
+    if not isinstance(rows, list):
+        return 0
+    return sum(int(r.get("high") or 0) for r in rows
+               if isinstance(r, dict))
+
+
+def ptp_watch_stamp(data_dir) -> str:
+    """When coverage was last matched, in human words ('today 14:52');
+    empty when no watch run has arrived."""
+    path = pathlib.Path(data_dir) / "ptp-watch.json"
+    try:
+        ts = json.loads(path.read_text(encoding="utf-8")).get("ts")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    try:
+        when = _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return ""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=_dt.timezone.utc)
+    local = when.astimezone()
+    if local.date() == _dt.datetime.now().astimezone().date():
+        return "today " + local.strftime("%H:%M")
+    return local.strftime("%b %d %H:%M")
 
 
 def _age(ts):
@@ -384,21 +417,39 @@ class DefenseView(Gtk.Box):
         program's public map matched to what is installed on this box.
         The coverage file is the daemon's; the page never runs a package
         listing, and a missing map reads as 'never fetched', not as
-        'nothing is covered'."""
-        rows = ptp_rows(getattr(self._win, "data_dir", "") or ".")
+        'nothing is covered'. Each row opens the project's map rows in a
+        dialog, and the head carries the last watch stamp plus the user
+        refresh channel."""
+        dd = getattr(self._win, "data_dir", "") or "."
+        rows = ptp_rows(dd)
+        stamp = ptp_watch_stamp(dd)
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        cap = ("Patch the Planet watchlist: code the world's AI-assisted"
+               " reviewers are covering is installed here")
+        if stamp:
+            cap += f" - watchlist read {stamp}"
+        meta = Gtk.Label(label=cap, xalign=0, wrap=True)
+        meta.add_css_class("gw-meta")
+        meta.set_hexpand(True)
+        head.append(meta)
+        head.append(Gtk.Button(label="Refresh map"))
+        self._armor.append(head)
+        btn = head.get_last_child()
+        btn.set_tooltip_text(
+            "Read the public dashboard map now; coverage matching "
+            "catches up either way on the daemon's next cycle.")
+        btn.connect("clicked", self._refresh_watch)
         if rows is None:
             self._quiet(self._armor,
                         f"The {DASH_PROSE} watchlist has never been"
-                        " read; the daemon arms this section.")
+                        " read; the refresh above or the daemon arms"
+                        " this section.")
             return
         if not rows:
-            return   # a machine with no covered software stays quiet
-        head = ("Patch the Planet watchlist: code the world's AI-assisted"
-                " reviewers are covering is installed here")
-        meta = Gtk.Label(label=escape(head), xalign=0, wrap=True,
-                         selectable=True)
-        meta.add_css_class("gw-meta")
-        self._armor.append(meta)
+            self._quiet(self._armor,
+                        "The watchlist has been read, and nothing this"
+                        " machine runs is inside the review map.")
+            return
         for cov in rows:
             if not isinstance(cov, dict) or not cov.get("project"):
                 continue
@@ -408,10 +459,110 @@ class DefenseView(Gtk.Box):
                    + (f", {cov.get('high', 0)} HIGH" if cov.get("high") else "")
                    + " - verify the installed version when the"
                      " keeper chooses to")
-            row = Gtk.Label(label=escape(txt), xalign=0, wrap=True,
-                            selectable=True)
-            row.add_css_class("gw-meta")
-            self._armor.append(row)
+            btn = Gtk.Button()
+            btn.set_tooltip_text(
+                f"Show the map rows for {cov.get('project')}")
+            face = Gtk.Label(label=escape(txt), xalign=0, wrap=True)
+            face.add_css_class("gw-meta")
+            btn.set_child(face)
+            btn.connect("clicked", self._open_project_cover,
+                        str(cov.get("project")))
+            self._armor.append(btn)
+
+    def _project_findings(self, data_dir, project) -> list:
+        """Every map row for one project, from the freshest map the
+        machine has (runtime refresh, then the shipped snapshot)."""
+        if not project:
+            return []
+        return [r for r in ptp_load_map(pathlib.Path(data_dir))
+                if isinstance(r, dict) and r.get("project") == project]
+
+    def _open_project_cover(self, _btn, project):
+        """The project's own slice of the public map, in a dialog with
+        its own scroll (the page stays short; the drill-down is on
+        demand). Severity words read straight from the map."""
+        findings = self._project_findings(
+            getattr(self._win, "data_dir", "") or ".", project)
+        dialog = Gtk.Dialog(title=f"{project} in the program's map",
+                            transient_for=self.get_root(), modal=False)
+        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        dialog.set_default_size(*metrics.dialog_size())
+        body = dialog.get_content_area()
+        body.set_margin_top(12)
+        body.set_margin_bottom(12)
+        body.set_margin_start(18)
+        body.set_margin_end(18)
+        body.set_spacing(8)
+        head_text = (f"{project}: {len(findings)} findings in the map the"
+                     " world's AI-assisted reviewers publish. This is"
+                     " their coverage, not a scan of this machine."
+                     if findings else
+                     f"{project}: the program's map could not be read"
+                     " just now, so the project's rows are unavailable.")
+        head = Gtk.Label(xalign=0, wrap=True)
+        head.set_xalign(0)
+        head.set_text(head_text)
+        head.add_css_class("gw-page-meta")
+        body.append(head)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        for f in findings:
+            sev = str(f.get("severity") or "-").upper()
+            chip = Gtk.Label(label=sev)
+            chip.add_css_class("gw-sev")
+            chip.set_size_request(84, -1)
+            text = Gtk.Label(
+                label=str(f.get("finding") or "")
+                + (f" ({f.get('status')})" if f.get("status") else ""),
+                xalign=0, wrap=True)
+            text.set_hexpand(True)
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.append(chip)
+            row.append(text)
+            box.append(row)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_vexpand(True)
+        scroll.set_child(box)
+        body.append(scroll)
+        dialog.connect("response", lambda d, _r: d.destroy())
+        dialog.present()
+
+    def _refresh_watch(self, btn):
+        """The user-side refresh channel: the map refetch runs in a child
+        process (same channel as the CVE refresh), never on the UI
+        thread, and coverage matching catches up on the daemon's next
+        cycle in any case."""
+        if getattr(self, "_watch_busy", False):
+            return
+        self._watch_busy = True
+        btn.set_sensitive(False)
+        btn.set_label("reading the map…")
+
+        def work():
+            try:
+                from ui.updates import refresh_ptp
+                rc = refresh_ptp()[0]
+            except Exception:
+                rc = -1
+            from gi.repository import GLib
+            GLib.idle_add(self._after_watch_refresh, rc)
+            return False
+
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+
+    def _after_watch_refresh(self, rc):
+        from ui.decisionlist import _clear
+        self._watch_busy = False
+        _clear(self._armor)
+        self._paint_armor()
+        if rc == 0:
+            self._quiet(self._watch, "The map was read again; fresh"
+                        " coverage follows on the daemon's next cycle.")
+        else:
+            self._quiet(self._watch, f"The map refresh did not finish"
+                        f" (exit code {rc}); the old map stands.")
+        return False
 
     def _paint_armor(self):
         psad = psad_status()

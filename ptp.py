@@ -310,3 +310,38 @@ def watch_rows(data_dir) -> dict | None:
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def _watch_file_write(data_dir, runner=None) -> int:
+    """The watch file the pages read, written by whichever lane is doing
+    the matching (the daemon on its daily cycle, the user-side refresh
+    between cycles). Same shape, one writer at a time, atomic."""
+    try:
+        if runner is None:
+            from hardening.detector import prod_runner as runner
+        cov = coverage(load_map(data_dir), runner)
+        path = pathlib.Path(data_dir) / "ptp-watch.json"
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(
+            {"ts": _dt.datetime.now(_dt.timezone.utc)
+                  .isoformat(timespec="seconds"), "projects": cov},
+            separators=(",", ":")), encoding="utf-8")
+        tmp.replace(path)
+        return len(cov)
+    except Exception:
+        return -1
+
+
+if __name__ == "__main__":
+    # The user-side refresh channel (mirrors cve-refresh.py): same state
+    # directory, same files, one writer at a time with the daemon.
+    from gwpaths import data_dir as _data
+
+    _dd = _data()
+    _n = refresh(_dd)
+    _out = ("map unchanged (dashboard unreachable)" if not _n
+            else f"map refreshed: {_n} findings")
+    _m = _watch_file_write(_dd)
+    _out += ("; coverage left for the daemon" if _m < 0
+             else f"; {_m} projects covered")
+    print(_out)

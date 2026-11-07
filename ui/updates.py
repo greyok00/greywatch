@@ -95,3 +95,30 @@ def refresh_cve(timeout=240) -> tuple:
         return out.returncode, (msg[-1] if msg else "")
     except (OSError, subprocess.SubprocessError) as e:
         return -1, str(e)
+
+
+def ptp_watch_info() -> dict | None:
+    """The daemon's watch coverage file: when it last matched and how
+    many projects it covered, or None when no watch run has arrived
+    (never-fetched reads as never-fetched, never as safe)."""
+    try:
+        data = json.loads((_gw_data() / "ptp-watch.json").read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return {"ts": data.get("ts"),
+            "count": len(data.get("projects") or [])}
+
+
+def refresh_ptp(timeout=90) -> tuple:
+    """Pull the dashboard map through the child-process channel (the
+    refresh runs ptp.py itself, same state files, same writer rules)."""
+    try:
+        out = subprocess.run(
+            [sys.executable, str(ROOT / "ptp.py")],
+            capture_output=True, text=True, timeout=timeout)
+        msg = (out.stdout or out.stderr or "").strip().splitlines()
+        return out.returncode, (msg[-1] if msg else "")
+    except (OSError, subprocess.SubprocessError) as e:
+        return -1, str(e)

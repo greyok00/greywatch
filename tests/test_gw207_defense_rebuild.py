@@ -71,8 +71,10 @@ def test_good_armor_rows_carry_no_button(monkeypatch, stub_armor):
                {"pinned": True, "sysctls": True})
     v.refresh({"defense": {}})
     labels = _labels(v._armor)
+    # good probes carry nothing; the watchlist head's refresh button is
+    # the only other control the armor section ever holds
     assert labels == [f"{label}: good" for label, _k, _h
-                      in v._ARMOR_PROBES]
+                      in v._ARMOR_PROBES] + ["Refresh map"]
     v.unparent()
 
 
@@ -87,9 +89,12 @@ def test_open_and_unreadable_rows_carry_their_arming_helper(
     armed = [b for b in buttons if b.get_sensitive()]
     pairs = {b.get_label(): b for b in armed}
     # every open or unreadable probe carries its own Arm button; the two
-    # good rows (armed, sysctls) sit out
-    assert set(pairs) == {"Arm: Sweep watcher feed", "Arm: Inbound log chain",
-                          "Arm: psad service", "Arm: Router address pinned"}
+    # good rows (armed, sysctls) sit out. The watchlist refresh is the
+    # one remaining sensitive button and it arms nothing.
+    assert set(pairs) - {"Refresh map"} == {
+        "Arm: Sweep watcher feed", "Arm: Inbound log chain",
+        "Arm: psad service", "Arm: Router address pinned"}
+    assert set(pairs) | {"Refresh map"} == {b.get_label() for b in armed}
     v.unparent()
 
 
@@ -103,7 +108,10 @@ def test_arm_buttons_route_through_the_confirm_pipeline(monkeypatch,
     v._win = type("W", (), {"_run_log_option": (lambda self, btn, opt:
                                                 routed.append(dict(opt)))})()
     v.refresh({"defense": {}})
-    buttons = [b for b in _count_buttons(v._armor) if b.get_sensitive()]
+    # the click-through covers the arming rows only: the watchlist
+    # refresh is a separate channel and must never be driven here
+    buttons = [b for b in _count_buttons(v._armor) if b.get_sensitive()
+               and str(b.get_label() or "").startswith("Arm:")]
     for b in buttons:
         b.emit("clicked")
     psad_labels = ("Sweep watcher feed", "Inbound log chain",
