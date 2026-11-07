@@ -11,6 +11,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk    # noqa: E402
 
 from cverules import active_rules, TOOL_LABEL
+from ptp import watch_rows as ptp_watch_rows, DASH_PROSE
 from ui import metrics
 from ui.plain import escape
 
@@ -106,6 +107,16 @@ def cve_rows(data_dir):
         return active_rules(cache)
     except Exception:
         return []
+
+
+def ptp_rows(data_dir):
+    """The Patch the Planet watchlist coverage the daemon wrote for this
+    machine, or None when no watch file exists yet (the page says so
+    rather than guessing; unreadable never reads as safe)."""
+    rows = ptp_watch_rows(pathlib.Path(data_dir))
+    if rows is None:
+        return None
+    return rows.get("projects") if isinstance(rows, dict) else []
 
 
 def _age(ts):
@@ -368,6 +379,40 @@ class DefenseView(Gtk.Box):
     _ARMOR_CLASSES = {True: "gw-armor-good", False: "gw-armor-open",
                       None: "gw-armor-unknown"}
 
+    def _paint_watchlist(self):
+        """The Patch the Planet watch rows, under the armor pack: the
+        program's public map matched to what is installed on this box.
+        The coverage file is the daemon's; the page never runs a package
+        listing, and a missing map reads as 'never fetched', not as
+        'nothing is covered'."""
+        rows = ptp_rows(getattr(self._win, "data_dir", "") or ".")
+        if rows is None:
+            self._quiet(self._armor,
+                        f"The {DASH_PROSE} watchlist has never been"
+                        " read; the daemon arms this section.")
+            return
+        if not rows:
+            return   # a machine with no covered software stays quiet
+        head = ("Patch the Planet watchlist: code the world's AI-assisted"
+                " reviewers are covering is installed here")
+        meta = Gtk.Label(label=escape(head), xalign=0, wrap=True,
+                         selectable=True)
+        meta.add_css_class("gw-meta")
+        self._armor.append(meta)
+        for cov in rows:
+            if not isinstance(cov, dict) or not cov.get("project"):
+                continue
+            txt = (f"{cov.get('project')} (as "
+                   f"{', '.join(cov.get('packages') or [])}): "
+                   f"{cov.get('findings', 0)} public findings"
+                   + (f", {cov.get('high', 0)} HIGH" if cov.get("high") else "")
+                   + " - verify the installed version when the"
+                     " keeper chooses to")
+            row = Gtk.Label(label=escape(txt), xalign=0, wrap=True,
+                            selectable=True)
+            row.add_css_class("gw-meta")
+            self._armor.append(row)
+
     def _paint_armor(self):
         psad = psad_status()
         arp = arp_status()
@@ -378,6 +423,7 @@ class DefenseView(Gtk.Box):
                      else arp).get(key)
             wrap.append(self._armor_row(label, state, helper))
         self._armor.append(wrap)
+        self._paint_watchlist()
         rules = cve_rows(getattr(self._win, "data_dir", "") or ".")
         if rules is None:
             self._quiet(self._armor,

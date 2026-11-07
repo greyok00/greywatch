@@ -364,6 +364,46 @@ class Daemon:
                 self.count_failure("cve", "announce", e)
         return fired
 
+    PTP_INTERVAL_S = 24 * 3600
+
+    def ptp_watch(self) -> int:
+        """The Patch the Planet map as a watchlist lane: refresh the
+        dashboard map daily, write the coverage file the pages read,
+        and announce each newly covered installed project once, in the
+        monitors' voice. The keeper still moves every package."""
+        import ptp
+        fired = 0
+        try:
+            ptp.refresh(self.data_dir)
+        except Exception as e:
+            self.count_failure("ptp", "refresh", e)
+        try:
+            from hardening.detector import prod_runner
+            cov = ptp.coverage(ptp.load_map(self.data_dir), prod_runner)
+            watch = {"ts": _dt.datetime.now(_dt.timezone.utc)
+                            .isoformat(timespec="seconds"),
+                     "projects": cov}
+            path = self.data_dir / "ptp-watch.json"
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(watch, separators=(",", ":")),
+                           encoding="utf-8")
+            tmp.replace(path)
+        except Exception as e:
+            self.count_failure("ptp", "coverage", e)
+        try:
+            from hardening.detector import prod_runner
+            for severity, text, _proj, _pkgs in ptp.evaluate(
+                    self.data_dir, prod_runner):
+                try:
+                    self._notice("cve-updater", severity, text,
+                                 dedupe_window_s=1.0)
+                    fired += 1
+                except Exception as e:
+                    self.count_failure("ptp", "announce", e)
+        except Exception as e:
+            self.count_failure("ptp", "evaluate", e)
+        return fired
+
     def _firewall_has_block(self, ip: str) -> bool:
         try:
             r = subprocess.run(
@@ -1105,6 +1145,7 @@ class Daemon:
         heartbeat_at = time.monotonic() + 900      # every tool: 15-min check-in
         verify_at = time.monotonic() + self.VERIFY_INTERVAL_S   # wave B
         cve_at = time.monotonic() + self.CVE_INTERVAL_S        # wave C
+        ptp_at = time.monotonic() + self.PTP_INTERVAL_S        # watchlist
         engine_check_at = time.monotonic() + 10
         engine_fails: list[float] = []
         scan_arm_at = time.monotonic() + 30
@@ -1202,6 +1243,12 @@ class Daemon:
                         self.cve_watch()
                     except Exception as e:
                         self.count_failure("cve", "tick", e)
+                if now >= ptp_at:
+                    ptp_at = now + self.PTP_INTERVAL_S
+                    try:
+                        self.ptp_watch()
+                    except Exception as e:
+                        self.count_failure("ptp", "tick", e)
                 if now >= trim_at:
                     trim_at = now + trim_interval    # deadline first (A11)
                     self.trim_events()
