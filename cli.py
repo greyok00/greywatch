@@ -24,6 +24,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import threading
 
 import rules
 
@@ -229,9 +230,23 @@ def _orig_text(spec_id):
     return ""
 
 
+# Thread-local stderr of the last helper this thread ran, plus its
+# formatter (shared with wiz.common - the UI lanes quote it verbatim).
+_helper_ctx = threading.local()
+_ERR_KEEP = 400
+
+
+def helper_last_err() -> str:
+    return str(getattr(_helper_ctx, "err", "") or "")
+
+
 def helper_exec(helper: str, args_list):
+    # The stderr tail rides a thread-local so UI failure text can name
+    # the real reason; per-thread storage is what keeps two answers
+    # running at once from quoting each other's helper.
     script = ROOT / "apply" / f"{helper}.sh"
     override = os.environ.get("GREYWATCH_HELPER_CMD")
+    _helper_ctx.err = ""
     if override:
         cmd = [override, helper] + list(args_list)
     elif script.exists():
@@ -239,11 +254,15 @@ def helper_exec(helper: str, args_list):
     else:
         print(f"greywatch: helper {helper}.sh is missing from {script.parent}",
               file=sys.stderr)
+        _helper_ctx.err = f"helper {helper}.sh is missing"
         return EXIT_ERR
     try:
-        return subprocess.run(cmd, capture_output=True, text=True).returncode
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        _helper_ctx.err = (proc.stderr or "").strip()[-_ERR_KEEP:]
+        return proc.returncode
     except OSError as exc:
         print(f"greywatch: could not run helper {helper}: {exc}", file=sys.stderr)
+        _helper_ctx.err = type(exc).__name__
         return EXIT_ERR
 
 
@@ -274,14 +293,18 @@ def helper_batch(items):
         print(f"greywatch: helper batch.sh is missing from {script.parent}",
               file=sys.stderr)
         os.unlink(path)
+        _helper_ctx.err = "the batch helper script is missing"
         return [-1] * len(items)
+    _helper_ctx.err = ""
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired) as exc:
         print(f"greywatch: could not run the batch helper: {exc}",
               file=sys.stderr)
+        _helper_ctx.err = type(exc).__name__
         os.unlink(path)
         return [-1] * len(items)
+    _helper_ctx.err = (proc.stderr or "").strip()[-_ERR_KEEP:]
     os.unlink(path)
     if override:
         # Test mode keeps the single-helper contract: one exit code
@@ -455,7 +478,17 @@ def cmd_hunter(args) -> int:
 
 def cmd_doctor(args) -> int:
     import doctor as doctor_mod
-    return doctor_mod.doctor(fix=args.fix, only=args.only)
+    rc = doctor_mod.doctor(fix=args.fix, only=args.only)
+    try:
+        # GW-D3: the CLI run leaves the same health truth the daemon
+        # publishes, best-effort; a read-only disk skips silently and
+        # the exit code is untouched.
+        doctor_mod.persist_snapshot(doctor_mod.DATA_DIR,
+                                    doctor_mod.health_snapshot(
+                                        doctor_mod.DATA_DIR))
+    except Exception:
+        pass
+    return rc
 
 
 def cmd_setup(args) -> int:

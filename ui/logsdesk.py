@@ -15,6 +15,7 @@ from ui import metrics
 from ui.models import local_clock
 from ui.plain import friendly_name, severity_colour as pc_severity_colour
 from ui.eventclock import present_now
+from wiz.common import helper_detail
 from ui.threatcards import (log_row_values, threat_card_options,
                             _fixed, _threat_target)
 
@@ -293,21 +294,21 @@ class LogsDeskMixin:
         def worker():
             from ui import decisionlist as dl
             try:
-                rc = dl._helper_exec(opt.get("helper"),
-                                     list(opt.get("args", [])))
+                rc, err = dl._helper_exec(opt.get("helper"),
+                                          list(opt.get("args", [])))
             except Exception:
-                rc = -1
-            GLib.idle_add(self._after_log_option, opt.get("label"), rc)
+                rc, err = -1, ""
+            GLib.idle_add(self._after_log_option, opt.get("label"), rc, err)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _after_log_option(self, label, rc):
+    def _after_log_option(self, label, rc, err=""):
         self._refresh_logs()
         status = getattr(self, "logs_status", None)
         if status is not None:
             status.set_text(
                 f"{label}: done." if rc == 0 else
-                f"{label}: the helper exited {rc}.")
+                f"{label}: did not finish ({helper_detail(rc, err)}).")
         return False
 
     def _copy_log_row(self, _btn, ev):

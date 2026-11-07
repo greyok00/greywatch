@@ -150,8 +150,11 @@ def test_evaluate_announces_each_new_project_once(tmp_path):
     assert (tmp_path / "ptp-announced.jsonl").exists()
 
 
-def test_evaluate_writes_nothing_when_the_ledger_cannot_persist(
+def test_evaluate_keeps_the_news_when_the_ledger_cannot_persist(
         tmp_path, monkeypatch):
+    """GW-B1 replaced pin: the ledger stall no longer silences the news.
+    The specs STAY with .stalled set (retry until persisted - duplication
+    while stalled is visible and bounded; silence is permanent loss)."""
     rows = ptp.parse_dashboard(HTML)
     runner = make_runner(deb_lines=["curl"])
     locked = tmp_path / "ptp-announced.jsonl"
@@ -159,7 +162,9 @@ def test_evaluate_writes_nothing_when_the_ledger_cannot_persist(
     locked.chmod(0o000)
     try:
         specs = ptp.evaluate(tmp_path, runner, rows=rows)
-        assert specs == []       # cannot persist seen-state: say nothing
+        assert specs, "the news stays in the specs"
+        assert isinstance(specs.stalled, OSError)
+        assert specs[0][2] == "curl"
     finally:
         locked.chmod(0o644)
 
@@ -365,15 +370,19 @@ def test_evaluate_delta_announces_each_new_finding_once(tmp_path):
     assert ptp.delta_path(tmp_path).exists()
 
 
-def test_evaluate_delta_keeps_quiet_when_ledger_cannot_persist(
+def test_evaluate_delta_keeps_the_news_when_ledger_cannot_persist(
         tmp_path):
+    """GW-B1 replaced pin: delta specs ride on through a stall too."""
     old = ptp.parse_dashboard(HTML)
     new = old + [{"project": "zlib", "severity": "medium",
                   "finding": "A new slow write", "status": "New"}]
     locked = ptp.delta_path(tmp_path)
     locked.parent.mkdir(exist_ok=True)
     locked.mkdir()          # append into a directory -> OSError
-    assert ptp.evaluate_delta(tmp_path, old, new) == []
+    specs = ptp.evaluate_delta(tmp_path, old, new)
+    assert specs, "the delta stays in the specs"
+    assert specs[0][2].startswith("zlib")
+    assert isinstance(specs.stalled, OSError)
 
 
 def test_cross_join_matches_on_real_coverage_only(tmp_path):

@@ -163,6 +163,8 @@ class Daemon:
         self._share_with_ui(self.data_dir / "cve-cache.json")
         self._fail_counts = {}      # category → {"count": int, "last": str}
         self._fail_log_at = {}      # category → monotonic of last log line
+        self._verify_unsure = False # nft probe failed since the last good one
+        self._outbox_dropped = 0    # event lines lost to a write outage (B4)
         self._ask_policy = "deny-once"    # re-read at start_appfw()
         self._ask_policy_label = ("deny-once - no approval dialog wired "
                                   "(headless fallback, NOT user-approved)")
@@ -263,6 +265,20 @@ class Daemon:
             return None
         return ev
 
+    def _scan_request_facts(self) -> dict | None:
+        """GW-C1: the GUI's scan-request file as the digest reports it -
+        the file's presence and age, so a request the daemon has not
+        picked up yet is visible instead of invisible. An absent or
+        structurally unreadable file reports None (never pretends); a
+        present one reports {"present": True, "age_s": ...}."""
+        import scan_session
+        path = scan_session.request_path(self.data_dir)
+        try:
+            return {"present": True,
+                    "age_s": max(0.0, time.time() - path.stat().st_mtime)}
+        except OSError:
+            return None
+
     def flush_outbox(self) -> int:
         with self._lock:
             if not self._outbox:
@@ -274,7 +290,14 @@ class Daemon:
         except OSError as e:
             self.count_failure("write", "events.jsonl", e)
             with self._lock:
-                self._outbox = batch + self._outbox[:2000]
+                # GW-B4: the 2000-line reclaim throws the older lines
+                # away - that loss is now counted, published, and said,
+                # instead of vanishing into a quieter queue. Lines that
+                # arrived during the flush keep their place and are
+                # never counted as dropped.
+                dropped = max(0, len(batch) - 2000)
+                self._outbox_dropped += dropped
+                self._outbox = batch[-2000:] + self._outbox
             return 0
         return len(batch)
 
@@ -349,19 +372,37 @@ class Daemon:
 
     CVE_INTERVAL_S = 3600
 
+    def _announce_stalled(self, specs) -> None:
+        """GW-B1: an announcement ledger the disk refused is named, not
+        drowned. One counted failure plus one deduped YELLOW notice per
+        600 s (the specs themselves ride on - they are re-announced on
+        the next pass until the ledger takes a write)."""
+        stalled = getattr(specs, "stalled", None)
+        if stalled is None:
+            return
+        self.count_failure("ledger", "announce", stalled)
+        self._notice("ledger", "YELLOW",
+                     "the announcement ledger could not be written; "
+                     "announcements pause until it is writable again - "
+                     "the news is not lost, it repeats once it can be "
+                     "written down",
+                     dedupe_window_s=600.0)
+
     def cve_watch(self) -> int:
         """Wave C: the CVE cache as ACTIVE rules - every HIGH+ flaw for a
         managed tool is announced once, in the monitors' voice, with the
         playbook and the hunter wired to the same rules."""
         import cverules
         fired = 0
-        for severity, text, _cid, _tool in cverules.evaluate(self.data_dir):
+        specs = cverules.evaluate(self.data_dir)
+        for severity, text, _cid, _tool in specs:
             try:
                 self._notice("cve-updater", severity, text,
                              dedupe_window_s=1.0)
                 fired += 1
             except Exception as e:
                 self.count_failure("cve", "announce", e)
+        self._announce_stalled(specs)
         return fired
 
     PTP_INTERVAL_S = 24 * 3600
@@ -383,9 +424,11 @@ class Daemon:
             ptp.refresh(self.data_dir)
         except Exception as e:
             self.count_failure("ptp", "refresh", e)
+        delta_specs = []
         try:
-            for severity, text, _key in ptp.evaluate_delta(
-                    self.data_dir, old_rows, ptp.load_map(self.data_dir)):
+            delta_specs = ptp.evaluate_delta(
+                self.data_dir, old_rows, ptp.load_map(self.data_dir))
+            for severity, text, _key in delta_specs:
                 try:
                     self._notice("cve-updater", severity, text,
                                  dedupe_window_s=1.0)
@@ -394,12 +437,19 @@ class Daemon:
                     self.count_failure("ptp", "delta-announce", e)
         except Exception as e:
             self.count_failure("ptp", "delta", e)
+        self._announce_stalled(delta_specs)
         try:
             from hardening.detector import prod_runner
             cov = ptp.coverage(ptp.load_map(self.data_dir), prod_runner)
+            # GW-B2: a package channel that could not be read travels
+            # beside the rows, so 'empty' can never masquerade as
+            # 'nothing is covered'; old readers see an unknown key and
+            # render as they always did.
             watch = {"ts": _dt.datetime.now(_dt.timezone.utc)
                             .isoformat(timespec="seconds"),
-                     "projects": cov}
+                     "projects": cov,
+                     "probe_failed": (list(getattr(cov, "probe_failed",
+                                                  None) or []))}
             path = self.data_dir / "ptp-watch.json"
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(watch, separators=(",", ":")),
@@ -407,10 +457,11 @@ class Daemon:
             tmp.replace(path)
         except Exception as e:
             self.count_failure("ptp", "coverage", e)
+        announce_specs = []
         try:
             from hardening.detector import prod_runner
-            for severity, text, _proj, _pkgs in ptp.evaluate(
-                    self.data_dir, prod_runner):
+            announce_specs = ptp.evaluate(self.data_dir, prod_runner)
+            for severity, text, _proj, _pkgs in announce_specs:
                 try:
                     self._notice("cve-updater", severity, text,
                                  dedupe_window_s=1.0)
@@ -419,6 +470,7 @@ class Daemon:
                     self.count_failure("ptp", "announce", e)
         except Exception as e:
             self.count_failure("ptp", "evaluate", e)
+        self._announce_stalled(announce_specs)
         return fired
 
     def _firewall_has_block(self, ip: str) -> bool:
@@ -427,9 +479,17 @@ class Daemon:
                 ["nft", "get", "element", "inet", "greywatch_blocks",
                  "deny_v4", "{", ip, "}"],
                 capture_output=True, timeout=10)
-            return r.returncode == 0
-        except (OSError, subprocess.SubprocessError):
-            return True          # cannot prove it left; never churn a block
+        except (OSError, subprocess.SubprocessError) as e:
+            # Cannot prove it left; never churn a block (unchanged law).
+            # GW-B3: the uncertainty is latched and named in the digest -
+            # the sweep reads fail-open, but "could not verify" is never
+            # allowed to read as "checked".
+            self._verify_unsure = True
+            self.count_failure("ledger", "verify-probe", e)
+            return True
+        # The probe RAN: uncertainty ends here, whatever its verdict.
+        self._verify_unsure = False
+        return r.returncode == 0
 
     def _rearm_forever_block(self, ip: str) -> None:
         helper = pathlib.Path(__file__).resolve().parent / "apply" \
@@ -658,6 +718,13 @@ class Daemon:
         try:
             from blockledger import page_digest
             snap["defense"] = page_digest(evs, self.data_dir, answered)
+            # GW-B3: while the nft verify probe cannot run, the digest
+            # says so - fail-safe (blocks left untouched), never
+            # fake-checked.
+            if self._verify_unsure:
+                snap["defense"]["verify_note"] = (
+                    "block verification could not run; blocks are left "
+                    "untouched")
         except Exception as e:
             self.count_failure("status", "defense digest", e)
         # Browser Watch digest: the GUI reads only status.json, so the
@@ -672,6 +739,22 @@ class Daemon:
         except Exception as e:
             self.count_failure("status", "browser watch digest", e)
         snap["dropped"] = self.queue.dropped
+        snap["outbox_dropped"] = self._outbox_dropped
+        snap["verify_unsure"] = self._verify_unsure
+        snap["scan_request"] = self._scan_request_facts()   # GW-C1
+        try:
+            # GW-D3: the health truth is published EVERY cycle - the
+            # Diagnostics pane's caption promises the doctor's last
+            # check, and now the daemon is the one delivering it. The
+            # file beside status.json (same 0640/group contract) keeps
+            # the truth across a daemon restart.
+            import doctor as doctor_mod
+            rows = doctor_mod.health_snapshot(self.data_dir)
+            snap["doctor"] = rows
+            doctor_mod.persist_snapshot(self.data_dir, rows,
+                                        gid=self.ui_gid)
+        except Exception as e:
+            self.count_failure("status", "doctor snapshot", e)
         snap["failures"] = {k: v["count"]
                             for k, v in self._fail_counts.items()}
         snap["degraded"] = sorted(snap["failures"])
@@ -1167,6 +1250,7 @@ class Daemon:
         ptp_at = time.monotonic() + 120                        # watchlist
         engine_check_at = time.monotonic() + 10
         engine_fails: list[float] = []
+        engine_broken_told = False              # GW-C2: breaker-said flag
         scan_arm_at = time.monotonic() + 30
         scan_arm_fails: list[float] = []   # the scan service's arm breaker
         while not stop.is_set():
@@ -1231,12 +1315,14 @@ class Daemon:
                         now_t = time.monotonic()
                         engine_fails = [t for t in engine_fails
                                         if now_t - t < 60.0]
+                        if not engine_fails:   # window healed: re-armable
+                            engine_broken_told = False
                         if len(engine_fails) < 3:          # breaker open?
                             try:
                                 served = self.start_appfw()
                                 if served:
                                     engine_fails = []
-                                  
+                                    engine_broken_told = False
                                 else:
                                     engine_fails.append(now_t)
                             except Exception as e:
@@ -1247,6 +1333,19 @@ class Daemon:
                                 except Exception as e2:
                                     self.count_failure(
                                         "appfw", "arm-failure notice", e2)
+                        else:
+                            # GW-C2: the breaker is open - the engine is
+                            # off and the desktop user heard nothing. Say
+                            # it once (the 600 s dedupe keeps a long
+                            # outage from repeating).
+                            if not engine_broken_told:
+                                engine_broken_told = True
+                                self._notice(
+                                    "appfw", "YELLOW",
+                                    "the appfw engine could not start 3 "
+                                    "times in a minute; it stays off "
+                                    "until a later cycle",
+                                    dedupe_window_s=600.0)
                     elif not armed_now and eng is not None and eng.running:
                         self.stop_appfw()
                         print("greywatch appfw engine: stopped (switch off)")
@@ -1294,8 +1393,10 @@ class Daemon:
                         hb = pathlib.Path("/run/greywatch/heartbeat")
                         hb.parent.mkdir(parents=True, exist_ok=True)
                         hb.write_text(str(time.time()))
-                    except OSError:
-                        pass
+                    except OSError as e:
+                        # GW-C2: the heartbeat file is a health signal -
+                        # a failure to pet it stays silent no longer.
+                        self.count_failure("watchdog", "heartbeat", e)
                 else:
                     print("greywatch: main loop stale - watchdog NOT petted")
             except Exception as e:

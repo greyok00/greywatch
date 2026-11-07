@@ -173,10 +173,16 @@ installed package they map to); close it when done.
 
 **Failsafes on this page.** If the watchlist has never been read, the
 Overview tile says "not read" and the section stays empty instead of
-inventing numbers; Refresh map fills it. If a project's installed packages
+inventing numbers; Refresh map fills it. If one of the machine's package
+channels could not be read on the last run, the page says the coverage is
+UNKNOWN and names the failed channel - "could not read" is never allowed
+to masquerade as "nothing is covered". If a project's installed packages
 cannot be resolved, the row degrades to the project name alone. Blocks are
 kept in the blocked-IP ledger (including releases, so you can see what was
-lifted and why); the ledger is on this page below the rows.
+lifted and why); the ledger is on this page below the rows. While the
+daemon cannot verify those blocks against the firewall, the digest says
+"block verification could not run; blocks are left untouched" - a blind
+check never removes a block.
 
 ![scan-request-no-daemon.png](shots/scan-request-no-daemon.png)
 
@@ -316,7 +322,10 @@ that jump across the app.
 - **Diagnostics** - the gw doctor output: the service's MainPID and
   ActiveState, the status snapshot age, and the STALE sentence when the
   daemon has not reported in a while ("the daemon pipeline may be wedged -
-  restart it"), with **Re-check** to re-read right now.
+  restart it"), with **Re-check** to re-read right now. The daemon also
+  publishes a per-lane health check (service, scan channel, firewall,
+  pending backlog) on every cycle, so this pane always carries the
+  doctor's most recent read even between manual runs.
 - **Updates** - CVE checks for installed packages, on request, never
   scheduled.
 - **Trusted sites** - the list the firewall consults first, with its count
@@ -443,6 +452,17 @@ under `/var/lib/greywatch` is plain JSON Lines you can read with any tool.
 **Why does the watchlist say "not read"?**
 The Patch the Planet map has not been read on this machine yet. Press
 **Refresh map** on the Firewall page and it fills in; the stamp shows when.
+
+**What happens when something cannot be read or written?**
+The program says so where it happens. A decision whose record could not
+be written down says "the action finished, but the answer could not be
+written down" and keeps the card open so it can be closed by hand. An
+announcement ledger the disk refuses repeats its news once it is
+writable again instead of losing it, and the event feed carries one
+yellow notice saying pause-until-writable. Event lines that a full
+journal forced out during a write outage are counted and shown in the
+fails band ("older event lines dropped during a write outage: N").
+Every such sentence is exactly what the daemon publishes, not a guess.
 
 **What happens on a machine with no desktop notifications?**
 Nothing breaks: the switches stay off, events stay recorded, and the

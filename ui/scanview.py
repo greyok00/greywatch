@@ -303,6 +303,15 @@ class ScanConsole(Gtk.Box):
         self._strip.finish()
         self.append(self._strip)
 
+        # One honest note between the strip and the page: a scan request
+        # that never reached disk says why here, and stays until the
+        # next request (repaints never wipe it).
+        self.note = Gtk.Label(xalign=0)
+        self.note.set_xalign(0)
+        self.note.set_wrap(True)
+        self.note.set_visible(False)
+        self.append(self.note)
+
         self.legend = Gtk.Label(xalign=0)
         self.legend.set_xalign(0)
         self.legend.set_wrap(True)
@@ -432,6 +441,33 @@ class ScanConsole(Gtk.Box):
         # an earlier run.
         sid = (live or {}).get("scan_id")
         return read_findings(self.data_dir, limit=200, scan_id=sid)
+
+    def show_scan_note(self, text: str) -> None:
+        """A scan request that never made it to disk says why here - the
+        note stays until the next request, repaints never wipe it."""
+        self.note.set_text(str(text or ""))
+        self.note.set_visible(bool(str(text or "")))
+
+    def show_request(self, request) -> None:
+        """Forward-compat (GW-C1): when the daemon publishes a scan_request
+        digest, say the request is waiting and how long; the absent or
+        non-dict key renders nothing, so today's behavior is unchanged.
+
+        Does not clear show_scan_note: a failure note and a waiting
+        request can both be true, and a scheduled run never erases the
+        reason a previous one did not start."""
+        if not isinstance(request, dict):
+            return
+        age = request.get("age_s")
+        wait = (f" ({int(age)} s old)" if isinstance(age, float | int)
+                else "")
+        if self.note.get_visible() and self.note.get_text():
+            self.note.set_text(self.note.get_text()
+                               + f" - a scan request is on disk{wait}")
+            return
+        self.note.set_text(f"a scan request is on disk{wait} - the daemon"
+                           " will take it on the next cycle")
+        self.note.set_visible(True)
 
     def pin(self, scan_id):
         self._pinned = scan_id

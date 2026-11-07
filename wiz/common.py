@@ -12,17 +12,40 @@ HELPER_CMD = os.environ.get("GREYWATCH_HELPER_CMD")  # test-only override
 
 
 def run_helper(helper: str, args: list, timeout=30) -> int:
-    # env read at call time: the compiled module's reload is a no-op, so
-    # an import-time snapshot would freeze the test-only override
+    return run_helper_out(helper, args, timeout)[0]
+
+
+def run_helper_out(helper: str, args: list, timeout=30) -> tuple[int, str]:
+    # (rc, stderr tail): the same run, but the helper's own words ride
+    # along for failure text. The env read is at call time: the compiled
+    # module's reload is a no-op, so an import-time snapshot would
+    # freeze the test-only override.
     override = os.environ.get("GREYWATCH_HELPER_CMD") or HELPER_CMD
     script = ROOT / "apply" / f"{helper}.sh"
-    if override:
-        return subprocess.run([override, helper] + [str(a) for a in args],
-                              capture_output=True, text=True,
-                              timeout=timeout).returncode
-    return subprocess.run(["pkexec", str(script)] + [str(a) for a in args],
-                          capture_output=True, text=True,
-                          timeout=timeout).returncode
+    runner = [override, helper] if override else ["pkexec", str(script)]
+    argv = runner + [str(a) for a in args]
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return -1, type(exc).__name__
+    return proc.returncode, (proc.stderr or "").strip()
+
+
+def helper_detail(rc, err="", limit=200) -> str:
+    # One failure shape reused everywhere a helper rc is shown: the exit
+    # code alone is a riddle; the helper's last stderr line says why.
+    # Control bytes are stripped and the tail is truncated so it can
+    # always be dropped into a UI label.
+    head = f"exit code {rc}" if isinstance(rc, int) and rc > -1 \
+        else "the helper could not run"
+    line = str(err or "").strip().splitlines()
+    tail = ""
+    if line:
+        tail = line[-1].strip()
+        tail = "".join(c if c.isprintable() else " " for c in tail)
+        tail = " ".join(tail.split())[:limit]
+    return f"{head}: {tail}" if tail else f"{head}."
 
 
 def backup_file(path: str) -> str:

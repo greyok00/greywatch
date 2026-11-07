@@ -16,6 +16,7 @@ from ptp import (watch_rows as ptp_watch_rows, load_map as ptp_load_map,
                  DASH_PROSE)
 from ui import metrics
 from ui.plain import escape
+from wiz.common import helper_detail
 
 PROC_SYS = pathlib.Path("/proc")   # overridden by tests; /proc on the host
 
@@ -130,6 +131,18 @@ def ptp_high_count(data_dir):
         return 0
     return sum(int(r.get("high") or 0) for r in rows
                if isinstance(r, dict))
+
+
+def ptp_probe_failed(data_dir):
+    """Which package channels could not be read on the last watch run
+    (GW-B2), or [] - old watch files without the key read as all-ok."""
+    path = pathlib.Path(data_dir) / "ptp-watch.json"
+    try:
+        got = json.loads(path.read_text(encoding="utf-8")).get(
+            "probe_failed")
+    except (OSError, ValueError, AttributeError):
+        return []
+    return got if isinstance(got, list) else []
 
 
 def ptp_watch_stamp(data_dir) -> str:
@@ -305,31 +318,38 @@ class DefenseView(Gtk.Box):
         def work():
             try:
                 from ui.decisionlist import _helper_exec
-                rc = _helper_exec(opt.get("helper"),
-                                  list(opt.get("args", [])))
+                rc, err = _helper_exec(opt.get("helper"),
+                                       list(opt.get("args", [])))
             except Exception:
-                rc = -1
+                rc, err = -1, ""
             from gi.repository import GLib
-            GLib.idle_add(self._after_answer, sid, opt, buttons, state, rc)
+            GLib.idle_add(self._after_answer, sid, opt, buttons, state,
+                          rc, err)
 
         import threading
         threading.Thread(target=work, daemon=True).start()
 
-    def _after_answer(self, sid, opt, buttons, state, rc):
+    def _after_answer(self, sid, opt, buttons, state, rc, err=""):
         from gi.repository import GLib
         self._answering.discard(sid)
         if rc == 0:
             import pathlib as _pl
-            from ui.decisionlist import answer_record
+            from ui.decisionlist import RECORD_NOTE, answer_record
             data_dir = getattr(self._win, "data_dir", None) or _pl.Path(
                 os.environ.get("GW_DATA") or "/var/lib/greywatch")
-            answer_record(data_dir, sid, opt["id"])
-            state.set_text("Recorded. The ledger keeps your answer.")
+            done = answer_record(data_dir, sid, opt["id"])
+            # The action ran; only a failed write-down may say so - the
+            # card stays pending so the answer can still be recorded.
+            state.set_text("Recorded. The ledger keeps your answer."
+                           if done else
+                           f"{opt.get('helper')} did finish, but "
+                           f"{RECORD_NOTE}.")
         else:
             for b in buttons:
                 b.set_sensitive(True)
             state.set_text(f"{opt.get('helper')} did not finish "
-                           f"(exit code {rc}). You can try again.")
+                           f"({helper_detail(rc, err)}). You can try "
+                           "again.")
         return GLib.SOURCE_REMOVE
 
     def _run(self, _btn, opt):
@@ -452,9 +472,20 @@ class DefenseView(Gtk.Box):
                         " this section.")
             return
         if not rows:
-            self._quiet(self._armor,
-                        "The watchlist has been read, and nothing this"
-                        " machine runs is inside the review map.")
+            # GW-B2: an unreadable package channel means coverage is
+            # UNKNOWN, not empty - the old sentence would have said
+            # "nothing covered" over a probe that never answered.
+            failed = ptp_probe_failed(dd)
+            if failed:
+                self._quiet(self._armor,
+                            f"The package channel could not be read "
+                            f"({', '.join(failed)}), so the watchlist's "
+                            "coverage of this machine is UNKNOWN - "
+                            "nothing was invented.")
+            else:
+                self._quiet(self._armor,
+                            "The watchlist has been read, and nothing this"
+                            " machine runs is inside the review map.")
             return
         for cov in rows:
             if not isinstance(cov, dict) or not cov.get("project"):

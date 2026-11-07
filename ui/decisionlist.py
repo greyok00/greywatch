@@ -24,20 +24,52 @@ import greywatch_daemon as dm  # noqa: F401  (patch target for older tests)
 from decisions_factory import record_answer
 from gwpaths import data_dir as _resolve_data_dir
 from ui import metrics
+from wiz.common import helper_detail
 
 
 def _helper_exec(helper, args_list):
     # Late import: cli is a root module; tests reroute it away from pkexec
-    # through GREYWATCH_HELPER_CMD.
+    # through GREYWATCH_HELPER_CMD. Returns (rc, stderr tail): the reason
+    # rides with the code, and failure text quotes it verbatim.
     import cli as _cli
-    return _cli.helper_exec(helper, args_list)
+    rc = _cli.helper_exec(helper, args_list)
+    return rc, _cli.helper_last_err()
 
 
 def _batch_exec(items):
     # Same late import as _helper_exec: several answers under ONE
-    # polkit prompt.
+    # polkit prompt. Returns ([rcs], stderr tail) - one blob, since one
+    # root pass covered every row.
     import cli as _cli
-    return _cli.helper_batch(items)
+    rcs = _cli.helper_batch(items)
+    return rcs, _cli.helper_last_err()
+
+
+# What a card says when the action finished but the write-down failed:
+# the sentence is honest, the card stays (no auto-retry - helper side
+# effects are not idempotent), and the traceback never reaches GTK.
+RECORD_NOTE = ("the action finished, but the answer could not be "
+               "written down - the card stays open so you can close "
+               "it by hand")
+
+
+def answer_record(data_dir, sid, oid):
+    """Close a decision for every surface that shows it: one recorded
+    answer is what pending_rows reads back. Never raises: a failed
+    record reads in the card state, never as a crash.
+
+    data_dir is the suite's data directory - or, when a caller already
+    holds the ledger path (decisions.jsonl inside it), the ledger itself;
+    both arrive here, so the join happens only when it is not already
+    the ledger file."""
+    base = pathlib.Path(data_dir)
+    ledger = base if base.name == "decisions.jsonl" \
+        else base / "decisions.jsonl"
+    try:
+        record_answer(ledger, sid, oid)
+        return True
+    except Exception:
+        return False
 
 
 def _age_text(ts):
@@ -146,15 +178,6 @@ def card_widget(spec, ts, on_answer):
         card.append(buttons_box)
     card.append(state)
     return card
-
-
-def answer_record(data_dir, sid, oid):
-    """Close a decision for every surface that shows it: one recorded
-    answer is what pending_rows reads back."""
-    try:
-        record_answer(pathlib.Path(data_dir) / "decisions.jsonl", sid, oid)
-    except Exception:
-        pass
 
 
 class DecisionsWindow(Gtk.Dialog):
@@ -297,33 +320,43 @@ class DecisionsWindow(Gtk.Dialog):
 
         def work():
             items, sids = self._bulk_items(oid)
-            rcs = _batch_exec(items) if items else []
-            GLib.idle_add(self._after_bulk, oid, sids, rcs, btn)
+            rcs, err = _batch_exec(items) if items else ([], "")
+            GLib.idle_add(self._after_bulk, oid, sids, rcs, err, btn)
 
         threading.Thread(target=work, daemon=True).start()
         return None
 
-    def _after_bulk(self, oid, sids, rcs, btn):
+    def _after_bulk(self, oid, sids, rcs, err, btn):
         store = self._store_dir() / "decisions.jsonl"
         if not isinstance(rcs, list) or len(rcs) != len(sids):
             # The batch never reported per-item results; nothing is
             # recorded, so everything stays open exactly as it was.
             rcs = [-1] * len(sids)
-        done = sum(1 for r in rcs if r == 0)
+        done, lost, failed = 0, 0, 0
         for sid, rc in zip(sids, rcs):
-            if rc == 0:
-                record_answer(store, sid, oid)
+            if rc != 0:
+                failed += 1
+            elif answer_record(store, sid, oid):
+                done += 1
+            else:
+                lost += 1
         if self._on_change is not None and done:
             try:
                 self._on_change()
             except Exception:
                 pass
-        if done < len(sids):
-            self._bulk_state.set_text(
-                f"{done} of {len(sids)} applied ({oid}); the rest stayed "
-                "open - try them again from their own buttons.")
-        else:
-            self._bulk_state.set_text(f"applied {oid} to {done}.")
+        words = f"applied {oid} to {done}."
+        if failed or err:
+            words = (f"{done} of {len(sids)} applied ({oid}): "
+                     f"{failed} did not finish "
+                     f"({helper_detail(rcs[0] if rcs else -1, err)}). "
+                     "The rest stay open - try them again from their "
+                     "own buttons.")
+        if lost:
+            words += (f" {lost} answer{'s' if lost != 1 else ''} "
+                      "could not be written down; those cards stay "
+                      "open.")
+        self._bulk_state.set_text(words)
         self.build_rows()
         return GLib.SOURCE_REMOVE
 
@@ -353,10 +386,12 @@ class DecisionsWindow(Gtk.Dialog):
 
         def work():
             try:
-                rc = _helper_exec(opt.get("helper"), list(opt.get("args", [])))
+                rc, err = _helper_exec(opt.get("helper"),
+                                       list(opt.get("args", [])))
             except Exception:
-                rc = -1
-            GLib.idle_add(self._after_answer, sid, opt, buttons, state, rc)
+                rc, err = -1, ""
+            GLib.idle_add(self._after_answer, sid, opt, buttons, state,
+                          rc, err)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -366,23 +401,30 @@ class DecisionsWindow(Gtk.Dialog):
         return self._data_dir if isinstance(self._data_dir, pathlib.Path) \
             else _resolve_data_dir()
 
-    def _after_answer(self, sid, opt, buttons, state, rc):
+    def _after_answer(self, sid, opt, buttons, state, rc, err=""):
         self._answering.discard(sid)
         if rc == 0:
-            record_answer(self._store_dir() / "decisions.jsonl", sid,
-                          opt["id"])
-            self.build_rows()
-            if self._on_change is not None:
-                try:
-                    self._on_change()
-                except Exception:
-                    pass
+            done = answer_record(self._store_dir() / "decisions.jsonl",
+                                 sid, opt["id"])
+            if not done:
+                # The action ran; only the write-down failed. The card
+                # stays pending (re-running the helper is not free), the
+                # sentence is the truth, and nothing raises in GTK.
+                state.set_text(f"{opt.get('helper')} did finish, but "
+                               f"{RECORD_NOTE}.")
+            else:
+                self.build_rows()
+                if self._on_change is not None:
+                    try:
+                        self._on_change()
+                    except Exception:
+                        pass
         else:
             for b in buttons:
                 b.set_sensitive(True)
             state.set_text(f"{opt.get('helper')} did not finish "
-                           f"(exit code {rc}). The decision stays open - "
-                           "you can try again.")
+                           f"({helper_detail(rc, err)}). The decision "
+                           "stays open - you can try again.")
         return GLib.SOURCE_REMOVE
 
     # -- lifecycle -------------------------------------------------------

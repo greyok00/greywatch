@@ -8,8 +8,10 @@ Hunter tab use, or switch to that tab. Nothing here executes anything.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import pathlib
+import time as _time
 
 import gi
 
@@ -21,6 +23,28 @@ from ui.plain import muted as theme_muted  # noqa: E402
 from ui.plain import severity_colour  # noqa: E402
 
 MAX_DIGEST = 4
+
+# The same STALE contract the Diagnostics pane uses: a snapshot older
+# than this is not health, it is silence.
+STALE_S = 90
+
+
+def _snapshot_age(raw, snap):
+    """Seconds since the daemon last wrote this snapshot, from its own
+    ISO stamp, with the file's mtime as the fallback when the stamp
+    cannot be parsed; None when neither says anything."""
+    try:
+        stamp = _dt.datetime.fromisoformat(str(raw.get("updated") or ""))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=_dt.timezone.utc)
+        return max(0.0, (_dt.datetime.now(_dt.timezone.utc)
+                         - stamp).total_seconds())
+    except ValueError:
+        pass
+    try:
+        return max(0.0, _time.time() - snap.stat().st_mtime)
+    except OSError:
+        return None
 
 # A status word that means "this protection wants a hand". The
 # suite verdict counts these; UNKNOWN is not one — a tool that has never
@@ -34,10 +58,9 @@ def suite_summary(data_dir) -> tuple[str, str]:
     protections that want attention, so 'All N are green' is a checked
     count, not an optimistic one. With no snapshot yet the card says so
     rather than promising green."""
+    snap = pathlib.Path(data_dir) / "status.json"
     try:
-        raw = json.loads(
-            (pathlib.Path(data_dir) / "status.json").read_text(
-                encoding="utf-8"))
+        raw = json.loads(snap.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return ("The suite is starting",
                 "The protections report in a moment.")
@@ -69,6 +92,12 @@ def suite_summary(data_dir) -> tuple[str, str]:
                  if waiting else "no decisions waiting")
     if len(updated) >= 16:
         words.append(f"snapshot {updated[11:16]}")
+    # A green verdict over a dead snapshot is a lie with a clock: past
+    # the 90 s contract the sentence ends with the wait, not a promise.
+    age = _snapshot_age(raw, snap)
+    if age is not None and age > STALE_S:
+        words.append("snapshot is older than 90 s - waiting for the "
+                     "daemon")
     return verdict, " · ".join(words)
 
 

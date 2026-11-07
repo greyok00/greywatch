@@ -231,12 +231,41 @@ class SettingsDeskMixin:
             lines.append("network check: timed out")
         return "\n".join(lines)
 
+    def _paint_doctor_rows(self):
+        """The daemon's own health snapshot, verbatim: one line per lane
+        from status["doctor"] (GW-D3). The key's absence renders nothing,
+        so this stays invisible until Wave D turns it on."""
+        label = getattr(self, "_doctor_label", None)
+        if label is None:
+            return
+        rows = None
+        try:
+            raw = json.loads(
+                (pathlib.Path(_data_dir()) / "status.json").read_text(
+                    encoding="utf-8"))
+            got = raw.get("doctor")
+            rows = got if isinstance(got, list) else None
+        except (OSError, ValueError):
+            rows = None
+        if not rows:
+            label.set_visible(False)
+            return
+        lines = ["the daemon's last self-check:"]
+        for r in rows:
+            if isinstance(r, dict):
+                lines.append(f"{r.get('lane', '?')} · "
+                             f"{r.get('verdict', '?')} · "
+                             f"{str(r.get('text', ''))[:160]}")
+        label.set_text("\n".join(lines))
+        label.set_visible(len(lines) > 1)
+
     def _on_diag_refresh(self, btn):
         btn.set_sensitive(False)
         def run():
             text = self._diag_truth()
             def done():
                 self._diag_label.set_text(text)
+                self._paint_doctor_rows()
                 btn.set_sensitive(True)
                 return False
             GLib.idle_add(done)
@@ -798,6 +827,15 @@ class SettingsDeskMixin:
         self._on_diag_refresh(d_btn)      # first truth arrives off-thread
         d_row.append(d_btn)
         diag_inner.append(d_row)
+        # GW-D3 forward-compat: when the daemon publishes the doctor
+        # snapshot (status["doctor"]), Diagnostics paints its rows under
+        # the probe lines; the absent key renders nothing.
+        self._doctor_label = Gtk.Label(xalign=0)
+        self._doctor_label.set_xalign(0)
+        self._doctor_label.set_wrap(True)
+        self._doctor_label.add_css_class("gw-meta")
+        self._doctor_label.set_visible(False)
+        diag_inner.append(self._doctor_label)
         return self._settings_section(diag_frame)
 
     def _settings_updates(self):

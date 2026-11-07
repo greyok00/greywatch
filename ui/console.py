@@ -21,13 +21,13 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from ui.decisionlist import (_clear, _helper_exec, card_widget,
-                             record_answer)
+from ui.decisionlist import (_clear, _helper_exec, card_widget)
 from ui.threatcards import threat_card_options
 from ui.plain import friendly_name
 from ui.assistant import AssistantPanel
 from ui import metrics
 from events import lane_for
+from wiz.common import helper_detail
 
 TIME_W = 104     # "18:35:39" plus breathing room (window.py carries twin)
 
@@ -315,21 +315,27 @@ class OverviewPage(Gtk.Box):
 
         def work():
             try:
-                rc = _helper_exec(opt.get("helper"),
-                                  list(opt.get("args", [])))
+                rc, err = _helper_exec(opt.get("helper"),
+                                       list(opt.get("args", [])))
             except Exception:
-                rc = -1
-            GLib.idle_add(self._after_answer, sid, opt, buttons, state, rc,
-                          priority=GLib.PRIORITY_DEFAULT)
+                rc, err = -1, ""
+            GLib.idle_add(self._after_answer, sid, opt, buttons, state,
+                          rc, err, priority=GLib.PRIORITY_DEFAULT)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _after_answer(self, sid, opt, buttons, state, rc):
+    def _after_answer(self, sid, opt, buttons, state, rc, err=""):
         self._answering.discard(sid)
         if rc == 0:
-            from ui.actiongate import _resolve_data_dir
-            record_answer(self._data_dir() / "decisions.jsonl", sid,
-                          opt["id"])
+            from ui.decisionlist import RECORD_NOTE, answer_record
+            done = answer_record(self._data_dir() / "decisions.jsonl",
+                                 sid, opt["id"])
+            if not done:
+                # The action ran; only the write-down failed. The card
+                # stays pending and the sentence is the truth.
+                state.set_text(f"{opt.get('helper')} did finish, but "
+                               f"{RECORD_NOTE}.")
+                return GLib.SOURCE_REMOVE
             self.refresh(self._win._get_status() if self._win else None)
             if self._win is not None and getattr(self._win, "_on_change",
                                                  None) is not None:
@@ -338,7 +344,8 @@ class OverviewPage(Gtk.Box):
             for b in buttons:
                 b.set_sensitive(True)
             state.set_text(f"{opt.get('helper')} did not finish "
-                           f"(exit code {rc}). You can try again.")
+                           f"({helper_detail(rc, err)}). You can try "
+                           "again.")
         return GLib.SOURCE_REMOVE
 
     def _data_dir(self):
@@ -349,7 +356,8 @@ class OverviewPage(Gtk.Box):
     def refresh(self, snap=None):
         snap = snap or {}
         self._paint_ribbon(snap)
-        self._paint_advisories(snap.get("pending_list"))
+        self._paint_advisories(snap.get("pending_list"),
+                               snap.get("scan_request"))
         self._paint_feed(snap.get("recent") or [])
         self._paint_gate()
 
@@ -373,7 +381,7 @@ class OverviewPage(Gtk.Box):
         self._stats["CVE rules"].set_value(
             str(len(rules)) if rules is not None else "not fetched")
 
-    def _paint_advisories(self, asks):
+    def _paint_advisories(self, asks, scan_request=None):
         _clear(self._advisories)
         ads = [d for d in (asks or [])
                if isinstance(d, dict) and d.get("kind") == "advisory"]
@@ -384,6 +392,19 @@ class OverviewPage(Gtk.Box):
                    "every advisory and question the suite is holding"))
         lbl.add_css_class("gw-meta")
         self._advisories.append(lbl)
+        # Forward-compat (GW-C1): when the daemon publishes a scan_request
+        # digest the strip says the request is waiting and how long; the
+        # absent key renders nothing, today's behavior unchanged.
+        if isinstance(scan_request, dict):
+            age = scan_request.get("age_s")
+            age_txt = (f", {int(age)} s old"
+                       if isinstance(age, (int, float)) else "")
+            note = Gtk.Label(
+                xalign=0, wrap=True,
+                label=f"a scan request is on disk{age_txt} - the daemon "
+                      "will pick it up next cycle")
+            note.add_css_class("gw-meta")
+            self._advisories.append(note)
         for d in ads:
             spec = d.get("spec")
             if isinstance(spec, dict) and spec.get("id"):

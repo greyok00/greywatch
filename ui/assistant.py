@@ -555,6 +555,12 @@ def _ptp_concept_text(question: str, pack: dict) -> str | None:
             return ("No watch list has been read on this machine yet. Once"
                     " the daemon runs its daily check it answers this"
                     " from what it actually finds installed.")
+        if not projects and (watch.get("probe_failed") or []):
+            failed = ", ".join(str(c) for c in watch["probe_failed"])
+            return (f"The package channel could not be read ({failed}),"
+                    " so the watchlist's coverage of this machine is"
+                    " UNKNOWN - nothing was invented, and I will not"
+                    " guess.")
         if not projects:
             return ("The watch list has been read, and nothing this"
                     " machine runs is inside the program's review map.")

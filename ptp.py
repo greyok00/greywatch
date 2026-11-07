@@ -179,16 +179,47 @@ def load_map(data_dir) -> list:
     return []
 
 
+class Specs(list):
+    """One announce pass's specs, with the ledger stall attached.
+
+    A plain list on purpose: `== []`, indexing and iteration behave as
+    they always did, so legacy code never notices. What is new is
+    `stalled`: an OSError when the announce ledger could not be written,
+    None otherwise. The specs STAY when the write fails (retry until
+    persisted - news is told again while the ledger is unwritable, and
+    flows once it is not); duplication is visible and bounded, loss is
+    silent and permanent."""
+
+    def __init__(self, items=()):
+        super().__init__(items)
+        self.stalled: OSError | None = None
+
+
+class Coverage(list):
+    """The machine's covered projects, with the package-probe honesty
+    attached: `probe_failed` names the channels that could not be read
+    (never a guess - the empty list with a failed probe is UNKNOWN,
+    not 'nothing is covered')."""
+
+    def __init__(self, items=()):
+        super().__init__(items)
+        self.probe_failed: list | None = None
+
+
 def installed_names(runner) -> tuple:
-    """(deb_names, pip_names) reported by this machine's own package
-    channels; a channel that fails yields nothing rather than a guess."""
-    deb, pip = set(), set()
+    """(deb_names, pip_names, failed_channels) reported by this
+    machine's own package channels; a channel that fails yields nothing
+    AND its name rides in failed, so downstream 'empty' can be told
+    apart from 'unanswered' instead of reading as safe."""
+    deb, pip, failed = set(), set(), []
     try:
         rc, out = runner("dpkg-query -W -f='${Package}\\n'")
         if rc == 0 and out:
             deb = {l.strip().lower() for l in out.splitlines() if l.strip()}
+        elif rc != 0:
+            failed.append("dpkg-query")
     except Exception:
-        deb = set()
+        failed.append("dpkg-query")
     try:
         rc, out = runner("python3 -m pip list --format=freeze")
         if rc == 0 and out:
@@ -196,9 +227,11 @@ def installed_names(runner) -> tuple:
                 name = line.split("=", 1)[0].strip()
                 if name:
                     pip.add(name)
+        elif rc != 0:
+            failed.append("pip")
     except Exception:
-        pip = set()
-    return deb, pip
+        failed.append("pip")
+    return deb, pip, failed
 
 
 def coverage(rows, runner) -> list:
@@ -210,8 +243,8 @@ def coverage(rows, runner) -> list:
     if not rows:
         return []
     cov = summarize(rows)
-    deb, pip = installed_names(runner)
-    out = []
+    deb, pip, failed = installed_names(runner)
+    out = Coverage()
     for name, rec in cov.items():
         hits = [pkg for pkg in [name, *DEB_ALIASES.get(name, [])]
                 if pkg.lower() in deb]
@@ -232,6 +265,7 @@ def coverage(rows, runner) -> list:
                     "via": "+".join(via),
                     "packages": sorted({*hits, *pip_hits})})
     out.sort(key=lambda c: (-c["high"], -c["findings"], c["project"]))
+    out.probe_failed = failed or None
     return out
 
 
@@ -268,16 +302,18 @@ def _text(coverage_row: dict) -> str:
            "any update"
 
 
-def evaluate(data_dir, runner, rows=None) -> list:
+def evaluate(data_dir, runner, rows=None) -> Specs:
     """Announce every covered installed project not yet announced.
     Returns (severity, text, project, packages) specs for the daemon;
-    writes one announce line each so a restart never re-announces."""
+    writes one announce line each so a restart never re-announces. When
+    the write fails the specs STAY with .stalled set - retry until
+    persisted, never silently dropped."""
     data_dir = pathlib.Path(data_dir)
     rows = load_map(data_dir) if rows is None else rows
     cov = coverage(rows, runner)
     path = announced_path(data_dir)
     seen = _announced(path)
-    out, lines = [], []
+    out, lines = Specs(), []
     for rec in cov:
         name = rec["project"]
         if name in seen:
@@ -294,8 +330,12 @@ def evaluate(data_dir, runner, rows=None) -> list:
             path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, "a", encoding="utf-8") as f:
                 f.write("\n".join(lines) + "\n")
-        except OSError:
-            out.clear()          # cannot persist seen-state: say nothing
+        except OSError as exc:
+            # GW-B1: the stall is not silence. The specs STAY (retry
+            # until persisted: the same news is told again on the next
+            # pass and stops once the ledger takes a write); duplication
+            # is visible and bounded, loss is silent and permanent.
+            out.stalled = exc
     return out
 
 
@@ -340,17 +380,18 @@ def map_delta(rows_old, rows_new) -> dict:
     return out
 
 
-def evaluate_delta(data_dir, rows_old, rows_new) -> list:
+def evaluate_delta(data_dir, rows_old, rows_new) -> Specs:
     """The nightly delta in the monitors' voice: one announcement per
     newly arriving finding, keyed so a restart never re-reads old news.
     Returns (severity, text, key) specs; nothing is announced that the
-    ledger already holds, and a ledger that cannot persist keeps the
-    news quiet (the next cycle tries again)."""
+    ledger already holds, and when the ledger cannot persist the specs
+    STAY with .stalled set (retry until persisted - the news is told
+    again on the next pass and stops once the ledger takes a write)."""
     data_dir = pathlib.Path(data_dir)
     delta = map_delta(rows_old, rows_new)
     path = delta_path(data_dir)
     seen = _seen_keys(path)
-    out, lines = [], []
+    out, lines = Specs(), []
     now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
     for project in sorted(delta):
         for r in delta[project]:
@@ -369,8 +410,11 @@ def evaluate_delta(data_dir, rows_old, rows_new) -> list:
             path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, "a", encoding="utf-8") as f:
                 f.write("\n".join(lines) + "\n")
-        except OSError:
-            out.clear()          # cannot persist seen-state: say nothing
+        except OSError as exc:
+            # GW-B1: same stall contract as evaluate - the specs stay
+            # and .stalled carries the OSError; retry until persisted,
+            # duplication visible and bounded, loss never silent.
+            out.stalled = exc
     return out
 
 

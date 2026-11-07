@@ -141,11 +141,17 @@ def test_panel_stays_silent_when_the_hunter_wrote_nothing_new(tmp_path):
 
 def test_cover_tile_reports_the_watcher_and_intel(tmp_path):
     panel = hunterview.HunterPanel(str(tmp_path))
+    # The intel age rides the wall clock: a fixed stamp crossed the chip's
+    # 31-character budget once the real age passed 100 h (2026-11-07), so
+    # the pin now rides a stamp derived from now (was 2026-11-03T09:00+00).
+    import datetime as dt
+    fresh = (dt.datetime.now(dt.timezone.utc)
+             - dt.timedelta(hours=2)).isoformat()
     store.write_live(tmp_path, {
-        "hunter": 1, "ts": "2026-11-03T10:00:02+00:00",
+        "hunter": 1, "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
         "watcher": {"state": "watching", "port": 9229},
-        "intel": {"enabled": True, "last_ok": "2026-11-03T09:00:02+00:00",
-                  "ages": {"openphish": "2026-11-03T09:00:02+00:00"}}})
+        "intel": {"enabled": True, "last_ok": fresh,
+                  "ages": {"openphish": fresh}}})
     panel.refresh(force=True)
     text = panel._watcher_tile.get_text()
     assert "watching" in text and "intel" in text, text

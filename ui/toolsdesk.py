@@ -343,15 +343,18 @@ class ToolsDesk(Gtk.Box):
 
     def band_paint(self, total: int, running: int, attention: int,
                    paused_n: int, unknown_n: int, tails: int,
-                   boot: int, fails: int, degraded=(), dropped: int = 0) \
+                   boot: int, fails: int, degraded=(), dropped: int = 0,
+                   outbox_dropped: int = 0) \
             -> None:
         """The five tallies the window's refresh already computes, in
         the tiles' own words. Every number is a tally refresh() computes
         or the registry's own size; the band invents nothing. Dropped
-        events (: 7.5 million parsed lines lost while a tail stalled
+        events (a 7.5-million parsed-line loss while a tail stalled
         behind a full queue) keep their own sentence rather than being
         summed into the failure tally, which would make every read fault
-        look seven-million-strong."""
+        look seven-million-strong. GW-B4: event lines lost while a
+        write outage outgrew the reclaim cap ride their own sentence
+        too - a silent loss is the one failure this band refuses."""
         self.band.set("reg", str(total), "one registry, the whole suite")
         quiet = max(0, total - running - attention - paused_n - unknown_n)
         flunked = self._flunked_words()
@@ -374,6 +377,11 @@ class ToolsDesk(Gtk.Box):
                 if degraded else "reads only; writes staged + renamed")
         if dropped:
             note = f"{dropped:,} parsed events dropped, queue full · {note}"
+        if outbox_dropped:
+            # GW-B4: the reclaim cap's casualties are said, never
+            # counted nowhere.
+            note = (f"older event lines dropped during a write outage: "
+                    f"{outbox_dropped:,} · {note}")
         self.band.set("fails", f"{fails:,}", note)
 
     # ------------------------------------------------------------ record

@@ -17,6 +17,8 @@ import json
 import pathlib
 import re
 
+import ptp
+
 CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}(?!\d)")
 
 ACTIVE_MIN_SCORE = 7.0           # below HIGH-weight: silence, no noise
@@ -114,15 +116,17 @@ def _ptp_note(data_dir, tool: str) -> str:
             if high else f"; {tail}")
 
 
-def evaluate(data_dir, cache_path=None) -> list:
+def evaluate(data_dir, cache_path=None) -> ptp.Specs:
     """Announce every ACTIVE flaw not yet announced. Returns the
     (severity, text, cve, tool) specs for the daemon to emit; writes one
-    announce line per flaw so a restart never re-announces."""
+    announce line per flaw so a restart never re-announces. When the
+    write fails the specs STAY in a .stalled Specs (ptp's contract,
+    GW-B1: retry until persisted, never silently dropped)."""
     data_dir = pathlib.Path(data_dir)
     rules = active_rules(cache_path or (data_dir / "cve-cache.json"))
     path = announced_path(data_dir)
     seen = _announced(path)
-    out, lines = [], []
+    out, lines = ptp.Specs(), []
     for rule in rules:
         cid = rule["cve"]
         if not cid or cid in seen:
@@ -140,6 +144,6 @@ def evaluate(data_dir, cache_path=None) -> list:
             path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, "a", encoding="utf-8") as f:
                 f.write("\n".join(lines) + "\n")
-        except OSError:
-            out.clear()          # cannot persist seen-state: say nothing
+        except OSError as exc:
+            out.stalled = exc    # GW-B1: specs stay; retry until persisted
     return out

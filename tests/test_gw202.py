@@ -109,7 +109,10 @@ def test_evaluate_announces_once_and_survives_restart(tmp_path):
     assert cverules.evaluate(tmp_path, cache_path=p) == []   # once only
 
 
-def test_evaluate_sends_nothing_when_seen_state_cannot_be_kept(tmp_path):
+def test_evaluate_keeps_news_when_seen_state_cannot_be_kept(tmp_path):
+    """GW-B1 replaced pin: a cve-announced ledger that cannot take a
+    write no longer silences the news - the specs stay with .stalled
+    set (retry until persisted, never silently dropped)."""
     p = _cache(tmp_path, [{"id": "CVE-2026-0021", "modified": "m",
                            "tool": "clamav", "score": 9.0,
                            "severity": "CRITICAL"}])
@@ -118,7 +121,10 @@ def test_evaluate_sends_nothing_when_seen_state_cannot_be_kept(tmp_path):
     # make the append fail: 'ledger' is a directory now
     ledger.unlink()
     ledger.mkdir()
-    assert cverules.evaluate(tmp_path, cache_path=p) == []
+    specs = cverules.evaluate(tmp_path, cache_path=p)
+    assert specs, "the news stays in the specs"
+    assert specs[0][2] == "CVE-2026-0021"
+    assert isinstance(specs.stalled, OSError)
 
 
 def test_severity_boundary_is_nine(tmp_path):

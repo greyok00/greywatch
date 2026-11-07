@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import datetime as _dt
+import json
 import pathlib
 import subprocess
 import sys
+import time
 
 import setup as setup_mod
 
@@ -110,6 +113,170 @@ def _run(argv):
     return subprocess.run(argv, capture_output=True, text=True).returncode
 
 
+# ---- GW-D2/D3: the honest service rows -----------------------------------
+# The doctor is only as trustworthy as its rows: every builder below may
+# report READY, DEGRADED, BROKEN, or NEUTRAL - and "could not check" is
+# always NEUTRAL, never green.
+
+SERVICE_UNIT = "greywatch.service"
+STALE_S = 90.0                # the dashboard's own staleness contract
+BACKLOG_LIMIT = 20            # pending decisions above this is DEGRADED
+
+
+def _probe(argv) -> subprocess.CompletedProcess:
+    return subprocess.run(argv, capture_output=True, text=True)
+
+
+def _now_iso() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def _row(lane: str, verdict: str, text: str) -> dict:
+    return {"lane": lane, "verdict": verdict, "text": text,
+            "ts": _now_iso()}
+
+
+def _read_int_status(data_dir, key):
+    """A status.json integer field, or None when unreadable/absent."""
+    try:
+        doc = json.loads((pathlib.Path(data_dir)
+                          / "status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    got = doc.get(key)
+    return got if isinstance(got, int) else None
+
+
+def row_service(data_dir) -> dict:
+    """(a) the daemon's unit and the dashboard snapshot's age, with the
+    same 90 s staleness contract the dashboard itself uses."""
+    state = _probe(["systemctl", "is-active", SERVICE_UNIT]).stdout.strip()
+    if state == "not-found":
+        return _row("service", "NEUTRAL",
+                    f"no {SERVICE_UNIT} unit is installed here")
+    try:
+        age = max(0.0, time.time() - (
+            pathlib.Path(data_dir) / "status.json").stat().st_mtime)
+    except OSError:
+        return _row("service", "BROKEN" if state != "active" else "NEUTRAL",
+                    f"the unit reads {state or 'unknown'}, but the "
+                    "dashboard snapshot cannot be read as this user")
+    if state != "active":
+        return _row("service", "BROKEN",
+                    f"{SERVICE_UNIT} reads {state}; the dashboard "
+                    f"snapshot is {age:.0f} s old")
+    if age > STALE_S:
+        return _row("service", "DEGRADED",
+                    "the unit is active, but the dashboard snapshot is "
+                    f"older than {int(STALE_S)} s - waiting for the daemon")
+    return _row("service", "READY",
+                f"the unit is active; the dashboard snapshot is "
+                f"{age:.0f} s old")
+
+
+def row_scan(data_dir) -> dict:
+    """(b) the GUI's scan-request channel: what is waiting for how long
+    (a request the daemon has not picked up is DEGRADED, never hidden),
+    and .rejected carries the malformed bytes that were moved aside."""
+    req = pathlib.Path(data_dir) / "scan-request.json"
+    rej = pathlib.Path(str(req) + ".rejected")
+    dir_probe = pathlib.Path(data_dir) / "status.json"
+    try:
+        mtime = req.stat().st_mtime
+    except OSError:
+        try:
+            dir_probe.stat()
+        except OSError:
+            return _row("scan", "NEUTRAL",
+                        "cannot read as this user; run as root for the "
+                        "full check")
+        return _row("scan", "READY", "no scan request is waiting")
+    age = max(0.0, time.time() - mtime)
+    text = f"a scan request is on disk ({age:.0f} s old, not yet picked up)"
+    if rej.exists():
+        text += "; a rejected malformed request sits beside it"
+    if age > STALE_S:
+        return _row(
+            "scan", "DEGRADED",
+            f"a scan request has waited {age:.0f} s - the daemon has not"
+            " picked it up yet")
+    return _row("scan", "READY", text)
+
+
+def row_firewall(data_dir=None) -> dict:
+    """(c) the block verifier's table - only NEUTRAL 'cannot check' when
+    this user cannot ask nft, never a green claim over silence."""
+    try:
+        r = _probe(["nft", "list", "tables"])
+    except OSError:
+        return _row("firewall", "NEUTRAL",
+                    "nft could not run as this user")
+    if r.returncode != 0:
+        return _row("firewall", "NEUTRAL",
+                    "cannot check the firewall as this user; run as root"
+                    " for the full check")
+    if "greywatch_blocks" in (r.stdout or ""):
+        return _row("firewall", "READY",
+                    "the greywatch blocks table is present")
+    return _row("firewall", "NEUTRAL",
+                "nft answered, but no greywatch blocks table is present"
+                " (nothing was ever blocked)")
+
+
+def row_backlog(data_dir) -> dict:
+    """(d) the pending-decision backlog out of the dashboard snapshot;
+    unreadable is NEUTRAL, never READY."""
+    n = _read_int_status(data_dir, "pending_decisions")
+    if n is None:
+        try:
+            (pathlib.Path(data_dir) / "status.json").stat()
+        except OSError:
+            return _row("backlog", "NEUTRAL",
+                        "cannot read as this user; run as root for the "
+                        "full check")
+        return _row("backlog", "NEUTRAL",
+                    "the snapshot carries no pending-decision count yet")
+    if n > BACKLOG_LIMIT:
+        return _row("backlog", "DEGRADED",
+                    f"{n} pending decisions are waiting (above "
+                    f"{BACKLOG_LIMIT})")
+    return _row("backlog", "READY",
+                f"{n} pending decisions" if n else "no pending decisions")
+
+
+_HEALTH_BUILDERS = (row_service, row_scan, row_firewall, row_backlog)
+
+
+def health_snapshot(data_dir) -> list:
+    """GW-D3: the doctor's per-lane rows, always available. The same
+    builders run inside the daemon's write_status cycle, in the CLI
+    doctor, and behind --machine; a row that itself raises reports
+    one NEUTRAL row and never takes the check down."""
+    rows = []
+    for builder in _HEALTH_BUILDERS:
+        try:
+            rows.append(builder(data_dir))
+        except Exception as e:
+            rows.append(_row(
+                builder.__name__.removeprefix("row_"), "NEUTRAL",
+                f"this row could not run: {type(e).__name__}"))
+    return rows
+
+
+def persist_snapshot(data_dir, rows, gid=None):
+    """GW-D3: the last health truth on disk beside status.json (0640,
+    readable by the dashboard's group) so a daemon restart - or a doctor
+    run from any terminal - leaves its check behind. Best-effort: a
+    read-only disk skips silently; health never DEPENDS on this file."""
+    try:
+        from status import write_status as _atomic
+        path = pathlib.Path(data_dir) / "doctor-last.json"
+        _atomic(str(path), {"ts": _now_iso(), "rows": rows}, gid=gid)
+        return path
+    except Exception:
+        return None
+
+
 HUNTER_UNIT = "greywatch-hunter.service"
 
 
@@ -167,7 +334,8 @@ def hunter_service_row(fix: bool = False) -> dict:
             "actions": actions}
 
 
-def doctor(fix: bool = False, only: str | None = None) -> int:
+def doctor(fix: bool = False, only: str | None = None,
+           machine: bool = False) -> int:
     tools = [t for t in _registry() if only is None or t["name"] == only]
     rows, n_bad = [], 0
     for spec in tools:
@@ -208,8 +376,30 @@ def doctor(fix: bool = False, only: str | None = None) -> int:
           f"{hunter['stamp'] or '-':<28} {acts}")
     if not fix:
         print("\nrun `greywatch doctor --fix` to apply the safe repairs")
+    # GW-D2: the honest service lanes, after the tool table - a doctor
+    # that can say "could not check" is worth more than one that
+    # pretends. Every row degrades alone if its builder raises.
+    lanes = health_snapshot(DATA_DIR)
+    marks = {"READY": "🟢", "DEGRADED": "🟡", "BROKEN": "🔴",
+             "NEUTRAL": "⚪"}
+    print(f"\n{'LANE':<14} {'HEALTH':<9} TEXT")
+    for lane in lanes:
+        print(f"{lane['lane']:<14} {marks.get(lane['verdict'], '⚪')} "
+              f"{lane['verdict']:<9} {lane['text']}")
+    # GW-D1: the machine-readable verdict line is printed in --machine
+    # mode; RED gates the exit code, YELLOW is reported, NEUTRAL checks
+    # neither count (they are honest absences, not failures).
+    n_red = sum(1 for r in rows
+                if (r["after"] or r["before"]) == "BROKEN") + (
+        1 if hunter["verdict"] == "BROKEN" else 0) + sum(
+        1 for lane in lanes if lane["verdict"] == "BROKEN")
+    n_yellow = sum(1 for lane in lanes if lane["verdict"] == "DEGRADED")
+    if machine:
+        print(f"DOCTOR {n_red} {n_yellow}")
+        return 0 if n_red == 0 else 3
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(doctor(fix="--fix" in sys.argv))
+    argv = sys.argv[1:]
+    sys.exit(doctor(fix="--fix" in argv, machine="--machine" in argv))

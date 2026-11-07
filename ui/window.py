@@ -23,6 +23,7 @@ from ui.scanview import read_live, read_history
 from ui.desk import aperture
 from ui.eventclock import attach as clock_attach, present_now
 from ui.homepage import unread_notes as home_unread
+from wiz.common import helper_detail
 from ui.toolicons import icon_name as tool_icon
 from ui.settings import (TrustList, PausedStore, LearningStore,
                          FirewallModeStore)
@@ -645,6 +646,16 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
             self._assistant_pending = None
         audit.record("scan", mode.get("key", ""), ok)
         if not ok:
+            # The request never reached disk: say why where the scan
+            # buttons live, never just return (a click that does nothing
+            # is the one failure mode this window refuses).
+            page = getattr(self, "services_page", None)
+            console = getattr(page, "scanconsole", None)
+            note = f"the scan could not start: {msg}"
+            if console is not None and hasattr(console, "show_scan_note"):
+                console.show_scan_note(note)
+            else:
+                print("greywatch:", note, flush=True)
             return
         # The request file is written; the console is where the run shows.
         self._show("services")
@@ -886,21 +897,28 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         def worker():
             try:
                 from wiz import common
-                rc = common.run_helper("scan-now", [self.SCAN_RUN[name]],
-                                       timeout=120)
+                rc, err = common.run_helper_out(
+                    "scan-now", [self.SCAN_RUN[name]], timeout=120)
             except Exception:
-                rc = -1
-            GLib.idle_add(self._after_scan, name, rc)
+                rc, err = -1, ""
+            GLib.idle_add(self._after_scan, name, rc, err)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _after_scan(self, name: str, rc: int) -> None:
+    def _after_scan(self, name: str, rc: int, err: str = "") -> None:
         self._assistant_record_outcome(rc == 0)
         msg = (f"{friendly_name(name)} scan started; its row turns "
                "green when the log speaks." if rc == 0 else
                f"Could not start the {friendly_name(name)} scan "
-               f"(code {rc}).")
+               f"({helper_detail(rc, err)}).")
         print(f"scan {name}: {msg}", flush=True)
+        if rc != 0:
+            console = getattr(getattr(self, "services_page", None),
+                              "scanconsole", None)
+            if console is not None and hasattr(console, "show_scan_note"):
+                console.show_scan_note(f"the scan could not start: "
+                                       f"{friendly_name(name)} - "
+                                       f"{helper_detail(rc, err)}.")
         self.refresh()
 
     def _toggle_tool(self, name, pause: bool):
@@ -926,7 +944,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
                     # through the scan runner; anything else refuses.
                     if name in self.SCAN_RUN:
                         from wiz import common
-                        rc = common.run_helper(
+                        rc, _err = common.run_helper_out(
                             "scan-now", [self.SCAN_RUN[name]], timeout=120)
                     else:
                         rc = -1
@@ -1499,7 +1517,8 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
                 unknown_n, len(self.registry), len(events),
                 sum(int(x) for x in (snap.get("failures") or {}).values()),
                 snap.get("degraded") or (),
-                dropped=int(snap.get("dropped") or 0))
+                dropped=int(snap.get("dropped") or 0),
+                outbox_dropped=int(snap.get("outbox_dropped") or 0))
             stamp_u = _dt.datetime.fromisoformat(
                 str(updated or "")).astimezone() if updated else None
             tools_desk.update_clock(

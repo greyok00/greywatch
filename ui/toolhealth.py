@@ -79,8 +79,14 @@ class ServicesPage(Gtk.Box):
 
     # -- paint -------------------------------------------------------------
     def refresh(self, snap=None):
-        snap = snap or {}
+        snap = snap or self._win._get_status() if self._win else {}
         self._paint_healer()
+        # Forward-compat (GW-C1): the daemon's scan_request digest, when
+        # it appears, is said in the scan console's own note line; the
+        # absent key renders nothing.
+        cons = getattr(self, "scanconsole", None)
+        if cons is not None and hasattr(cons, "show_request"):
+            cons.show_request((snap or {}).get("scan_request"))
 
     def _paint_healer(self):
         from ui.decisionlist import _clear
