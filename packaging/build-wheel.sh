@@ -61,6 +61,11 @@ tar -C "$GW" -cf - \
     --exclude='./.pre-commit*' --exclude='./.gitignore' \
     . | tar -C "$TREE" -xf -
 
+# the watchlist snapshot rides in the package tree, next to the module
+# that reads it (ptp.snapshot_path() resolves against its own parent)
+install -Dm 0644 "$GW/data/ptp-dashboard.json" \
+    "$TREE/data/ptp-dashboard.json"
+
 # the wheel is pure Python, so this is where a pip install gets its code:
 # strip comments and docstrings the same way the compiled package does.
 # The two files written above are part of the package too, so the whole

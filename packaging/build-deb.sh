@@ -43,6 +43,10 @@ tar -C "$GW" -cf - \
 # The systemd unit's Documentation= line points at this file, and the
 # installed machine should carry the same guide the release page shows.
 install -Dm 0644 "$GW/README.md" "$PAYLOAD/README.md"
+# the watchlist snapshot rides with the app: a machine that cannot reach
+# the dashboard still has yesterday's map to read against
+install -Dm 0644 "$GW/data/ptp-dashboard.json" \
+    "$PAYLOAD/data/ptp-dashboard.json"
 
 # --- ship code without commentary: the compiled modules carry no
 # --- docstrings (build-cython.sh), and the .py fallbacks plus the

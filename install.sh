@@ -119,6 +119,11 @@ _copy_program() { # $1 = destination program tree (code, root-owned)
     if [ "$(id -u)" -eq 0 ] && [ -z "$STAGE" ]; then
         chown -R root:root "$dest"
     fi
+    # the watchlist snapshot seeds itself here (state lives elsewhere; a
+    # fresh install reads the shipped map before the daemon's first cycle)
+    [ -n "$STAGE" ] || [ ! -f "$GW/data/ptp-dashboard.json" ] || \
+        install -Dm 0644 "$GW/data/ptp-dashboard.json" \
+            "$dest/data/ptp-dashboard.json"
     find "$dest" -type d -exec chmod 0755 {} +
     find "$dest" -type f -exec chmod 0644 {} +
     find "$dest" -type f \( -name '*.sh' -o -path '*/bin/*' \) -exec chmod 0755 {} +

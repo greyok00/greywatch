@@ -66,10 +66,14 @@ def test_deb_packages_the_program():
                          "usr/share/applications/greywatch.desktop",
                          "usr/share/icons/hicolor/256x256/apps/greywatch.png"):
             assert required in contents, required
-        # runtime state and the test tree never ship in the package
+        # runtime state and the test tree never ship in the package; the
+        # one data file that does ship is the watchlist snapshot
         bad = [line for line in contents.splitlines()
-               if "/tests/" in line or "data/" in line]
+               if "/tests/" in line
+               or ("data/" in line and "ptp-dashboard.json" not in line
+                   and not line.rstrip().rstrip("/").endswith("/data"))]
         assert not bad, bad[:3]
+        assert "opt/greywatch/data/ptp-dashboard.json" in contents
         # the filled unit must point at /opt/greywatch, never hold the
         # template placeholder, and the payload must actually run
         extract = pathlib.Path(tmp) / "x"

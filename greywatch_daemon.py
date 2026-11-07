@@ -1162,7 +1162,9 @@ class Daemon:
         heartbeat_at = time.monotonic() + 900      # every tool: 15-min check-in
         verify_at = time.monotonic() + self.VERIFY_INTERVAL_S   # wave B
         cve_at = time.monotonic() + self.CVE_INTERVAL_S        # wave C
-        ptp_at = time.monotonic() + self.PTP_INTERVAL_S        # watchlist
+        # the watchlist arms minutes after boot, not a day in: on a fresh
+        # install the pages would otherwise read "never fetched" for a day
+        ptp_at = time.monotonic() + 120                        # watchlist
         engine_check_at = time.monotonic() + 10
         engine_fails: list[float] = []
         scan_arm_at = time.monotonic() + 30

@@ -48,10 +48,13 @@ def test_wheel_packages_the_program_tree():
                          "greywatch/_launch.py",
                          "greywatch/__init__.py"):
             assert required in names, required
+        # the one data file that ships is the watchlist snapshot
         bad = [n for n in names.splitlines()
-               if "tests/" in n or "/data/" in n or ".so" in n
-               or ".github/" in n or "doc/shots" in n]
+               if "tests/" in n or ("/data/" in n
+                                    and "ptp-dashboard.json" not in n)
+               or ".so" in n or ".github/" in n or "doc/shots" in n]
         assert not bad, bad[:3]
+        assert "greywatch/_tree/data/ptp-dashboard.json" in names
 
         # install into a throwaway venv and prove the launcher runs the
         # real CLI from an unrelated cwd

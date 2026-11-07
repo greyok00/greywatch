@@ -32,6 +32,8 @@ tar -C "$GW" -cf - \
     . | tar -C "$TREE" -xf -
 
 python3 "$GW/packaging/strip-source.py" "$TREE"
+install -Dm 0644 "$GW/data/ptp-dashboard.json" \
+    "$TREE/data/ptp-dashboard.json"
 # the compiled release is the product: a module that shipped .so does
 # not also ship readable source. A .py with a
 # compiled sibling goes; everything run by path survives.
