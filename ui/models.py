@@ -13,8 +13,8 @@ class EventRow:
         self.severity = raw.get("severity", "INFO")
         self.mark = MARK_BY_SEVERITY.get(self.severity, "⚪")
         self.ts = raw.get("ts", "")
-        ctl = ",".join(raw.get("nist_control", [])) or "–"
-        self.nist = f"{raw.get('nist_func', '–')}/{ctl}"
+        ctl = ",".join(raw.get("nist_control", [])) or "-"
+        self.nist = f"{raw.get('nist_func', '-')}/{ctl}"
         cves = raw.get("cves") or []
         self.cves = ",".join(cves) if cves else ""
         self.text = raw.get("text", "")
