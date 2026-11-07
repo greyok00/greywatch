@@ -42,7 +42,7 @@ PAINT_MERGE_MS = 250
 # two places (a centred stock header never lines up with the cells).
 ICON_W = 18      # tool glyph column
 DOT_W = 22       # severity dot column
-TIME_W = 84      # "18:35:39" plus breathing room
+TIME_W = 104     # "18:35:39" plus breathing room
 
 # Which guided task configures a given protection. Shared by the Details
 # dialog and the Tools page so a tool offers the SAME entry point in both

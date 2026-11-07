@@ -32,6 +32,14 @@ def win():
     w = MainWindow()
     w.present()
     pump(30)
+    # _glib_ids[0] is the 5s periodic refresh, which recomputes the
+    # Firewall badge from the machine's live data dir; a tick landing
+    # inside a pump() would rewrite a badge under an active assertion.
+    # These tests assert the shell's own badge API, so the machine tick
+    # is silenced (the 1s scan tick stays: it paints scan state only).
+    if getattr(w, "_glib_ids", None):
+        GLib.source_remove(w._glib_ids[0])
+        w._glib_ids.remove(w._glib_ids[0])
     yield w
     w.destroy()
 

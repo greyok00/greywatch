@@ -459,9 +459,10 @@ class DefenseView(Gtk.Box):
         for cov in rows:
             if not isinstance(cov, dict) or not cov.get("project"):
                 continue
-            txt = (f"{cov.get('project')} (as "
-                   f"{', '.join(cov.get('packages') or [])}): "
-                   f"{cov.get('findings', 0)} public findings"
+            pkg = ", ".join(cov.get("packages") or [])
+            txt = ((f"{cov.get('project')} (as {pkg}): " if pkg else
+                    f"{cov.get('project')}: ")
+                   + f"{cov.get('findings', 0)} public findings"
                    + (f", {cov.get('high', 0)} HIGH" if cov.get("high") else "")
                    + " - verify the installed version when the"
                      " keeper chooses to")

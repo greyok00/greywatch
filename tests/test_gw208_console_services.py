@@ -195,6 +195,49 @@ class TestOverview:
         jumps[0].emit("clicked")
         assert shown == ["services", "defense"]
 
+    def test_row_click_scrolls_the_card_into_view(self, store, monkeypatch):
+        """The card paints under two lane feeds, below the fold on a full
+        page; _show_detail schedules a scroll so the click reads."""
+        from gi.repository import GLib
+
+        class _Adj:
+            def __init__(self):
+                self.value = 0.0
+
+            def get_value(self):
+                return 0.0
+
+            def get_page_size(self):
+                return 100.0
+
+            def get_upper(self):
+                return 900.0
+
+            def set_value(self, v):
+                self.value = v
+
+        class _Sc(Gtk.ScrolledWindow):
+            pass
+
+        page, _win = self._page(store, monkeypatch)
+        page.refresh(page._win._get_status())
+        scroller, adj = _Sc(), _Adj()
+        scroller._adj = adj
+        scroller.get_vadjustment = lambda: adj
+        list(page._feed["threat"]._rows)[0].emit("clicked")
+        assert page._detail.get_visible()
+
+        monkeypatch.setattr(page, "_detail_offset", lambda: (600.0, scroller))
+        assert page._scroll_detail_in(0) == GLib.SOURCE_REMOVE
+        assert adj.value == min(600.0 - 12, 800.0)
+
+        # not laid out yet: retry, give up after five, no throw either way
+        monkeypatch.setattr(page, "_detail_offset", lambda: (-1, scroller))
+        assert page._scroll_detail_in(2) == GLib.SOURCE_CONTINUE
+        assert page._scroll_detail_in(9) == GLib.SOURCE_REMOVE
+        monkeypatch.setattr(page, "_detail_offset", lambda: (-1, None))
+        assert page._scroll_detail_in(0) == GLib.SOURCE_REMOVE
+
     def test_tool_lane_row_never_carries_start_controls(
             self, store, monkeypatch):
         page, _win = self._page(store, monkeypatch)

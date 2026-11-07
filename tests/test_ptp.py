@@ -218,6 +218,20 @@ def test_defense_page_renders_watch_rows(monkeypatch, defense_view):
     v.unparent()
 
 
+def test_defense_page_degrades_rows_with_no_packages(monkeypatch,
+                                                     defense_view):
+    v = defense_view
+    monkeypatch.setattr(defense, "ptp_rows", lambda _dd: [
+        {"project": "curl", "findings": 2, "high": 1, "medium": 1,
+         "low": 0, "via": "deb", "packages": []}])
+    v.refresh({"defense": {}})
+    text = " ".join(_walk_labels(v._armor))
+    # no packages resolved: the row reads the project alone, never "(as )"
+    assert "curl: 2 public findings, 1 HIGH" in text
+    assert "(as " not in text
+    v.unparent()
+
+
 def test_defense_page_names_the_never_fetched_watch(monkeypatch,
                                                     defense_view):
     v = defense_view

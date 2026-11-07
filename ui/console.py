@@ -29,7 +29,7 @@ from ui.assistant import AssistantPanel
 from ui import metrics
 from events import lane_for
 
-TIME_W = 84      # "18:35:39" plus breathing room (window.py carries twin)
+TIME_W = 104     # "18:35:39" plus breathing room (window.py carries twin)
 
 
 def _time_of(ev):
@@ -264,6 +264,38 @@ class OverviewPage(Gtk.Box):
     def _show_detail(self, ev):
         self._detail.paint(ev, self._on_run_option)
         self._detail.set_visible(True)
+        GLib.idle_add(self._scroll_detail_in, 0, priority=GLib.PRIORITY_LOW)
+
+    def _scroll_detail_in(self, tries=0):
+        """The card paints under two lane feeds, below the fold on a full
+        page: scroll its pane so a row click never looks like nothing
+        happened. GLib.SOURCE_CONTINUE until the layout settles."""
+        y, scroller = self._detail_offset()
+        if scroller is None:
+            return GLib.SOURCE_REMOVE
+        if y < 0:
+            return (GLib.SOURCE_CONTINUE if tries < 5
+                    else GLib.SOURCE_REMOVE)
+        adj = scroller.get_vadjustment()
+        floor = max(0.0, adj.get_upper() - adj.get_page_size())
+        if y < adj.get_value() or y > adj.get_value() + adj.get_page_size():
+            adj.set_value(min(max(0.0, y - 12), floor))
+        return GLib.SOURCE_REMOVE
+
+    def _detail_offset(self):
+        """The card's y inside the ScrolledWindow that owns it, or -1
+        with the scroller when the chain is not laid out yet."""
+        w = self._detail
+        chain = []
+        while w is not None and not isinstance(w, Gtk.ScrolledWindow):
+            chain.append(w)
+            w = w.get_parent()
+        if not isinstance(w, Gtk.ScrolledWindow):
+            return -1, None
+        for c in chain:
+            if c.get_allocation().y < 0:
+                return -1, w
+        return sum(c.get_allocation().y for c in chain), w
 
     def _on_run_option(self, _btn, opt):
         if self._win is not None and hasattr(self._win, "_run_log_option"):
