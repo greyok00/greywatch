@@ -4,9 +4,9 @@
   **One window for every security tool already on your Linux desktop.**
 
   [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-  [![Release](https://img.shields.io/badge/release-v0.1.29-green)](https://github.com/greyok00/greywatch/releases)
+  [![Release](https://img.shields.io/badge/release-v0.1.28-green)](https://github.com/greyok00/greywatch/releases)
   [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](pyproject.toml)
-  [![Tests](https://img.shields.io/badge/tests-1665%20passing-brightgreen)](#build-and-test)
+  [![Tests](https://img.shields.io/badge/tests-1844%20passing-brightgreen)](#build-and-test)
   [![CI](https://img.shields.io/badge/CI-github%20actions-blueviolet)](https://github.com/greyok00/greywatch/actions)
 </div>
 
@@ -39,10 +39,12 @@ Endpoint Hardening checks the machine against a hardening baseline, shows the re
 Debian 13, Parrot 7.4 and Ubuntu 25.10 (Python 3.13): download `greywatch_0.1.25_amd64.deb` from the [releases page](https://github.com/greyok00/greywatch/releases) and install it:
 
 ```bash
-sudo apt install ./greywatch_0.1.25_amd64.deb
+sudo apt install ./greywatch_0.1.28_amd64.deb
 ```
 
 Each release includes a `sha256` checksum. The package installs under `/opt/greywatch`, enables `greywatch.service`, binds the service to your desktop account and adds the menu entry. State (events, scans, logs) lives in `/var/lib/greywatch`; `sudo apt remove greywatch` keeps it.
+
+Upgrading from a 0.1.x install: install the new .deb over the old one and the same state directory keeps working; the 0.3.0 line adds an event-ledger cap with the newest records kept (the daemon trims it on its own hourly pass), five `doctor` health lanes, and `gw doctor --machine` for scripts. Nothing in `/var/lib/greywatch` needs to be migrated by hand.
 
 For a full-system install from a checkout:
 
@@ -56,7 +58,7 @@ sudo ./install.sh --check  # verify
 For the command line only, the wheel from a release gives you the `gw` command:
 
 ```bash
-pip install https://github.com/greyok00/greywatch/releases/download/v0.1.25/greywatch-0.1.25-py3-none-any.whl
+pip install https://github.com/greyok00/greywatch/releases/download/v0.1.28/greywatch-0.1.28-py3-none-any.whl
 gw --version
 ```
 

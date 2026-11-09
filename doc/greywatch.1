@@ -1,0 +1,87 @@
+.TH GREYWATCH 1 "November 2026" "greywatch 0.3.0" "User Commands"
+.SH NAME
+greywatch \- Linux endpoint monitoring and hardening suite
+.SH SYNOPSIS
+.B greywatch
+(GUI, installed launcher: GreyWatch)
+.br
+.B gw
+.IB command " [" arguments ]
+.SH DESCRIPTION
+GreyWatch watches this machine's protections and tools from a desktop
+dashboard (the GreyWatch app) and answers a text command line (gw).
+Everything the GUI shows can be read the same way through gw, and the
+two never disagree: both read the daemon's published status.
+.PP
+The daemon (greywatch.service) runs as the machine's root lane and
+publishes status.json under /var/lib/greywatch; the desktop app and gw
+read only what it publishes. Privileged work happens through the
+apply/ helpers behind polkit. Nothing is ever changed without an
+answer the operator clicked; the doctor proposes, it never auto-fixes.
+.SH COMMANDS
+.TP
+.B gw status
+What the suite is doing right now.
+.TP
+.B gw events
+The audit trail, newest first. Options pick tool and severity, and the
+last N entries.
+.TP
+.B gw tail
+Follow the audit trail live.
+.TP
+.B gw log TOOL
+One tool's own log file. Only lines containing the text of the grep
+option, or the last N lines.
+.TP
+.B gw decisions
+List decision specs, all or pending only. Pending decisions are the
+questions waiting on the operator; the dashboard counts this list.
+.TP
+.B gw answer ID OPTION
+Answer a pending decision by its id and the option id to answer with.
+.TP
+.B gw action TOOL
+Restart a tool, or manage offenders. See the doctor output for the
+verbs.
+.TP
+.B gw doctor
+Diagnose, recover, and verify the tools. The safe-repair flag applies
+repairs, the tool option scopes it, and the pending flag prints the
+questions first.
+.PP
+.B Do not confuse the doctor with the doctor machine mode:
+the same command run as
+.I doctor.py --machine
+from the source tree prints one line
+(DOCTOR n_red n_yellow) and exits 0 when healthy, 3 when something
+reports a fault. Scripts and monitors use that.
+.br
+The separate machine-mode health lanes of the daemon itself (service,
+scan, firewall, backlog) publish through status.json, so a monitor can
+watch it without touching the process.
+.TP
+.B gw hunter
+Threat hunts: show findings, or run one. The no-ai flag keeps the hunt
+deterministic.
+.TP
+.B gw setup
+First-install tool audit and setup.
+.SH FILES
+.TP
+.I /var/lib/greywatch/status.json
+The daemon's published face. The only window the desktop app and gw
+look through.
+.TP
+.I /var/lib/greywatch/events.jsonl
+The audit trail.
+.TP
+.I /var/lib/greywatch/decisions.jsonl
+Operator decisions, append-only.
+.TP
+.I /etc/systemd/system/greywatch.service
+The daemon unit. Restart it after updates: a running daemon does not
+pick up new code on its own (greywatch keeps the "never interrupt a
+running model" law; a plain restart by the operator is the proven path).
+.SH SEE ALSO
+systemctl(1), nft(8), psad(8)
