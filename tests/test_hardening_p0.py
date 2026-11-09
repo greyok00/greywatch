@@ -118,9 +118,10 @@ def _conn_path(path):
 
 def test_supervisor_restarts_a_dead_thread():
     s = Supervisor()
+    stop = threading.Event()
 
     def worker():
-        while True:
+        while not stop.is_set():
             time.sleep(0.05)
 
     u = s.register("worker", worker)
@@ -133,6 +134,7 @@ def test_supervisor_restarts_a_dead_thread():
     u.last_start = time.monotonic() - 3.0
     assert u.supervise() == "restarted"
     assert u.thread.is_alive() and u.restarts == 1
+    stop.set()   # the original infinite worker must not outlive the test
 
 
 def test_breaker_trips_and_resets_after_quiet():
