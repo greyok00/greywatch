@@ -20,9 +20,10 @@ finished (public posts happened only where a release line says so).
   fact refresh, close the documentation half of the 1.0 gap.
 - Test-harness livelock fix: the chooser test silences its window's
   5s periodic and 1s scan timers (the tab_shell "silence the periodic
-  tick" precedent) and every GTK pump checks its clock per dispatch,
-  so a full data-dir refresh running on a timer can no longer pin the
-  suite to minutes of hidden refresh work.
+  tick" precedent) and the storm-prone GTK pumps (the suites the
+  11-07 gate wedged in) now check their clock per dispatch, so a full
+  data-dir refresh running on a timer can no longer pin the suite to
+  minutes of hidden refresh work.
 
 ## 0.2.0 - 2026-11-07 (local tag; pushes wait for the owner's grants)
 

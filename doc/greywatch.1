@@ -47,8 +47,7 @@ verbs.
 .TP
 .B gw doctor
 Diagnose, recover, and verify the tools. The safe-repair flag applies
-repairs, the tool option scopes it, and the pending flag prints the
-questions first.
+repairs, and the tool option scopes the run to one tool.
 .PP
 .B Do not confuse the doctor with the doctor machine mode:
 the same command run as
@@ -58,7 +57,7 @@ from the source tree prints one line
 reports a fault. Scripts and monitors use that.
 .br
 The separate machine-mode health lanes of the daemon itself (service,
-scan, firewall, backlog) publish through status.json, so a monitor can
+scan, firewall, backlog, ledger) publish through status.json, so a monitor can
 watch it without touching the process.
 .TP
 .B gw hunter

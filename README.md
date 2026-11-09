@@ -44,7 +44,7 @@ sudo apt install ./greywatch_0.1.28_amd64.deb
 
 Each release includes a `sha256` checksum. The package installs under `/opt/greywatch`, enables `greywatch.service`, binds the service to your desktop account and adds the menu entry. State (events, scans, logs) lives in `/var/lib/greywatch`; `sudo apt remove greywatch` keeps it.
 
-Upgrading from a 0.1.x install: install the new .deb over the old one and the same state directory keeps working; the 0.3.0 line adds an event-ledger cap with the newest records kept (the daemon trims it on its own hourly pass), five `doctor` health lanes, and `gw doctor --machine` for scripts. Nothing in `/var/lib/greywatch` needs to be migrated by hand.
+Upgrading from a 0.1.x install: install the new .deb over the old one and the same state directory keeps working; the 0.3.0 line adds an event-ledger cap with the newest records kept (the daemon trims it on its own hourly pass), five `doctor` health lanes, and machine-readable health for scripts (`python3 doctor.py --machine` from the source tree). Nothing in `/var/lib/greywatch` needs to be migrated by hand.
 
 For a full-system install from a checkout:
 
