@@ -320,7 +320,7 @@ def parse_psad(line: str) -> Optional[Event]:
         return None                      # daemon chatter: silence
     bl = _PSAD_BLOCK_RE2.search(msg)
     if bl:
-        verb, ip = bl.group(1).lower(), bl.group(2)
+        verb = bl.group(1).lower()
         if verb == "added":
             return _ev("psad", "CRITICAL", msg[:200], None)
         if verb == "renewed":

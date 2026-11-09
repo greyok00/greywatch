@@ -15,9 +15,7 @@ Pins:
 import json
 import pathlib
 import sys
-import types
 
-import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -134,7 +132,7 @@ class _NoticeDaemon(daemon_mod.Daemon):
         self._outbox = []
 
     def _notice(self, tool, severity, text, dedupe_window_s=600.0):
-        now = object()                       # never dedupes in this stub
+        _now = object()                      # never dedupes in this stub
         key = f"{tool}|{severity}|{text[:400]}"
         prev = self._notice_at.get(key)
         if prev is not None:

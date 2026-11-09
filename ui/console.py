@@ -14,7 +14,6 @@ appears on this page, the two-lane law).
 """
 from __future__ import annotations
 
-import pathlib
 import threading
 
 import gi

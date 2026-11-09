@@ -18,7 +18,7 @@ import greywatch_daemon as daemon_mod
 from ui import discover, metrics
 from ui.models import local_clock
 from ui.desk import related_box
-from ui.plain import escape, muted as pc_muted, ok as pc_ok, soft as pc_soft
+from ui.plain import escape, muted as pc_muted, ok as pc_ok
 from ui.themes import dark_default, load_setting, THEME_CHOICES
 
 _SETTINGS_RELATED = {

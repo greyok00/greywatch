@@ -94,7 +94,6 @@ def test_clear_events_helper_errors_without_a_log(tmp_path):
 
 
 # ---- task 3: log rows carry raw events; tool rows fix from the row ---------
-import os as _os
 import sys as _sys
 _sys.path.insert(0, str(ROOT))
 

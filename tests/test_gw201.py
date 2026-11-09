@@ -227,7 +227,7 @@ def _stub_bin(tmp_path, name, body):
 
 
 def _nft_stub(tmp_path, state):
-    return _stub_bin(tmp_path, "nft", f'''#!/bin/bash
+    return _stub_bin(tmp_path, "nft", '''#!/bin/bash
 case "$*" in
   *"-f -"*) exit 0;;
   *"list table inet greywatch_blocks"*) [ "$STATE" = empty ] && exit 1 || exit 0;;

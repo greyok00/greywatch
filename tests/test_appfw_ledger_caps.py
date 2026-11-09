@@ -10,9 +10,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import os
 
-from appfw.policy import Policy, KEEP_LEDGER_LINES, MAX_LEDGER_BYTES
+from appfw.policy import Policy, KEEP_LEDGER_LINES
 
 
 def _conn(host, port=443):

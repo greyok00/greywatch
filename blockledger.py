@@ -120,7 +120,7 @@ def classify_event(ev, data_dir) -> dict | None:
     """
     tool = getattr(ev, "from_tool", "") or ""
     text = getattr(ev, "text", "") or ""
-    path = ledger_path(data_dir)
+    ledger_path(data_dir)                  # ensures the state dir exists
     if tool == "psad":
         m = PSAD_BLOCK_RE.search(text)
         if m:

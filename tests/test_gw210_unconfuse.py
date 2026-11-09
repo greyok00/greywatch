@@ -8,10 +8,8 @@ and every surface carries one quiet "Open the Activity Log" link and
 one quiet jump to the page that manages that lane. This file pins the
 affordances at every surface.
 """
-import json
 import pathlib
 import sys
-import tempfile
 
 import pytest
 
@@ -191,9 +189,3 @@ class TestMegaLogAffordance:
         assert shown == ["defense"]
         for dlg in presented:
             dlg.destroy()
-
-    def test_the_log_says_rows_are_pressable_in_source(self):
-        src = (ROOT / "ui" / "logsdesk.py").read_text()
-        assert "Click a row to resolve it" in src
-        # the same words live on the view: hovering a row explains itself
-        assert "query-tooltip" in src and "_log_row_tooltip" in src

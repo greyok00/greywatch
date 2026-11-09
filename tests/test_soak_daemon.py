@@ -14,8 +14,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import greywatch_daemon as gd
-from tests.test_daemon_loop import mk_daemon, _reg
+from tests.test_daemon_loop import mk_daemon
 from greywatch_daemon import read_events
 
 CYCLES = 25

@@ -130,7 +130,6 @@ def test_critical_square_start_refusal_is_honest(tmp_path, monkeypatch):
 
 
 def test_start_tool_maps_every_shape_of_tool(monkeypatch):
-    now = _dt.datetime.now(UTC)
     calls = []
 
     def fake_run(cmd, timeout=45):
@@ -172,7 +171,6 @@ def test_deny_lane_keeps_its_block_actions(tmp_path, monkeypatch):
     monkeypatch.setattr(na, "ALERTS_SETTING_PATH", settings)
     _FakeNotification.instances.clear()
 
-    import json
     q = na.BlockedQueue(tmp_path)
     sq = na.NotifyAlert(q, notifier=_FakeNotify)
     sq.handle_deny("/usr/bin/curl", "bad.example", now=1000.0)

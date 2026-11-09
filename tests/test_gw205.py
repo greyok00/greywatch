@@ -7,15 +7,12 @@ True/False/None and say UNKNOWN when they cannot look - never SAFE.
 """
 import json
 import pathlib
-import stat
-import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import blockledger
-import cverules
 import greywatch_daemon as gd
 from greywatch_daemon import Daemon
 from ui import defense

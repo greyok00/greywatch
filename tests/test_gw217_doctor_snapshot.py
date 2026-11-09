@@ -13,13 +13,11 @@ import json
 import os
 import pathlib
 import sys
-import threading
 from argparse import Namespace
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import pytest
 
 import doctor as doctor_mod  # noqa: E402
 import greywatch_daemon as daemon_mod  # noqa: E402

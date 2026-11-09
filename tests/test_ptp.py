@@ -187,7 +187,6 @@ def test_watch_rows_passes_the_daemons_projects_through(tmp_path):
 
 # ---- the Defense page renders the watchlist -------------------------------
 def _walk_labels(host):
-    from gi.repository import Gtk
     out = []
 
     def walk(w):

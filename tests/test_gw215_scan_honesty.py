@@ -17,7 +17,6 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import pytest
 
 import greywatch_daemon as daemon_mod  # noqa: E402
 import scan_session  # noqa: E402

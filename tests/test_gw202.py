@@ -18,7 +18,6 @@ _spec.loader.exec_module(cve_refresh)
 import cverules
 import greywatch_daemon as gd
 from greywatch_daemon import Daemon, read_events
-from hunter import web
 from hunter import engine as hengine
 
 
@@ -55,8 +54,8 @@ def test_parse_entries_plain_items_stay_plain():
 
 def test_refresh_merges_without_downgrading(tmp_path):
     cache = tmp_path / "cve-cache.json"
-    first = {"vulnerabilities": [_nvd("CVE-2026-0003", score=5.0,
-                                      sev="MEDIUM")]}
+    _first = {"vulnerabilities": [_nvd("CVE-2026-0003", score=5.0,
+                                       sev="MEDIUM")]}
     cve_refresh.refresh(base_url="dead://x", cache_path=cache,
                         queries=["nothing here"])
     # offline leaves what an earlier online run wrote
@@ -157,7 +156,7 @@ def test_daemon_announces_rules_in_the_monitors_voice(tmp_path):
 
 # ---- the hunter join ------------------------------------------------------
 def test_hunter_joins_tracked_cves_to_events(tmp_path):
-    p = _cache(tmp_path, [{"id": "CVE-2026-0050", "modified": "m",
+    _cache(tmp_path, [{"id": "CVE-2026-0050", "modified": "m",
                            "tool": "clamav", "score": 9.1,
                            "severity": "CRITICAL",
                            "summary": "fax parse flaw"}])

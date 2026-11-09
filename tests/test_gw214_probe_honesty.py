@@ -152,7 +152,6 @@ def test_unreadable_watch_file_names_no_channels(tmp_path):
 
 # ---- the defense page renders the UNKNOWN claim over a dead probe ----
 def _walk_labels(host):
-    from gi.repository import Gtk
     out = []
 
     def walk(w):

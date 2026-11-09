@@ -118,11 +118,11 @@ def gtk_css(tokens: dict) -> str:
     lane_t = tok("--el-lane-threat", fail)
     lane_u = tok("--el-lane-tool", ok)
     # The spacing scale (wave D): new components use steps, not ad-hoc px.
-    s2 = tok("--el-s-2", "4px")
+    tok("--el-s-2", "4px")
     s3 = tok("--el-s-3", "8px")
-    s4 = tok("--el-s-4", "12px")
-    s5 = tok("--el-s-5", "18px")
-    s6 = tok("--el-s-6", "26px")
+    tok("--el-s-4", "12px")
+    tok("--el-s-5", "18px")
+    tok("--el-s-6", "26px")
     mono = tok("--el-font-mono", "monospace")
     display = tok("--el-font-display", "Inter")
     mute = tok("--el-mute", "#8b9bb0")
@@ -1232,7 +1232,6 @@ def _g_settings(cr, s):
 
 @_glyph("defense")
 def _g_defense(cr, s):
-    import math
     cr.move_to(12 * s, 3.2 * s)
     cr.line_to(19.5 * s, 6.4 * s)
     cr.line_to(19.5 * s, 12.4 * s)

@@ -137,7 +137,6 @@ def test_hardening_arp_pins_the_real_router(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, PATH=f"{bin_dir}:{os.environ.get('PATH','')}")
-    calls = tmp_path / "nft-calls.log"
     _stub_bin(tmp_path, "ip",
         '#!/bin/bash\n'
         'case "$*" in *"route show default"*) echo "default via 192.168.1.1 dev eth0";; '
