@@ -272,30 +272,38 @@ def _addr_only(host: str) -> str:
     return h
 
 
-def geoip_country(host: str) -> tuple[str, str]:
-    """(code, name) from the local GeoIP.dat — offline, last resort."""
-    try:
-        import GeoIP                                   # Debian python3-geoip
-    except ImportError:
-        return "", ""
-    addr = _addr_only(host)
+def _geo_table():
+    """The open GeoIP table, opened once, or None without the lib or
+    the data file. One seam for tests: the routing logic pins stub this
+    instead of the module global (a runner without python3-geoip still
+    gets the full routing battery)."""
     global _geo
-    try:
-        _geo
-    except NameError:
+    if _geo is None:
+        try:
+            import GeoIP                               # Debian python3-geoip
+        except ImportError:
+            return None
         try:
             _geo = GeoIP.open("/usr/share/GeoIP/GeoIP.dat",
                               GeoIP.GEOIP_STANDARD)
         except Exception:
             _geo = None
-    if _geo is None:
+        return _geo
+    return _geo
+
+
+def geoip_country(host: str) -> tuple[str, str]:
+    """(code, name) from the local GeoIP.dat — offline, last resort."""
+    geo = _geo_table()
+    if geo is None:
         return "", ""
+    addr = _addr_only(host)
     try:
         if ":" in addr:
-            return (_geo.country_code_by_addr_v6(addr) or "",
-                    _geo.country_name_by_addr_v6(addr) or "")
-        return (_geo.country_code_by_addr(addr) or "",
-                _geo.country_name_by_addr(addr) or "")
+            return (geo.country_code_by_addr_v6(addr) or "",
+                    geo.country_name_by_addr_v6(addr) or "")
+        return (geo.country_code_by_addr(addr) or "",
+                geo.country_name_by_addr(addr) or "")
     except Exception:
         return "", ""
 

@@ -58,7 +58,7 @@ class _Recorder:
 
 def test_geoip_country_uses_the_v4_table_for_port_bearing_addresses():
     rec = _Recorder({"114.111.39.11": ("JP", "Japan")})
-    with mock.patch.object(identity, "_geo", rec, create=True):
+    with mock.patch.object(identity, "_geo_table", lambda: rec):
         code, name = identity.geoip_country("114.111.39.11:443")
     assert (code, name) == ("JP", "Japan")
     assert rec.v4 == ["114.111.39.11"]      # the port was stripped
@@ -67,7 +67,7 @@ def test_geoip_country_uses_the_v4_table_for_port_bearing_addresses():
 
 def test_geoip_country_still_routes_real_v6_addresses_to_the_v6_table():
     rec = _Recorder()
-    with mock.patch.object(identity, "_geo", rec, create=True):
+    with mock.patch.object(identity, "_geo_table", lambda: rec):
         code, _name = identity.geoip_country("2606:4700:4700::1111")
     assert code == ""
     assert rec.v6 == ["2606:4700:4700::1111"]
@@ -90,7 +90,7 @@ def test_private_addresses_are_recognised(addr, want):
 
 def test_place_words_say_the_ladder_out_loud(monkeypatch):
     rec = _Recorder({"114.111.39.11": ("JP", "Japan")})
-    monkeypatch.setattr(identity, "_geo", rec, raising=False)
+    monkeypatch.setattr(identity, "_geo_table", lambda: rec)
     assert na.place_words("114.111.39.11:443") == "Japan"
     assert na.place_words("192.168.1.20:22") == "local network"
     rec2 = _Recorder()       # table does not know it
@@ -100,7 +100,7 @@ def test_place_words_say_the_ladder_out_loud(monkeypatch):
 
 def test_tile_ladder_ends_in_a_picture(monkeypatch):
     rec = _Recorder()        # the table knows nothing here
-    monkeypatch.setattr(identity, "_geo", rec, raising=False)
+    monkeypatch.setattr(identity, "_geo_table", lambda: rec)
     alert = na.NotifyAlert(na.BlockedQueue(pathlib.Path("/tmp")))
     # a named program on an unknown public address → a program tile
     pic = alert._tile("/usr/bin/curl", "8.8.4.4:443")
