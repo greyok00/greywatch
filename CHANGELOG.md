@@ -3,7 +3,7 @@
 Every line of GreyWatch, newest first. Dates are the day the line was
 finished (public posts happened only where a release line says so).
 
-## 0.3.0 - 2026-11-07 (local tag; push waits for the owner's grants)
+## 0.3.0 - 2026-11-08 (released)
 
 - Phase 4 of the rebuild is closed for good: the tool lifecycle block
   (pause and resume dialogs, panic lockdown, manual scan triggers, the
@@ -52,6 +52,15 @@ finished (public posts happened only where a release line says so).
   wave; ABI facts stay pinned exactly as the 0.1.7 lesson wrote them
   (deb Depends derived from the compiled ABI; ubuntu-24.04 pins the
   bundle ABI).
+
+- The 1.0 line's first audited iterations ride along: the learning
+  ledger meets the GW-02 planted-name standard (appends through
+  `append_checked`, trims staged, caps stated in lines first: 1600
+  seen, 4000 RAM / 2000 disk malformed - pinned by
+  `tests/test_appfw_ledger_caps.py`), the daemon soak becomes a
+  pinned test (25 cycles over populated ledgers: caps held, doctor
+  truth restored - `tests/test_soak_daemon.py`), and the doctor
+  documentation tells its five lanes exactly.
 
 ## 0.1.28 - 2026-11-06 (released)
 
