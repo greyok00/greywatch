@@ -157,15 +157,32 @@ N". Lines that arrive during the flush are never counted as dropped.
 *Pinned by:* `tests/test_gw214_probe_honesty.py`, `tests/test_gw202*.py`
 (legacy compat).
 
+**12. The event ledger's growth policy** - `events.jsonl` against its
+line cap.
+*Default:* the audit trail is capped at MAX_EVENTS lines and the daemon
+trims it hourly, keeping the newest records.
+*Failsafe:* the trim counts and keeps records in bounded memory (one
+file walk in fixed chunks plus a sliding window of the newest lines) -
+trimming a ledger that grew past its cap never holds the whole file in
+RAM; a stalled last line without its trailing newline still counts as
+a record.
+*Health:* the doctor's `ledger` row (Wave F2): over cap reads
+DEGRADED and names the numbers ("the running service either predates
+the cap or its trim stopped"); unreadable is NEUTRAL, never READY.
+*Pinned by:* `tests/test_daemon_loop.py` (trim cap contract, no
+trailing newline), `tests/test_gw217_doctor_snapshot.py` (the ledger
+row + `count_lines` records-not-bytes).
+
 ## The health layer (doctor, Wave D)
 
 The doctor is always on, not only after a manual run:
 
-- Four honest service rows - `service` (the daemon's unit + the
+- Five honest service rows - `service` (the daemon's unit + the
   dashboard snapshot's age, with the dashboard's own 90 s contract),
   `scan` (what is waiting on the request channel), `firewall` (nft,
   `NEUTRAL` "cannot check as this user" when it cannot answer),
-  `backlog` (pending decisions, `DEGRADED` above 20). A row that
+  `backlog` (pending decisions, `DEGRADED` above 20), `ledger` (the
+  event ledger against its cap, Wave F2). A row that
   cannot check says `NEUTRAL`, never READY.
 - The daemon builds the same rows every `write_status` cycle,
   publishes `status["doctor"]`, and persists `doctor-last.json`

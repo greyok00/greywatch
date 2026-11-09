@@ -79,6 +79,16 @@ def test_chooser_reopens_fresh_after_a_pick():
     from ui.window import MainWindow
 
     win = MainWindow(on_status_change=None, tray_available=False)
+    # The 5s periodic and 1s scan timers do full data-dir refreshes, and
+    # under box load they ate the pump (load-livelock fix 11-07). The
+    # chooser assertions never read timer output - silence them, never
+    # mask the assertion (tab_shell precedent).
+    for tid in list(getattr(win, "_glib_ids", []) or []):
+        try:
+            gl.source_remove(tid)
+        except RuntimeError:
+            pass                    # already fired
+    win._glib_ids = []
     ctx = gl.main_context_default()
     try:
         win.present()
@@ -102,8 +112,14 @@ def test_chooser_reopens_fresh_after_a_pick():
 def _pump(ctx, ms):
     end = gl_monotonic() + ms * 1000
     while gl_monotonic() < end:
-        while ctx.pending():
+        for _ in range(500):         # bounded: a pending storm
+            # must never pin the harness (load-livelock fix 11-07)
+            if not ctx.pending():
+                break
             ctx.iteration(False)
+            if gl_monotonic() > end:
+                return               # one dispatch may itself run long
+
         ctx.iteration(True)
 
 

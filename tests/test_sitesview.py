@@ -13,9 +13,16 @@ from ui.sitesview import SitesView  # noqa: E402
 
 def pump(n=20):
     ctx = GLib.main_context_default()
+    end = GLib.get_monotonic_time() + 5_000_000
     for _ in range(n):
-        while ctx.pending():
+        for _ in range(500):         # bounded: a pending storm
+            # must never pin the harness (load-livelock fix 11-07)
+            if not ctx.pending():
+                break
             ctx.iteration(False)
+            if GLib.get_monotonic_time() > end:
+                return               # one dispatch may itself run long
+
 
 
 class Store:

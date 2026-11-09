@@ -1,6 +1,6 @@
 # GreyWatch Walkthrough
 
-**GreyWatch 0.2.0 - Linux endpoint security.** One dashboard for every
+**GreyWatch 0.3.0 - Linux endpoint security.** One dashboard for every
 protection already on this computer. The protections do their own work in the
 background; GreyWatch reads what they report, explains it in plain words, and
 asks you for an answer whenever something needs a decision.
@@ -324,7 +324,8 @@ that jump across the app.
   daemon has not reported in a while ("the daemon pipeline may be wedged -
   restart it"), with **Re-check** to re-read right now. The daemon also
   publishes a per-lane health check (service, scan channel, firewall,
-  pending backlog) on every cycle, so this pane always carries the
+  pending backlog, event ledger against its cap) on every cycle, so
+  this pane always carries the
   doctor's most recent read even between manual runs.
 - **Updates** - CVE checks for installed packages, on request, never
   scheduled.
@@ -470,6 +471,6 @@ counters keep counting. Popups are a convenience lane, never the record.
 
 ---
 
-*This guide describes GreyWatch 0.2.0 exactly as shipped. Every claim above
+*This guide describes GreyWatch 0.3.0 exactly as shipped. Every claim above
 was checked against the running application screen by screen; screenshots in
 the shots folder show each step.*

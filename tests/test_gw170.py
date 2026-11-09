@@ -112,8 +112,14 @@ def _pump_until(pred, seconds):
     ctx = gl.main_context_default()
     end = gl.get_monotonic_time() + int(seconds * 1e6)
     while gl.get_monotonic_time() < end:
-        while ctx.pending():
+        for _ in range(500):         # bounded: a pending storm
+            # must never pin the harness (load-livelock fix 11-07)
+            if not ctx.pending():
+                break
             ctx.iteration(False)
+            if gl.get_monotonic_time() > end:
+                return               # one dispatch may itself run long
+
         if pred():
             return
         ctx.iteration(True)

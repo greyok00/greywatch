@@ -111,25 +111,25 @@ def test_control_label_matches_the_desk_verb():
 
 
 def test_log_row_values_carry_the_raw_event_and_lane():
-    import ui.window as winmod
+    from ui.threatcards import log_row_values
     ev = {"from_tool": "fail2ban", "severity": "HIGH",
           "text": "check-in: NOT RUNNING - needs attention",
           "ts": "2026-11-06T01:00:00+00:00"}
-    display, raw, lane = winmod.log_row_values(ev, "9:00 fail2ban",
+    display, raw, lane = log_row_values(ev, "9:00 fail2ban",
                                                "NOT RUNNING", "ink")
     assert raw is ev and lane == "tool"
     assert display[3] == "9:00 fail2ban" and display[-1] == "NOT RUNNING"
 
 
 def test_threat_card_options_offer_delete_only_for_real_targets():
-    import ui.window as winmod
+    from ui.threatcards import threat_card_options
     spec = {"id": "responderd:8a5fa1", "options": [
         {"id": "keep", "label": "Keep quarantined",
          "helper": "keep-quarantine", "args": ["/tmp/Docs.zip"]}]}
     ev = {"from_tool": "responderd", "severity": "HIGH",
           "text": "quarantine: /tmp/Docs.zip ...", "interaction": spec,
           "ts": "2026-11-06T01:00:00+00:00"}
-    opts = winmod.threat_card_options(ev)
+    opts = threat_card_options(ev)
     ids = [o["id"] for o in opts]
     assert ids == ["keep", "delete"]
     assert opts[:1] == spec["options"], "the stored options come first"

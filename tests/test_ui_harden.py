@@ -38,9 +38,13 @@ if not _gtk_ready():
 
 def pump(n=60):
     ctx = GLib.main_context_default()
+    end = GLib.get_monotonic_time() + 5_000_000
     for _ in range(n):
-        while ctx.iteration(may_block=False):
-            pass
+        for _ in range(500):          # bounded: a pending storm
+            if not ctx.iteration(False):
+                break
+            if GLib.get_monotonic_time() > end:
+                return                # one dispatch may itself run long
 
 
 def make_no_tray_window(**kw):

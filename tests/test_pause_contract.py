@@ -40,6 +40,7 @@ class FakeWin:
         self._snap["updated"] = "2026-10-26T00:00:00+00:00"
         self.refreshes = 0
         self.messages = []
+        self.data_dir = ROOT  # the extracted mixin reads self.data_dir
 
     def refresh(self):
         self.refreshes += 1

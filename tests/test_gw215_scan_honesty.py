@@ -109,6 +109,7 @@ def _run_one_heartbeat_pass(d, stop, monkeypatch, *, fail_write):
             raise OSError("the /run mount is read-only")
         return ""
     monkeypatch.setattr(pathlib.Path, "write_text", fake_write)
+    monkeypatch.setattr(pathlib.Path, "mkdir", lambda *a, **k: None)
     d._watchdog_ping_loop(stop)
 
 

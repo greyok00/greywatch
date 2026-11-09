@@ -43,6 +43,22 @@ MAX_EVENTS = 20_000
 TRIM_KEEP = 20_000
 
 
+def count_lines(path) -> int:
+    """Count the lines of a file one megabyte chunk at a time. The
+    trimmer and the doctor's ledger row both need the count, and neither
+    may hold a multi-hundred-megabyte ledger in memory to read it."""
+    total = 0
+    ended_in_newline = True
+    try:
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                total += chunk.count(b"\n")
+                ended_in_newline = chunk.endswith(b"\n")
+    except FileNotFoundError:
+        return 0
+    return total + (0 if ended_in_newline else 1)
+
+
 def ui_uid():
     """The desktop user's uid — or None when that identity cannot be
     resolved. : an unresolved UI identity is never guessed (the old
@@ -767,12 +783,17 @@ class Daemon:
 
     def trim_events(self):
         try:
-            lines = self.events_path.read_text().splitlines()
-            if len(lines) <= self.max_events:
+            total = count_lines(self.events_path)
+            if total <= self.max_events:
                 return 0
-            keep = lines[-self.max_events:]
+            tail: deque[str] = deque(maxlen=self.max_events)
+            with open(self.events_path, "r", encoding="utf-8",
+                      errors="replace") as fh:
+                for line in fh:
+                    tail.append(line.rstrip("\n"))
+            keep = list(tail)
             atomic_replace(str(self.events_path), "\n".join(keep) + "\n")
-            return len(lines) - len(keep)
+            return total - len(keep)
         except OSError as e:
             self.count_failure("write", "events trim", e)
             return 0

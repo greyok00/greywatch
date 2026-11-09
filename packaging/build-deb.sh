@@ -124,6 +124,12 @@ Terminal=false
 Categories=System;Security;Monitor;
 EOF
 
+# --- the CLI man page (the wheel's ./ entry point is gw; the deb also
+# --- ships the alias so `man gw` finds the same page)
+install -Dm 0644 "$GW/doc/greywatch.1" "$STAGE/usr/share/man/man1/greywatch.1"
+gzip -9n "$STAGE/usr/share/man/man1/greywatch.1"
+ln -s greywatch.1.gz "$STAGE/usr/share/man/man1/gw.1.gz"
+
 # --- maintainer scripts
 mkdir -p "$STAGE/DEBIAN"
 cat > "$STAGE/DEBIAN/postinst" <<'EOF'

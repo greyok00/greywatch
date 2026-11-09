@@ -33,9 +33,13 @@ JUMP_TOOLTIP = "The page that manages this kind of event."
 
 def pump(n=20):
     ctx = GLib.main_context_default()
+    end = GLib.get_monotonic_time() + 5_000_000
     for _ in range(n):
-        while ctx.iteration(False):
-            pass
+        for _ in range(500):          # bounded: a pending storm
+            if not ctx.iteration(False):
+                break
+            if GLib.get_monotonic_time() > end:
+                return                # one dispatch may itself run long
 
 
 def _walk(widget):

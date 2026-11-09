@@ -150,10 +150,10 @@ def test_row_backlog_missing_key_is_neutral_not_ready(tmp_path):
 
 # ---------------------------------------------------------------- D3
 
-def test_health_snapshot_covers_all_four_lanes(tmp_path):
+def test_health_snapshot_covers_all_five_lanes(tmp_path):
     rows = doctor_mod.health_snapshot(tmp_path)
     assert [r["lane"] for r in rows] == ["service", "scan", "firewall",
-                                         "backlog"]
+                                         "backlog", "ledger"]
     for r in rows:
         assert set(r) == {"lane", "verdict", "text", "ts"}
         assert r["verdict"] in ("READY", "DEGRADED", "BROKEN", "NEUTRAL")
@@ -168,13 +168,57 @@ def test_health_snapshot_degrades_only_the_broken_row(tmp_path,
     # sick one by rebuilding the tuple.
     monkeypatch.setattr(doctor_mod, "_HEALTH_BUILDERS", (
         doctor_mod.row_service, boom, doctor_mod.row_firewall,
-        doctor_mod.row_backlog))
+        doctor_mod.row_backlog, doctor_mod.row_ledger))
     rows = doctor_mod.health_snapshot(tmp_path)
     scan = next(r for r in rows if r["lane"] == "scan")
     assert scan["verdict"] == "NEUTRAL"
     assert "could not run" in scan["text"] and "RuntimeError" \
         in scan["text"]
-    assert len(rows) == 4                     # the other rows still ran
+    assert len(rows) == 5                     # the other rows still ran
+
+
+# ---------------------------------------------------------------- D4
+# the ledger row (0.3.0 wave F2): growth says its name.
+
+def test_row_ledger_over_cap_says_so(tmp_path, monkeypatch):
+    import greywatch_daemon
+    (tmp_path / "events.jsonl").write_text('{"ts": "1"}\n')
+    monkeypatch.setattr(greywatch_daemon, "MAX_EVENTS", 20_000)
+    monkeypatch.setattr(greywatch_daemon, "count_lines",
+                        lambda p: 20_400)
+    row = doctor_mod.row_ledger(tmp_path)
+    assert row["verdict"] == "DEGRADED"
+    assert "20400" in row["text"]
+    assert "cap" in row["text"]
+
+
+def test_row_ledger_under_cap_is_ready_with_numbers(tmp_path):
+    (tmp_path / "events.jsonl").write_text('{"ts": "1"}\n{"ts": "2"}\n'
+                                           '{"ts": "3"}')
+    row = doctor_mod.row_ledger(tmp_path)
+    assert row["verdict"] == "READY"
+    assert "3 lines" in row["text"]
+
+
+def test_row_ledger_without_events_is_neutral(tmp_path):
+    row = doctor_mod.row_ledger(tmp_path)
+    assert row["verdict"] == "NEUTRAL"
+    assert "cannot" in row["text"]
+
+
+def test_count_lines_counts_records_not_bytes(tmp_path):
+    from greywatch_daemon import count_lines
+    p = tmp_path / "x.jsonl"
+    assert count_lines(p) == 0                    # nothing on disk: 0 lines
+    p.write_text("a\nb\nc\nd\ne")                 # no trailing newline
+    assert count_lines(p) == 5
+    p.write_text("a\nb\n")
+    assert count_lines(p) == 2
+    big = tmp_path / "big.jsonl"
+    big.write_text("y\n" * 10)
+    assert count_lines(big) == 10        # trailing newline is no record
+    big.write_text("\n".join(f"e{i}" for i in range(11)))
+    assert count_lines(big) == 11        # no trailing newline still counts
 
 
 def test_persist_snapshot_writes_and_rereads(tmp_path):
@@ -215,7 +259,8 @@ def test_cli_doctor_persists_best_effort(tmp_path, monkeypatch, capsys):
     assert rc == 0
     doc = json.loads((tmp_path / "doctor-last.json").read_text())
     assert [r["lane"] for r in doc["rows"]] == ["service", "scan",
-                                                "firewall", "backlog"]
+                                                "firewall", "backlog",
+                                                "ledger"]
 
 
 def test_daemon_publishes_the_snapshot_every_cycle():

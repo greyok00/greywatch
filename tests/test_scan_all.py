@@ -65,9 +65,11 @@ def test_the_gui_no_longer_escalates_to_run_scans():
     # re-authorised ONE explicit path: a control button on the registry
     # record, which routes unit-less scanners through scan-now.sh and
     # everything else through the toggles.
-    from ui import window
-    src = (ROOT / "ui" / "window.py").read_text(encoding="utf-8")
+    from ui import toolctl, window
+    src = (ROOT / "ui" / "toolctl.py").read_text(encoding="utf-8")
+    shell = (ROOT / "ui" / "window.py").read_text(encoding="utf-8")
     assert "run_helper(\"tool-control\", [\"scan-all\"])" not in src
+    assert "run_helper(\"tool-control\", [\"scan-all\"])" not in shell
     for gone in ("_run_scan", "_poll_scan", "_poll_process", "_scan_done",
                  "_finish_scan_watch"):
         assert not hasattr(window.MainWindow, gone), gone

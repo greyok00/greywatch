@@ -192,6 +192,19 @@ def test_trim_cap(tmp_path):
     assert d.trim_events() == 0
 
 
+def test_trim_keeps_the_newest_across_a_file_without_trailing_newline(
+        tmp_path):
+    # The ledger's last line may arrive without its newline (a stalled
+    # write); the bounded trimmer still keeps the newest records and
+    # reports the record count, not the newline count.
+    d = mk_daemon(tmp_path, max_events=5)
+    d.events_path.write_text("\n".join(f'{{"ts": "t{i}"}}' for i in range(7)))
+    removed = d.trim_events()
+    assert removed == 2
+    lines = read_events(d.events_path)
+    assert [e["ts"] for e in lines] == ["t2", "t3", "t4", "t5", "t6"]
+
+
 def test_queue_overflow_flag_in_status(tmp_path):
     from collectors import BoundedQueue
     q = BoundedQueue(max_items=2)

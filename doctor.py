@@ -8,6 +8,7 @@ import sys
 import time
 
 import setup as setup_mod
+import greywatch_daemon
 
 from registry import default_iface, load_registry
 
@@ -244,7 +245,40 @@ def row_backlog(data_dir) -> dict:
                 f"{n} pending decisions" if n else "no pending decisions")
 
 
-_HEALTH_BUILDERS = (row_service, row_scan, row_firewall, row_backlog)
+def row_ledger(data_dir) -> dict:
+    """(e) the event ledger's growth policy. The audit trail is capped
+    (MAX_EVENTS lines) and the daemon trims it hourly; a ledger over cap
+    says so instead of growing in silence - over cap means the running
+    service predates the cap or the trim stopped. Unreadable is
+    NEUTRAL, never READY."""
+    events = pathlib.Path(data_dir) / "events.jsonl"
+    size_mb = None
+    try:
+        size_mb = events.stat().st_size / (1024 * 1024)
+    except OSError:
+        return _row("ledger", "NEUTRAL",
+                    "the event ledger cannot be read as this user; run "
+                    "as root for the full check")
+    try:
+        total = greywatch_daemon.count_lines(events)
+    except OSError:
+        return _row("ledger", "NEUTRAL",
+                    "the event ledger could not be counted as this "
+                    "user; run as root for the full check")
+    cap = greywatch_daemon.MAX_EVENTS
+    if total > cap:
+        return _row("ledger", "DEGRADED",
+                    f"the event ledger holds {total} lines "
+                    f"({size_mb:.1f} MB) against its {cap} cap; the "
+                    "running service either predates the cap or its "
+                    "trim stopped")
+    return _row("ledger", "READY",
+                f"the event ledger holds {total} lines ({size_mb:.1f} MB)"
+                f", within its {cap} cap")
+
+
+_HEALTH_BUILDERS = (row_service, row_scan, row_firewall, row_backlog,
+                    row_ledger)
 
 
 def health_snapshot(data_dir) -> list:
