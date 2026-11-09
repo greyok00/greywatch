@@ -4,7 +4,7 @@
   **One window for every security tool already on your Linux desktop.**
 
   [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-  [![Release](https://img.shields.io/badge/release-v0.1.28-green)](https://github.com/greyok00/greywatch/releases)
+  [![Release](https://img.shields.io/badge/release-v0.3.0-green)](https://github.com/greyok00/greywatch/releases)
   [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](pyproject.toml)
   [![Tests](https://img.shields.io/badge/tests-1848%20passing-brightgreen)](#build-and-test)
   [![CI](https://img.shields.io/badge/CI-github%20actions-blueviolet)](https://github.com/greyok00/greywatch/actions)
@@ -24,22 +24,22 @@ Endpoint Hardening checks the machine against a hardening baseline, shows the re
 
 | Feature | Where | What it does |
 |---|---|---|
-| Six-tab GTK4 dashboard | `ui/` | Home, Scans, Protections, Tools, Threat Hunter and Settings; two themes |
-| 17 managed protections | `registry.json` | State, scans, pause/resume for ClamAV, rkhunter, Lynis, AIDE, YARA, UFW, fail2ban, AppArmor, auditd, Tetragon, arpwatch and the suite's own tools |
+| Dashboard | `ui/` | Sidebar rail (Watch, Defense, Care, System), the tool-control desk, `ui/toolctl.py`, and two themes |
+| 18 managed protections | `registry.json` | State, scans, pause/resume for ClamAV, rkhunter, Lynis, AIDE, YARA, UFW, fail2ban, AppArmor, auditd, arpwatch, psad, Tetragon and the suite's own tools |
 | Root event daemon | `greywatch_daemon.py`, `collectors.py`, `parsers.py` | Bounds-checked, append-only, root-owned event store with severity and NIST CSF enrichment |
 | Threat hunter | `hunter/` | Rule-based findings with plain-language explanations, an optional bounded AI explainer, HAR analysis, keep/dismiss ledgers |
 | App firewall | `appfw/` | Per-program allow/deny over nftables and NFQUEUE, ask-first prompts, learning and whitelist modes, fail-open worker recovery |
 | Endpoint hardening | `hardening/`, `wizard/` | Baseline checks, previews, staged apply, undo, journal |
 | Local assistant | `assistant/`, `ui/assistant.py` | Deterministic advice engine first; optional small local chat model; confirm-dialog actions, audit trail |
 | Self-healing | `selfheal.py`, `supervisor.py` | Diagnoses a stopped protection, applies the least invasive fix, verifies it |
-| `gw` CLI | `cli.py` | `status`, `events`, `log`, `decisions`, `hunter`, `doctor`, `setup` over the same store |
+| `gw` CLI | `cli.py` | `status`, `events`, `tail`, `log`, `decisions`, `answer`, `rules`, `hunter`, `doctor`, `action`, `setup` over the same store |
 
 ## Install
 
-Debian 13, Parrot 7.4 and Ubuntu 25.10 (Python 3.13): download `greywatch_0.1.25_amd64.deb` from the [releases page](https://github.com/greyok00/greywatch/releases) and install it:
+Debian 13, Parrot 7.4 and Ubuntu 25.10 (Python 3.13): download `greywatch_0.3.0_amd64.deb` from the [releases page](https://github.com/greyok00/greywatch/releases) and install it:
 
 ```bash
-sudo apt install ./greywatch_0.1.28_amd64.deb
+sudo apt install ./greywatch_0.3.0_amd64.deb
 ```
 
 Each release includes a `sha256` checksum. The package installs under `/opt/greywatch`, enables `greywatch.service`, binds the service to your desktop account and adds the menu entry. State (events, scans, logs) lives in `/var/lib/greywatch`; `sudo apt remove greywatch` keeps it.
@@ -58,7 +58,7 @@ sudo ./install.sh --check  # verify
 For the command line only, the wheel from a release gives you the `gw` command:
 
 ```bash
-pip install https://github.com/greyok00/greywatch/releases/download/v0.1.28/greywatch-0.1.28-py3-none-any.whl
+pip install https://github.com/greyok00/greywatch/releases/download/v0.3.0/greywatch-0.3.0-py3-none-any.whl
 gw --version
 ```
 
