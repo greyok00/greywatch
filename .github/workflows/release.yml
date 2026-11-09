@@ -104,7 +104,10 @@ jobs:
 
       - name: Push the container image (ghcr.io, the Packages registry)
         env:
-          GH_TOKEN: ${{ github.token }}
+          # GITHUB_TOKEN cannot write a user-owned container package
+          # first created by a PAT (3 release runs proved it); the
+          # GH_PACKAGES_TOKEN secret carries the packages-capable PAT.
+          GH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
           echo "$GH_TOKEN" | docker login ghcr.io \
             -u "${{ github.repository_owner }}" --password-stdin
