@@ -10,7 +10,7 @@ from . import sites
 from .base import is_local_service, is_registry_lookup
 
 MAX_LEDGER_BYTES = 200_000
-KEEP_LEDGER_LINES = 1200
+KEEP_LEDGER_LINES = 1600
 
 
 class Policy:
@@ -128,8 +128,9 @@ class Policy:
                    "proto": str(conn.protocol or "")}
             path = self.data_dir / "learning-seen.jsonl"
             with self._lock:
-                with path.open("a") as f:
-                    f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+                from status import append_checked
+                append_checked(str(path), json.dumps(
+                    rec, separators=(",", ":")) + "\n", create_mode=0o600)
             self._trim(path)
         except (OSError, ValueError, TypeError, AttributeError):
             pass
@@ -137,10 +138,21 @@ class Policy:
     @staticmethod
     def _trim(path, keep=KEEP_LEDGER_LINES):
         try:
-            if path.stat().st_size < MAX_LEDGER_BYTES:
+            total = 0
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                for _ in fh:
+                    total += 1
+            if total <= keep:      # line cap first: records, not bytes
                 return
-            lines = path.read_text(errors="replace").splitlines()[-keep:]
-            path.write_text("\n".join(lines) + "\n")
+            tail = []
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                import collections
+                window = collections.deque(maxlen=keep)
+                for line in fh:
+                    window.append(line.rstrip("\n"))
+                tail = list(window)
+            from status import atomic_replace
+            atomic_replace(str(path), "\n".join(tail) + "\n")
         except OSError:
             pass
 

@@ -142,11 +142,19 @@ state is reachable from styling.
 *Health:* none needed (presentation-only lane).
 *Pinned by:* the theme suites (`tests/test_theme*.py`).
 
-**11. Data file IO** — `status.json`, `events.jsonl` + outbox,
-`doctor-last.json`.
+**11. Data file IO** - `status.json`, `events.jsonl` + outbox,
+`learning-seen.jsonl`, `malformed.log`, `doctor-last.json`.
 *Default:* status.json is 0640 root:ui-group, written through one
 atomic replace; the outbox buffers event lines and persists them
-journal-style.
+journal-style. The learning ledger appends only through
+`append_checked` (O_NOFOLLOW, fstat-verified, private root-owned
+regular file: a planted symlink or group-writable file is refused) and
+is capped by line count: past 1600 lines the newest 1600 survive the
+trim, written through staged `atomic_replace` (ITER-0001 pins:
+`tests/test_appfw_ledger_caps.py`). The malformed diagnostics log is
+flood-capped in RAM (newest 4000) and on disk (past 1 MB the newest
+2000 lines survive), appends checked the same way; the cap pin shares
+the same file.
 *Failsafe:* append failures keep the batch and pace the retry (Wave
 B's daemon path); the 2000-line reclaim that throws OLDER lines away
 during a write outage now COUNTS them (`outbox_dropped`, Wave B4) and
