@@ -36,10 +36,22 @@ Endpoint Hardening checks the machine against a hardening baseline, shows the re
 
 ## Install
 
-Debian 13, Parrot 7.4 and Ubuntu 25.10 (Python 3.13): download `greywatch_0.3.0_amd64.deb` from the [releases page](https://github.com/greyok00/greywatch/releases) and install it:
+Debian 13, Parrot 7.4 and Ubuntu 25.10 run Python 3.13; the release page's .deb is built on the CI runner (Python 3.12) and apt refuses it on a 3.13 machine by design (the compiled modules are ABI-tagged). Two paths:
+
+- Python 3.12 machine: download `greywatch_0.3.0_amd64.deb` from the [releases page](https://github.com/greyok00/greywatch/releases) and install it:
 
 ```bash
 sudo apt install ./greywatch_0.3.0_amd64.deb
+```
+
+- Python 3.13 machine (Debian 13, Parrot 7.4, Ubuntu 25.10): build the deb for your own interpreter from a checkout:
+
+```bash
+git clone https://github.com/greyok00/greywatch.git
+cd greywatch
+./build-cython.sh
+./packaging/build-deb.sh      # -> dist/greywatch_0.3.0_amd64.deb
+sudo apt install ./dist/greywatch_0.3.0_amd64.deb
 ```
 
 Each release includes a `sha256` checksum. The package installs under `/opt/greywatch`, enables `greywatch.service`, binds the service to your desktop account and adds the menu entry. State (events, scans, logs) lives in `/var/lib/greywatch`; `sudo apt remove greywatch` keeps it.
