@@ -6,7 +6,7 @@
   [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
   [![Release](https://img.shields.io/badge/release-v0.1.28-green)](https://github.com/greyok00/greywatch/releases)
   [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](pyproject.toml)
-  [![Tests](https://img.shields.io/badge/tests-1844%20passing-brightgreen)](#build-and-test)
+  [![Tests](https://img.shields.io/badge/tests-1848%20passing-brightgreen)](#build-and-test)
   [![CI](https://img.shields.io/badge/CI-github%20actions-blueviolet)](https://github.com/greyok00/greywatch/actions)
 </div>
 
