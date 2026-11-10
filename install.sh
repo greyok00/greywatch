@@ -112,6 +112,7 @@ _copy_program() { # $1 = destination program tree (code, root-owned)
         --exclude='./.git' --exclude='./data' --exclude='./tests' \
         --exclude='./build' --exclude='./dist' --exclude='./doc/shots' \
         --exclude='./.venv' --exclude='./venv' --exclude='*.pyc' \
+        --exclude='./appfw/bin' \
         --exclude='__pycache__' --exclude='./.pytest_cache' \
         --exclude='./.ruff_cache' --exclude='./.mypy_cache' \
         --exclude='./.claude' --exclude='./runbooks' \

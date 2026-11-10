@@ -52,7 +52,7 @@ tar -C "$GW" -cf - \
     --exclude='./.git' --exclude='./.github' --exclude='./tests' \
     --exclude='./doc/shots' --exclude='./*.md' --exclude='./runbooks' \
     --exclude='./docs' --exclude='./packaging' --exclude='./tools' \
-    --exclude='./gates' \
+    --exclude='./gates' --exclude='./appfw/bin' \
     --exclude='./tmp*' --exclude='./data' --exclude='./build' \
     --exclude='./*__pycache__*' --exclude='./dist' \
     --exclude='./.venv' --exclude='./venv' --exclude='./*.so' \
