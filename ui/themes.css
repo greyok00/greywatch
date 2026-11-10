@@ -1,14 +1,15 @@
-/* Two theme voices only: agency-mono-plate (light), aperture-motion (dark).
-   One frozen cream/brass value set shared by the app; the older designer
-   kit that predated them is retired. GTK cannot parse
+/* Two theme voices only: paper (light) and graphite (dark, the default).
+   One frozen cream/plate value set shared by the app; the older designer
+   kit (obsidian, swiss) and the first two-voice pair (agency, aperture)
+   are retired names that migrate in ui/themes.py. GTK cannot parse
    color-mix() or var(), so the colour-mixed values below are pre-mixed
    rgba equivalents of the source voices:
-     agency accent-soft = ink 7% over transparent (ink #171715)
-     agency focus-ring  = ink 50%
-     aperture accent-soft = accent 13% (accent #00e5ff)
-     aperture focus-ring  = accent 62%
+     paper    accent-soft = ink 7% over transparent (ink #171715)
+     paper    focus-ring  = ink 50%
+     graphite accent-soft = accent 13% (accent #b5b3ab)
+     graphite focus-ring  = accent 62%
 */
-[data-theme="agency"] {
+[data-theme="paper"] {
   --el-bg: #f4f4f2; --el-panel: #fbfbf9; --el-panel-2: #ececea; --el-panel-3: #e1e1dc;
   --el-line: #d9d9d4; --el-line-2: #c3c3bc; --el-line-strong: #171715;
   --el-ink: #171715; --el-ink-soft: #4c4c46; --el-mute: #63625a;
@@ -28,22 +29,22 @@
   --el-font-serif: 'Instrument Serif', 'Georgia', serif;
 }
 
-/* aperture-motion: obsidian slate field, bright ink, lane accents
-   crimson/amber/cyan/emerald. The accent never bleeds into the light
-   voice; the light voice's ink-as-accent never appears here. Dark theme
-   logo = exact inversion of the original wolf badge bytes (see ui/plain.py
-   / the logo helpers). */
-[data-theme="aperture"] {
-  --el-bg: #0b0e14; --el-panel: #121824; --el-panel-2: #182234; --el-panel-3: #1e2a3f;
-  --el-line: #243048; --el-line-2: #2c3a55; --el-line-strong: #3a4a6b;
-  --el-ink: #eff3fa; --el-ink-soft: #9faec6; --el-mute: #7e90a9;
-  --el-on-accent: #0b0e14;
-  --el-accent: #00e5ff; --el-accent-hover: #85ecff; --el-accent-soft: rgba(0,229,255,0.13);
-  --el-ok: #00e676; --el-warn: #ffb020; --el-fail: #ff3b5c;
-  --el-info: #8ab4ff; --el-live: #00e5ff; --el-teal: #00e5ff;
-  --el-overlay: rgba(5,8,14,0.70);
-  --el-focus-ring: rgba(0,229,255,0.62);
-  --el-lane-threat: #ff3b5c; --el-lane-tool: #00e5ff;
+/* graphite: the dark voice. A warm-grey charcoal field, soft-white ink,
+   the ink tone as the accent, and lane accents red/teal. The light
+   paper voice's near-black ink-as-accent never appears here. Dark theme
+   logo = exact inversion of the original wolf badge bytes
+   (ui/themes.py, the logo helpers). */
+[data-theme="graphite"] {
+  --el-bg: #14161a; --el-panel: #1c1f25; --el-panel-2: #21252c; --el-panel-3: #2e323b;
+  --el-line: #2e323b; --el-line-2: #3a3f49; --el-line-strong: #4a5160;
+  --el-ink: #e9e7e2; --el-ink-soft: #b5b3ab; --el-mute: #8b8a84;
+  --el-on-accent: #14161a;
+  --el-accent: #b5b3ab; --el-accent-hover: #d6d4cd; --el-accent-soft: rgba(181,179,171,.14);
+  --el-ok: #5fae7e; --el-warn: #d9a34a; --el-fail: #d05f5f;
+  --el-info: #b5b3ab; --el-live: #b5b3ab; --el-teal: #6aa39c;
+  --el-overlay: rgba(9,10,12,0.70);
+  --el-focus-ring: rgba(181,179,171,0.62);
+  --el-lane-threat: #d05f5f; --el-lane-tool: #6aa39c;
   --el-s-2: 4px; --el-s-3: 8px; --el-s-4: 12px; --el-s-5: 18px; --el-s-6: 26px;
   --el-radius: 4px;
   --el-r-sm: 2px; --el-r-md: 3px; --el-r-lg: 4px; --el-r-xl: 6px;

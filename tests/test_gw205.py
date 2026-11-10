@@ -215,7 +215,7 @@ def test_rail_keys_all_have_a_drawn_glyph():
 
 def test_lane_tokens_exist_in_both_voices():
     from ui.themes import load_themes, gtk_css
-    for name in ("agency", "aperture"):
+    for name in ("paper", "graphite"):
         css = gtk_css(load_themes()[name])
         assert "--el-lane-threat" in str(load_themes()[name]), name
         assert ".gw-lane-threat" in css and ".gw-lane-tool" in css, name

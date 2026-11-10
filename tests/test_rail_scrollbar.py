@@ -11,5 +11,5 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 def test_scrollbar_trough_is_transparent_everywhere():
     from ui import themes
-    css = themes.gtk_css(themes.load_themes()["aperture"])
+    css = themes.gtk_css(themes.load_themes()["graphite"])
     assert "scrollbar trough { background: transparent;" in css

@@ -1583,10 +1583,10 @@ def _settings_intent(question: str) -> Intent | None:
     # as a change, points at Settings where the picker lives. Security
     # words must stay clear of the pointer — "dark web", "light on
     # detail" name colours without asking for a new look.
-    if re.search(r"\b(theme|appearance|(light|dark|agency|aperture) mode)\b",
+    if re.search(r"\b(theme|appearance|(light|dark|paper|graphite) mode)\b",
                  low):
         return Intent("open_page", value="settings")
-    look = re.search(r"\b(light|dark|agency|aperture)\b", low)
+    look = re.search(r"\b(light|dark|paper|graphite)\b", low)
     if look and re.search(r"\b(change|switch|make|turn|set|go)\b", low) \
             and "web" not in low and "mode" not in low:
         return Intent("open_page", value="settings")

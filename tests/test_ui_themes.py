@@ -20,7 +20,7 @@ def test_exactly_two_voices_ship():
     approved voices and nothing else (pinned in detail in
     tests/test_theme_tokens.py)."""
     ts = load_themes()
-    assert sorted(ts) == ["agency", "aperture"]
+    assert sorted(ts) == ["graphite", "paper"]
     assert all("--el-bg" in toks for toks in ts.values())
 
 
@@ -36,24 +36,24 @@ def test_dark_default_is_dark():
 
 def test_gtk_css_emits_real_values():
     ts = load_themes()
-    css = gtk_css(ts["aperture"])
+    css = gtk_css(ts["graphite"])
     assert "window" in css and "treeview" in css
     assert "--el-" not in css             # no tokens left (GTK3 no var())
     assert "#" in css or "rgb" in css
 
 
 def test_persist_and_load_roundtrip(clean_settings):
-    assert persist("agency", path=clean_settings / "s.json")
-    assert load_setting(path=clean_settings / "s.json") == "agency"
+    assert persist("paper", path=clean_settings / "s.json")
+    assert load_setting(path=clean_settings / "s.json") == "paper"
     assert load_setting(path=clean_settings / "missing.json") == ""
 
 def test_persist_merges_and_keeps_other_settings(clean_settings):
     s = clean_settings / "s.json"
     s.write_text(json.dumps({"mini_tile": True}))
-    assert persist("agency", path=s)
+    assert persist("paper", path=s)
     cfg = json.loads(s.read_text())
-    assert cfg == {"theme": "agency", "mini_tile": True}
-    assert persist("aperture", path=s)
+    assert cfg == {"theme": "paper", "mini_tile": True}
+    assert persist("graphite", path=s)
     assert json.loads(s.read_text())["mini_tile"] is True
 
 def test_gtk_css_never_emits_unsupported_properties():
@@ -126,15 +126,15 @@ def test_the_pair_shares_geometry_and_differs_in_type():
     every control, body type shared, and only the display voice changed
     (General Sans for the plate, Unbounded for the graphite pages)."""
     ts = load_themes()
-    for name in ("agency", "aperture"):
+    for name in ("paper", "graphite"):
         assert ts[name]["--el-radius"].strip() == "4px", name
         assert "Inter" in ts[name]["--el-font-body"], name
-    assert "General Sans" in ts["agency"]["--el-font-display"]
-    assert "Unbounded" in ts["aperture"]["--el-font-display"]
+    assert "General Sans" in ts["paper"]["--el-font-display"]
+    assert "Unbounded" in ts["graphite"]["--el-font-display"]
 
 
 def test_generated_css_has_no_card_shadow_and_uses_the_scale():
-    css = gtk_css(load_themes()["aperture"])
+    css = gtk_css(load_themes()["graphite"])
     assert ".gw-card" in css
     card_rule = css.split(".gw-card", 1)[1].split("}", 1)[0]
     assert "box-shadow" not in card_rule
@@ -149,7 +149,7 @@ def test_contrast_helper_is_exposed():
 
 
 def test_cards_and_scrollbars_follow_the_no_slab_rule():
-    css = gtk_css(load_themes()["aperture"])
+    css = gtk_css(load_themes()["graphite"])
     # No card anywhere casts a shadow: elevation belongs to modals only.
     for block in css.split(".gw-card"):
         rule = block.split("}", 1)[0]

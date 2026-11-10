@@ -9,14 +9,24 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 THEMES_CSS = ROOT / "ui" / "themes.css"
 from gwpaths import data_dir as _gw_data
 SETTINGS_PATH = _gw_data() / "greywatch-ui-settings.json"
-DEFAULT_THEME = "aperture"          # graphite dark; the agency plate is light
+DEFAULT_THEME = "graphite"          # the graphite dark voice; paper is light
 
-THEME_CHOICES = {"Dark": "aperture", "Light": "agency"}   # the two shipped voices
+THEME_CHOICES = {"Dark": "graphite", "Light": "paper"}   # the two shipped voices
 
 # The two approved voices and nothing else. Older saved
 # picks map to the voice that preserves their light/dark intent.
-THEMES = ("agency", "aperture")
-_MIGRATE = {"obsidian": "aperture", "swiss": "agency"}
+THEMES = ("graphite", "paper")
+_MIGRATE = {"obsidian": "graphite", "swiss": "paper",
+            "aperture": "graphite", "agency": "paper"}
+
+
+def themes_css_text(path=THEMES_CSS) -> str:
+    """The raw theme sheet text (the tokens live in `[data-theme=...]`
+    blocks); callers read the sheets through this."""
+    try:
+        return pathlib.Path(path).read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return ""
 
 _TOKEN_RE = re.compile(r"--el-([a-z0-9-]+):\s*([^;]+);")
 _THEME_RE = re.compile(r'\[data-theme="([a-z0-9-]+)"\]\s*\{([^}]*)\}', re.S)
@@ -44,13 +54,14 @@ def dark_default(names: list) -> str:
 _ACTIVE = ""   # module pick; ThemeStore.apply() and set_active_theme() set it
 
 
-def active_theme() -> str:
+def active_theme(path=None) -> str:
     """The theme name currently in charge, resolved from the module pick,
     then the saved setting (migrated off retired names), then the dark
-    default. Never a hard-coded legacy value."""
+    default. Never a hard-coded legacy value. `path` reads a settings
+    file other than the app's own (tests, and the first-boot probe)."""
     if _ACTIVE:
         return _ACTIVE
-    picked = load_setting()
+    picked = load_setting(path)
     if picked in _MIGRATE:
         return _MIGRATE[picked]
     if picked in THEME_CHOICES.values():
@@ -1109,7 +1120,7 @@ def logo_image(size: int):
     """A ready Gtk.Image of the wolf avatar for the active theme: exact
     art on light voices, the inverted twin on dark ones. Returns None if
     the artwork file is missing."""
-    image = active_theme() == "aperture"
+    image = active_theme() == "graphite"
     pb = logo_pixbuf_inverted(size) if image else logo_pixbuf(size)
     if pb is None:
         return None

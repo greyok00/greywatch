@@ -1,8 +1,9 @@
-"""Task 6 of the 2026-11-03 full-UI redesign: Appearance in Settings is
-two radios — Agency plate (light) / Aperture graphite (dark) — and the
-checked one applies through the theme store, persists, and rebuilds the
-pages. The owner's real settings file is kept out of the loop with a
-monkeypatched path; the test restores the in-memory pick at the end."""
+"""Task 6 of the 2026-11-03 full-UI redesign, re-rooted to the round-2
+voices (2026-11-09): Appearance in Settings is two radios — Paper (light)
+/ Graphite (dark) — and the checked one applies through the theme store,
+persists, and rebuilds the pages. The owner's real settings file is kept
+out of the loop with a monkeypatched path; the test restores the in-memory
+pick at the end."""
 import os
 import pathlib
 import sys
@@ -41,11 +42,11 @@ def sealed_settings():
     monkey.setattr(themes, "SETTINGS_PATH", settings)
     yield settings
     monkey.undo()
-    themes.set_active_theme("aperture")
+    themes.set_active_theme("graphite")
 
 
 def test_appearance_radios_flip_persist_and_rebuild(sealed_settings):
-    assert themes.active_theme() == "aperture"
+    assert themes.active_theme() == "graphite"
     from ui.window import MainWindow
     win = MainWindow()
     win.present()
@@ -55,24 +56,24 @@ def test_appearance_radios_flip_persist_and_rebuild(sealed_settings):
         pump(10)
         win._settings_stack.set_visible_child_name("look")
         pump(10)
-        assert win._radio_aperture.get_active()
+        assert win._radio_graphite.get_active()
         # One click applies, persists into the patched settings file, and
         # schedules the page rebuild.
-        win._radio_agency.set_active(True)
+        win._radio_paper.set_active(True)
         pump(30)
-        assert themes.active_theme() == "agency"
-        assert themes.load_setting() == "agency"
+        assert themes.active_theme() == "paper"
+        assert themes.load_setting() == "paper"
         # The rebuild recreated the settings page; the new radios carry
         # the freshly picked voice.
         win._show("settings")
         pump(10)
-        assert win._radio_agency.get_active()
-        assert not win._radio_aperture.get_active()
+        assert win._radio_paper.get_active()
+        assert not win._radio_graphite.get_active()
         # And back, the same way, so the machine is left where it began.
-        win._radio_aperture.set_active(True)
+        win._radio_graphite.set_active(True)
         pump(30)
-        assert themes.active_theme() == "aperture"
-        assert themes.load_setting() == "aperture"
+        assert themes.active_theme() == "graphite"
+        assert themes.load_setting() == "graphite"
     finally:
         win.destroy()
 
@@ -85,7 +86,7 @@ def test_appearance_radios_carry_the_voice_names(sealed_settings):
     try:
         win._show("settings")
         pump(10)
-        assert win._radio_agency.get_label() == "Agency plate, light"
-        assert win._radio_aperture.get_label() == "Aperture graphite, dark"
+        assert win._radio_paper.get_label() == "Paper, light"
+        assert win._radio_graphite.get_label() == "Graphite, dark"
     finally:
         win.destroy()

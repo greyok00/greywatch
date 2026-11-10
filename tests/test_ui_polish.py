@@ -26,14 +26,14 @@ def test_the_scroll_thumb_is_a_tint_not_a_slab():
     # the 2026-10-30 pass; the thumb is a thin rounded bar in the theme's
     # own hairline tone, and the trough stays clear. (The 2026-10-31 pass
     # raised its alpha from 0.22 to 0.85, which was too faint to find.)
-    css = gtk_css(load_themes()["aperture"])
-    assert "background-color: alpha(#3a4a6b, 0.85)" in css
+    css = gtk_css(load_themes()["graphite"])
+    assert "background-color: alpha(#4a5160, 0.85)" in css
     assert "scrollbar trough { background: transparent;" in css
     assert "min-width: 5px; min-height: 28px; margin: 3px;" in css
 
 
 def test_css_carries_the_padding_scale():
-    css = gtk_css(load_themes()["aperture"])
+    css = gtk_css(load_themes()["graphite"])
     assert "button { padding: 8px 16px;" in css
     assert "padding: 9px 13px;" in css
     assert ".gw-card { padding: 16px; }" in css

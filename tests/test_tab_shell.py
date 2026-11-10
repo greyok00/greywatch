@@ -77,7 +77,7 @@ def test_rail_renders_four_pages_and_a_footer(win):
     for gone in old_rail_keys:
         assert gone not in shell_rail_keys(), gone
     from ui.themes import gtk_css, load_themes
-    css = gtk_css(load_themes()["aperture"])
+    css = gtk_css(load_themes()["graphite"])
     for key in RAIL_KEYS:
         assert rail_row_label(win._tabs[key]), key
     assert rail_row_label(win._tabs["overview"]) == "Overview"
@@ -152,7 +152,7 @@ def test_every_row_carries_a_symbol(win):
         assert sym not in seen, f"{key} reuses another row's glyph"
         seen.add(sym)
     from ui.themes import gtk_css, load_themes
-    css = gtk_css(load_themes()["aperture"])
+    css = gtk_css(load_themes()["graphite"])
     assert ".gw-rail button.gw-active" in css
 
 

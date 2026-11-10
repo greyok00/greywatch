@@ -1,12 +1,9 @@
-"""Task 1 of the 2026-11-03 full-UI redesign: the app ships exactly two
-themes. Rebuild phase 5 set the dark voice's tokens to the approved
-obsidian/slate palette (rebuild gameplan C1).
-
-Agency (light) = the agency-mono-plate voice: warm plate, near-black ink
-where the ink IS the accent, 2px keylines, mono labels. Aperture (dark) =
-the dark slate voice on obsidian surfaces with lane accents crimson,
-amber, cyan, emerald. The graphite-orange palette it replaced and the
-cream/brass palette before it may not reappear."""
+"""Task 1 of the 2026-11-09 UI rebuild round 2: the app ships exactly two
+owner-approved voices. Round 1 (2026-11-03) set the two-voice shape; round
+2 renames them — Paper (light, the former agency plate verbatim) and
+Graphite (dark, the default). Agency, aperture (and before them obsidian
+and swiss) are retired names that migrate in the saved-pick read path; the
+palettes they carried may not reappear."""
 
 import pathlib
 import sys
@@ -18,9 +15,29 @@ from ui import themes as T
 from ui.themes import (THEMES, THEME_CHOICES, active_theme, dark_default,
                        gtk_css, load_setting, load_themes, set_active_theme)
 
-APPROVED = ("agency", "aperture")
+APPROVED = ("graphite", "paper")
 
-AGENCY = {
+GRAPHITE = {
+    "--el-bg": "#14161a",
+    "--el-panel": "#1c1f25",
+    "--el-panel-2": "#21252c",
+    "--el-panel-3": "#2e323b",
+    "--el-line": "#2e323b",
+    "--el-line-2": "#3a3f49",
+    "--el-line-strong": "#4a5160",
+    "--el-ink": "#e9e7e2",
+    "--el-ink-soft": "#b5b3ab",
+    "--el-mute": "#8b8a84",
+    "--el-on-accent": "#14161a",
+    "--el-accent": "#b5b3ab",
+    "--el-accent-hover": "#d6d4cd",
+    "--el-ok": "#5fae7e",
+    "--el-warn": "#d9a34a",
+    "--el-fail": "#d05f5f",
+    "--el-info": "#b5b3ab",
+}
+
+PAPER = {
     "--el-bg": "#f4f4f2",
     "--el-panel": "#fbfbf9",
     "--el-panel-2": "#ececea",
@@ -40,38 +57,19 @@ AGENCY = {
     "--el-info": "#4e5d68",
 }
 
-APERTURE = {
-    "--el-bg": "#0b0e14",
-    "--el-panel": "#121824",
-    "--el-panel-2": "#182234",
-    "--el-panel-3": "#1e2a3f",
-    "--el-line": "#243048",
-    "--el-line-2": "#2c3a55",
-    "--el-line-strong": "#3a4a6b",
-    "--el-ink": "#eff3fa",
-    "--el-ink-soft": "#9faec6",
-    "--el-mute": "#7e90a9",
-    "--el-on-accent": "#0b0e14",
-    "--el-accent": "#00e5ff",
-    "--el-accent-hover": "#85ecff",
-    "--el-ok": "#00e676",
-    "--el-warn": "#ffb020",
-    "--el-fail": "#ff3b5c",
-    "--el-info": "#8ab4ff",
-}
-
 
 def test_exactly_two_approved_voices_ship():
     assert THEMES == APPROVED
     theme_tokens = load_themes()
     assert sorted(theme_tokens) == sorted(APPROVED), (
-        "the old greyok kit is retired; only agency + aperture ship")
+        "the retired voices ship only as migrations; only graphite + paper"
+        " load")
     assert all("--el-bg" in toks for toks in theme_tokens.values())
 
 
-def test_agency_is_the_light_mono_plate():
-    toks = load_themes()[APPROVED[0]]
-    for name, value in AGENCY.items():
+def test_paper_is_the_light_mono_plate():
+    toks = load_themes()[APPROVED[1]]
+    for name, value in PAPER.items():
         assert toks[name].strip().lower() == value, f"{name}: {toks[name]}"
     # The plate is light: luminance of ink next to the page must be the
     # near-black-on-paper pair the owner picked, and the accent is the ink.
@@ -80,40 +78,42 @@ def test_agency_is_the_light_mono_plate():
     assert toks["--el-accent"] == toks["--el-ink"]
 
 
-def test_aperture_is_the_dark_graphite_voice():
-    toks = load_themes()[APPROVED[1]]
-    for name, value in APERTURE.items():
+def test_graphite_is_the_dark_graphite_voice():
+    toks = load_themes()[APPROVED[0]]
+    for name, value in GRAPHITE.items():
         assert toks[name].strip().lower() == value, f"{name}: {toks[name]}"
-    # Dark voice: bright ink and a high-contrast cyan accent, both far
-    # brighter than the obsidian ground they sit on.
+    # Dark voice: soft-white ink and its own tone as the accent, both far
+    # brighter than the charcoal ground they sit on.
     def channel_sum(hexc):
         h = hexc.strip().lstrip("#")
         return sum(int(h[i:i + 2], 16) for i in (0, 2, 4))
-    assert channel_sum(toks["--el-ink"]) > 700
+    assert channel_sum(toks["--el-ink"]) > 600
     assert channel_sum(toks["--el-accent"]) > channel_sum(toks["--el-bg"])
 
 
 def test_defaults_point_at_the_two_voices():
-    assert THEME_CHOICES == {"Dark": "aperture", "Light": "agency"}
-    assert dark_default(sorted(load_themes())) == "aperture"
+    assert THEME_CHOICES == {"Dark": "graphite", "Light": "paper"}
+    assert dark_default(sorted(load_themes())) == "graphite"
     tokens = load_themes()
     def channel_sum(hexc):
         h = hexc.strip().lstrip("#")
         return sum(int(h[i:i + 2], 16) for i in (0, 2, 4))
-    assert channel_sum(tokens["agency"]["--el-bg"]) > 600
-    assert channel_sum(tokens["aperture"]["--el-bg"]) < 200
+    assert channel_sum(tokens["paper"]["--el-bg"]) > 600
+    assert channel_sum(tokens["graphite"]["--el-bg"]) < 200
 
 
-def test_no_accent_bleed_between_themes():
-    agency_css = gtk_css(load_themes()[APPROVED[0]])
-    aperture_css = gtk_css(load_themes()[APPROVED[1]])
-    # Aperture's cyan must never appear in the agency voice, and agency's
-    # paper tones must stay out of the obsidian pages.
-    assert "#00e5ff" not in agency_css
-    assert "#00e5ff" in aperture_css
-    assert "#eff3fa" not in agency_css
-    assert "#eff3fa" in aperture_css
-    assert "--el-" not in agency_css and "--el-" not in aperture_css
+def test_retired_voice_colours_never_bleed_between_themes():
+    graphite_css = gtk_css(load_themes()[APPROVED[0]])
+    paper_css = gtk_css(load_themes()[APPROVED[1]])
+    # Paper's ink-as-accent never appears on the charcoal pages, and the
+    # graphite ink tone never appears on the plate. The retired voices'
+    # slate ink (#eff3fa) and cyan accent (#00e5ff) reappear nowhere.
+    for voice in (graphite_css, paper_css):
+        assert "#00e5ff" not in voice
+        assert "#eff3fa" not in voice
+    assert "#171715" in paper_css and "#171715" not in graphite_css
+    assert "#b5b3ab" in graphite_css and "#b5b3ab" not in paper_css
+    assert "--el-" not in graphite_css and "--el-" not in paper_css
 
 
 def _lum(hexc):
@@ -146,31 +146,34 @@ def clean_state(tmp_path, monkeypatch):
 
 
 def test_set_active_theme_flips_and_persists(clean_state):
-    assert active_theme() == "aperture"      # dark default before any pick
-    assert set_active_theme("agency") is True
-    assert active_theme() == "agency"
-    assert load_setting() == "agency"
-    assert set_active_theme("aperture") is True
-    assert active_theme() == "aperture"
+    assert active_theme() == "graphite"      # dark default before any pick
+    assert set_active_theme("paper") is True
+    assert active_theme() == "paper"
+    assert load_setting() == "paper"
+    assert set_active_theme("graphite") is True
+    assert active_theme() == "graphite"
 
 
 def test_unknown_theme_names_are_refused(clean_state):
     assert set_active_theme("cockpit") is False
     assert set_active_theme("obsidian") is False
-    assert active_theme() == "aperture"
+    assert set_active_theme("agency") is False
+    assert set_active_theme("aperture") is False
+    assert active_theme() == "graphite"
     assert load_setting() == ""
 
 
-def test_persisted_picks_from_the_old_kit_migrate(clean_state):
-    """Installs written before the two-voice wave carry 'obsidian' or
-    'swiss'; the migration keeps each pick's light/dark intent instead of
-    dumping everyone on the dark default."""
-    for old, new in (("obsidian", "aperture"), ("swiss", "agency")):
+def test_persisted_picks_from_retired_voices_migrate(clean_state):
+    """Installs written before the rename carry 'obsidian', 'swiss',
+    'agency' or 'aperture'; the migration keeps each pick's light/dark
+    intent instead of dumping everyone on the dark default."""
+    for old, new in (("obsidian", "graphite"), ("swiss", "paper"),
+                     ("aperture", "graphite"), ("agency", "paper")):
         (T.SETTINGS_PATH).write_text(f'{{"theme": "{old}"}}')
         assert active_theme() == new, old
 
 
-# --- Task 3: the wolf avatar (owner 2026-11-03) -------------------------
+# --- the wolf avatar (owner 2026-11-03) ---------------------------------
 # One artwork file only: assets/logo/greywatch-icon-256.png. The dark
 # theme's avatar derives from it in memory (channel inversion); no
 # second wolf image is ever committed.

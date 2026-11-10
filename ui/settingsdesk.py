@@ -597,19 +597,19 @@ class SettingsDeskMixin:
             "Appearance and placement",
             "Changes are remembered on this computer.")
         theme_row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        radio_agency = Gtk.CheckButton(label="Agency plate, light")
-        radio_aperture = Gtk.CheckButton(label="Aperture graphite, dark")
-        radio_aperture.set_group(radio_agency)
+        radio_paper = Gtk.CheckButton(label="Paper, light")
+        radio_graphite = Gtk.CheckButton(label="Graphite, dark")
+        radio_graphite.set_group(radio_paper)
         picked = load_setting() or dark_default(self._theme_store.names())
         shown = picked if picked in THEME_CHOICES.values() \
             else dark_default(self._theme_store.names())
-        (radio_agency if shown == "agency" else radio_aperture).set_active(True)
-        radio_agency.connect("toggled", self._on_radio_theme, "agency")
-        radio_aperture.connect("toggled", self._on_radio_theme, "aperture")
-        self._radio_agency = radio_agency
-        self._radio_aperture = radio_aperture
-        theme_row.append(radio_agency)
-        theme_row.append(radio_aperture)
+        (radio_paper if shown == "paper" else radio_graphite).set_active(True)
+        radio_paper.connect("toggled", self._on_radio_theme, "paper")
+        radio_graphite.connect("toggled", self._on_radio_theme, "graphite")
+        self._radio_paper = radio_paper
+        self._radio_graphite = radio_graphite
+        theme_row.append(radio_paper)
+        theme_row.append(radio_graphite)
         app_inner.append(self._settings_row(
             "Theme", theme_row, "Two looks; the pick is remembered."))
         ws_combo = Gtk.ComboBoxText()
