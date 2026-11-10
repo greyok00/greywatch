@@ -112,6 +112,7 @@ class _TrendCard(Gtk.Box):
         # bucket per row, date/count, inner-scrolled when the rows run
         # long - it lives in this card, it swaps, not an extra surface.
         self._table_scroll = Gtk.ScrolledWindow()
+        self._table_scroll.set_name("overview-trend-table")
         self._table_scroll.set_policy(Gtk.PolicyType.NEVER,
                                       Gtk.PolicyType.AUTOMATIC)
         self._table_scroll.set_propagate_natural_height(True)

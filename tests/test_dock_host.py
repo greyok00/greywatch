@@ -96,8 +96,12 @@ def test_dock_scrolls_itself_never_the_feed(win):
     host = dock.DockHost(win)
     groups = [(f"Group {i}", [Gtk.Label(label=f"g{i}")]) for i in range(3)]
     host.set_page("services", groups)
-    scroller = list(host)[0]
+    scroller = next(c for c in host if isinstance(c, Gtk.ScrolledWindow))
     assert isinstance(scroller, Gtk.ScrolledWindow)
+    # the arrival breadcrumb label sits above the scroller, never inside it
+    breadcrumb = list(host)[0]
+    assert isinstance(breadcrumb, Gtk.Label)
+    assert not breadcrumb.get_visible()
     assert scroller.get_vscrollbar() is not None
     wrapped = scroller.get_child()
     assert isinstance(wrapped, Gtk.Viewport)
