@@ -84,6 +84,24 @@ baseline refresh (rkhunter --propupd / aide --update) — the permafix
 loop closes on the same card. Dock = show-all/live filter + scanner
 schedule stagger. Resolved/last-run state lives on the card.
 
+### Scans = s2, Protections = p1, Harden = h1 (owner pick, round 2)
+
+Scans: three honest mode cards (Quick sweep / Full suite / Deep audit)
+with big Run buttons; ScanConsole below them; dock carries the boot-sweep
+schedule (stagger one-per-slot, now visible and editable) and the
+throttle knobs (nice/ionice/slots).
+
+Protections: "between this box and threats" strip + Run-protections-now;
+the CVE wall lands here as PATCH ADVISORIES (severity + affected tool +
+patch button per row) with patch-the-planet coverage stats and the watch
+stamp; recent protection-run cards below; dock = advisory filter
+(severity/tool/fixable) + run schedule + notify-on-patch.
+
+Harden: hardening-score bar (percent, colored by band) + ONE flat
+checklist where every row applies itself in place; profile choice
+(recommended / strict / paranoid) lives in the dock and reshapes the
+checklist; recheck-after-apply is a dock toggle.
+
 ## 2. One subject per page (carried, VISUAL-PLAN-UI §5)
 
 Overview = "am I OK right now" (SuiteCard verdict + 4 stat tiles + recent
