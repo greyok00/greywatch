@@ -12,13 +12,14 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DIGESTS = ROOT / "doc" / "tool-digests"
-DB = pathlib.Path("/home/grey/knowledge-ingestor/dbs/gw-tools")
+# Constants live in the SHIPPED module (assistant/digests.py); this dev
+# checker imports them so the list cannot drift between the two.
+from assistant.digests import DIGESTS as _DIGESTS  # noqa: E402
+from assistant.digests import DIGEST_TOOLS as _DIGEST_TOOLS  # noqa: E402
 
-DIGEST_TOOLS = (
-    "psad", "rkhunter", "aide", "clamav", "arpwatch",
-    "lynis", "nftables", "appfw", "greywatch",
-)
+DIGESTS = _DIGESTS
+DIGEST_TOOLS = _DIGEST_TOOLS
+DB = pathlib.Path("/home/grey/knowledge-ingestor/dbs/gw-tools")
 
 
 def db_tools():

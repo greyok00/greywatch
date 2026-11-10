@@ -900,9 +900,10 @@ class SettingsDeskMixin:
     @staticmethod
     def _assistant_digest_count() -> int:
         """The doc/tool-digests corpus, counted from the registry the
-        digests' own checker knows (tools.build_digests)."""
+        shipped digests module owns (assistant.digests - the deb ships
+        ui/ + assistant/, never the tools. checker)."""
         try:
-            from tools.build_digests import DIGESTS, DIGEST_TOOLS
+            from assistant.digests import DIGESTS, DIGEST_TOOLS
             return sum(1 for t in DIGEST_TOOLS
                        if (DIGESTS / f"{t}.md").exists())
         except Exception:                    # noqa: BLE001 - never paints

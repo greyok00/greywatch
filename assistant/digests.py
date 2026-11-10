@@ -10,9 +10,20 @@ the ladder falls through instead of inventing.
 """
 from __future__ import annotations
 
+import pathlib
 import re
 
-from tools.build_digests import DIGESTS, DIGEST_TOOLS
+# The corpus constants live HERE, in the shipped package - not in the
+# treeside tools/ checker (the deb ships ui/ + assistant/, never tools/;
+# an import of tools. from this module kept the app from ever mounting
+# Overview on an installed copy). tools/build_digests.py imports these
+# from here, the dependency direction the packaging law wants.
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+DIGESTS = ROOT / "doc" / "tool-digests"
+DIGEST_TOOLS = (
+    "psad", "rkhunter", "aide", "clamav", "arpwatch",
+    "lynis", "nftables", "appfw", "greywatch",
+)
 
 # Question shapes the digest lane answers. The status lane already runs on
 # the pack ("is psad red?"), and plain "what is X?" asks keep their pinned

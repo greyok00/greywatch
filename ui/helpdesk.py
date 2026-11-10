@@ -33,7 +33,7 @@ def tour_pages() -> tuple:
 
 def digests_dir() -> pathlib.Path:
     """The committed digest corpus, listed where it really lives."""
-    from tools.build_digests import DIGESTS
+    from assistant.digests import DIGESTS
     return pathlib.Path(DIGESTS)
 
 

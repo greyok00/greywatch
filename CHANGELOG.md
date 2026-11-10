@@ -1,3 +1,14 @@
+## 0.4.1 - 2026-11-10
+
+- The install-launcher fix: three shipped modules (assistant/digests.py,
+  ui/helpdesk.py, ui/settingsdesk.py) imported the dev-side
+  tools.build_digests checker, and the deb ships ui/ + assistant/ but
+  never tools/ - the app died on mount, seconds after launch. The corpus
+  constants now live in the shipped assistant.digests module; the checker
+  imports them. Pinned by tests/test_shipped_imports.py, the structural
+  guard that shipped code never imports the dev tree.
+- v0.4.0's published deb carries this bug; install 0.4.1.
+
 # Changelog
 
 Every line of GreyWatch, newest first. Dates are the day the line was
