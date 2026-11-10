@@ -195,6 +195,12 @@ echo "greywatch: runtime state under /var/lib/greywatch was kept." >&2
 EOF
 chmod 0755 "$STAGE/DEBIAN/postinst" "$STAGE/DEBIAN/prerm" "$STAGE/DEBIAN/postrm"
 
+# The C worker's build deps are REQUIRED, not recommended: the package
+# ships appfw/nfq_worker.c (a runtime-required C source, not a compiled
+# Python twin) and appfw/engine.py builds bin/nfq_worker with gcc at
+# first arm, so a deb without them can never arm the firewall. The
+# python3-netfilterqueue binding was dropped deliberately: its verdicts
+# do not stream on this stack (the C worker's whole reason to exist).
 cat > "$STAGE/DEBIAN/control" <<EOF
 Package: greywatch
 Version: $VER
@@ -203,10 +209,10 @@ Maintainer: $MAINTAINER
 Section: utils
 Priority: optional
 Depends: $PY_DEP, python3-gi, gir1.2-gtk-4.0, \
- gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, polkitd, systemd
+ gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, polkitd, systemd, \
+ gcc, libnetfilter-queue-dev, libnetfilter-queue1
 Recommends: ufw, fail2ban, clamav-daemon, clamav-freshclam, yara, \
- rkhunter, lynis, aide-common, arpwatch, apparmor, auditd, nftables, \
- python3-netfilterqueue
+ rkhunter, lynis, aide-common, arpwatch, apparmor, auditd, nftables
 Description: AI-enabled Linux endpoint security suite
  A root daemon watches the machine in real time and writes an
  append-only audit trail; a CLI explains what happened and what the
