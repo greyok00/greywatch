@@ -151,9 +151,10 @@ def test_feed_hides_kept_and_warn_again_restores(tmp_path):
     head = [w for w in panel._kept_box.observe_children()
             if isinstance(w, Gtk.Label)][0]
     assert "1 extension" in head.get_text()
-    # Stop keeping is the way back: the row returns from the same record
-    # (latest first — the plain finding is the newer one).
-    assert _click("Stop keeping", panel._kept_box)
+    # Warn again is the way back (the desk's shipped label for stop
+    # keeping — re-rooted for the round-2 build): the row returns from
+    # the same record (latest first — the plain finding is the newer one).
+    assert _click("Warn again", panel._kept_box)
     pump(20)
     assert [f["id"] for f in panel._findings] == ["plain-1", "cfg-1"]
     assert not panel._kept_box.get_visible()

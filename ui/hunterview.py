@@ -24,18 +24,21 @@ nothing here executes on their suggestion.
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import os
 import pathlib
 import shutil
+import threading
 import time as _time
 
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from hunter import store, web  # noqa: E402
+from hunter import engine, store, web  # noqa: E402
+from ui import metrics  # noqa: E402
 from ui.plain import ink as _ink  # noqa: E402
 from ui.plain import muted as theme_muted  # noqa: E402
 from ui.plain import severity_colour  # noqa: E402
@@ -75,6 +78,113 @@ _RULE_CHANNELS = {
     "rootkit-warning": ("rootkit scanner", "detections"),
     "scan-positive": ("finished scans", "scans"),
 }
+
+# The rule→action map (rebuild round 2, task 8; spec §5 "hunter findings
+# stop being copy-only"): each entry names the permafix kinds a card for
+# that rule offers, wired to machinery that already exists — the
+# quarantine lane (file-action through the responderd quarantine ledger,
+# delete-quarantine for the purge) and the baseline-update lane
+# (rkhunter --propupd, the Activity Log's own helper). Every rule,
+# mapped or not, also gets Ignore forever / Ask / Dismiss on its card.
+_RULE_ACTIONS: dict[str, tuple[str, ...]] = {
+    "malware-detected": ("delete", "quarantine", "scan"),
+    "rootkit-warning": ("baseline", "rescan"),
+    "scan-positive": ("baseline", "rescan"),
+}
+
+
+def _subject_path(f: dict) -> str:
+    """The file a finding is about, from its facts then its evidence.
+    Only absolute paths count — a relative token is not an actionable
+    file, and every card's file buttons say so honestly."""
+    for row in f.get("facts") or []:
+        s = str(row)
+        value = s.partition("=")[2]
+        if (s.partition("=")[0] == "path" and value.startswith("/")):
+            return value
+    for row in f.get("evidence") or []:
+        if isinstance(row, dict) and str(row.get("path") or "").startswith(
+                "/"):
+            return str(row["path"])
+    return ""
+
+
+def _subject_text(f: dict) -> str:
+    """The subject token the dedupe collapses on (a warning line, a scan
+    id) when a finding names no file path; empty for the rule:title
+    fallback, which adds nothing the card's title already says."""
+    try:
+        subject = str(engine.subject_of(f))
+    except Exception:                  # noqa: BLE001 - subject read fails
+        return ""
+    if subject == f"{f.get('rule', '?')}:{f.get('title', '')}":
+        return ""
+    return subject
+
+
+def _action_opts(f: dict) -> list[dict]:
+    """The card's wired actions, one opt per rule-map kind. File kinds
+    resolve their real helper now (the quarantine deletion lane when the
+    file has left its path), and an opt that has no lane to run rides
+    disabled with the reason — an honest control, never a dead click."""
+    rule = str(f.get("rule") or "")
+    path = _subject_path(f)
+    opts = []
+    for kind in _RULE_ACTIONS.get(rule, ()):
+        if kind == "delete":
+            opt = {"kind": "file", "action": "delete", "path": path,
+                   "label": "Delete now", "tone": "danger"}
+            if path and pathlib.Path(path).exists():
+                opt.update(helper="file-action", args=["delete", path])
+                opt["why"] = "deletes the file and records it in the " \
+                             "helper ledger"
+            elif path:
+                # The scan lane (file-action) already moved it under
+                # quarantine lock; delete-quarantine purges that copy.
+                opt.update(helper="delete-quarantine", args=[path])
+                opt["why"] = "the file has left its path - its " \
+                             "quarantine lock is purged"
+            else:
+                opt["sensitive"] = False
+                opt["why"] = "the finder recorded no file path to act on"
+            opts.append(opt)
+        elif kind == "quarantine":
+            opt = {"kind": "file", "action": "quarantine", "path": path,
+                   "label": "Quarantine (undo lane)"}
+            if path and pathlib.Path(path).exists():
+                opt.update(helper="file-action", args=["quarantine", path])
+                opt["why"] = "moves the file under lockdown where it can " \
+                             "still be restored"
+            else:
+                opt["sensitive"] = False
+                opt["why"] = "only a file still at its path can be " \
+                             "quarantined - use Delete now to purge the " \
+                             "lock"
+            opts.append(opt)
+        elif kind == "scan":
+            opts.append({"kind": "scan", "label": "Run a full scan",
+                         "key": "full"})
+        elif kind == "baseline":
+            opts.append({"kind": "helper", "helper": "baseline-update",
+                         "args": ["rkhunter"],
+                         "label": "Update baseline",
+                         "why": "blesses the reviewed state through "
+                                "baseline-update.sh (rkhunter --propupd)"})
+        elif kind == "rescan":
+            opts.append({"kind": "navigate", "label": "Re-run in Scans",
+                         "page": "scans"})
+    return opts
+
+
+def _first_seen_words(ts) -> str:
+    hours = _age_hours(ts)
+    if hours < 1.0:
+        return "first seen minutes ago"
+    if hours < 48.0:
+        return f"first seen {hours:.0f} h ago"
+    if hours < 1e8:
+        return f"first seen {hours / 24.0:.0f} d ago"
+    return "first seen age unknown"
 
 
 def _channel_of(rule: str) -> tuple[str, str]:
@@ -348,25 +458,108 @@ class HunterPanel(Gtk.Box):
     """The hunter desk: command strip, stat band and coverage, the feed,
     and the dossier of the selected finding."""
 
-    def __init__(self, data_dir, on_ask=None, on_navigate=None):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    def __init__(self, data_dir, on_ask=None, on_navigate=None,
+                 on_scan=None):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL,
+                         spacing=metrics.PAGE_SPACING)
+        self.set_margin_top(metrics.PAGE_TOP)
+        self.set_margin_bottom(metrics.PAGE_BOTTOM)
+        self.set_margin_start(metrics.PAGE_X)
+        self.set_margin_end(metrics.PAGE_X)
         self.data_dir = data_dir
         self.on_ask = on_ask
         self.on_navigate = on_navigate
+        self.on_scan = on_scan
         self._findings: list = []
+        self._resolved: list = []
         self._row_widgets: dict = {}
         self._selected: str | None = None
         self._selected_finding: dict | None = None
         self._replies: dict = {}
         self._kept: list = []
         self._quiet: list = []
+        self._card_notes: dict = {}
         self._sev = "ALL"
+        self._rule = ""          # "" = every channel
+        self._state = "ALL"      # ALL / OPEN / RESOLVED
 
         self._build_cmd()
         self._build_band()
         self._build_cover()
+        self._build_dock_widgets()
         self._build_split()
         self.refresh(force=True)
+
+    # ------------------------------------------------------------ dock
+
+    def _build_dock_widgets(self):
+        """The dock's controls (th-A, rebuild round 2 task 8), built once
+        and handed over by dock_groups(): the Filter dropdowns, the
+        suppression list and the hunter's cadence controls. Every
+        control is enabled only where a lane exists; where none does it
+        sits disabled with an honest tooltip."""
+        # Filter — severity, channel and state ride the same filter
+        # values the feed's own chips write.
+        self._sev_drop = Gtk.DropDown()
+        self._sev_drop.set_model(
+            Gtk.StringList.new(["All", "High", "Medium", "Low"]))
+        self._sev_drop.add_css_class("gw-mini")
+        self._sev_drop.set_selected(0)     # the desk opens at All
+        self._rule_drop = Gtk.DropDown()
+        self._rule_channels = ["Every channel"] + [
+            c for c in dict.fromkeys(
+                [label for label, _k in _RULE_CHANNELS.values()]
+                + ["HAR capture", "downloads", "startup automation",
+                   "browser history", "browser config", "suite events"])]
+        self._rule_drop.set_model(Gtk.StringList.new(self._rule_channels))
+        self._rule_drop.add_css_class("gw-mini")
+        self._state_drop = Gtk.DropDown()
+        self._states = ["All", "Open", "Resolved"]
+        self._state_drop.set_model(Gtk.StringList.new(self._states))
+        self._state_drop.add_css_class("gw-mini")
+        self._state_drop.set_selected(0)
+        # Connections last: the builds above touch no filter state, and
+        # a notify during construction would render a half-built page.
+        for drop in (self._sev_drop, self._rule_drop, self._state_drop):
+            drop.connect("notify::selected", self._on_drop)
+        # Suppressions — the (rule, subject) ledger with the way back.
+        self._quiet_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                                  spacing=4)
+        self._quiet_box.add_css_class("gw-feedbody")
+        self._quiet_box.set_visible(False)
+        # Watcher — the cadence the hunter loop already writes. No pause
+        # lane exists (the loop is a user systemd unit), so the toggle
+        # reads disabled rather than pretending.
+        self._interval_label = Gtk.Label(xalign=0)
+        self._interval_label.add_css_class("gw-meta")
+        self._pause_switch = Gtk.Switch()
+        self._pause_switch.set_sensitive(False)
+        self._pause_switch.set_tooltip_text(
+            "no pause lane yet: the hunter is a systemd user loop - the "
+            "tools rebuild carries its schedule; Hunt now still runs a "
+            "one-shot cycle")
+        self._pause_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                                  spacing=6)
+        self._pause_row.append(self._pause_switch)
+        pause_l = Gtk.Label(xalign=0)
+        pause_l.add_css_class("gw-meta")
+        pause_l.set_text("Paused")
+        self._pause_row.append(pause_l)
+        self._pause_hint = Gtk.Label(xalign=0, wrap=True)
+        self._pause_hint.add_css_class("gw-meta")
+        self._pause_hint.set_text(
+            "the loop re-runs on its own interval; the clock on the "
+            "command strip says whether it is answering")
+
+    def dock_groups(self):
+        """The fixed dock's three groups (th-A): Filter, Suppressions and
+        Watcher - window._thunter_view hands these over as-is, and the
+        page's arrival greeting pulses Filter (guided.PAGE_ENTRY)."""
+        return [("Filter", [self._sev_drop, self._rule_drop,
+                            self._state_drop]),
+                ("Suppressions", [self._quiet_box]),
+                ("Watcher", [self._interval_label, self._pause_row,
+                             self._pause_hint])]
 
     # ------------------------------------------------------------- build
 
@@ -536,13 +729,9 @@ class HunterPanel(Gtk.Box):
         self._kept_box.add_css_class("gw-feedbody")
         self._kept_box.set_visible(False)
         feed.append(self._kept_box)
-        # The hidden strip: one row per dismissed finding, each
-        # with the Show-again way back. Mounted under the kept strip.
-        self._quiet_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
-                                  spacing=4)
-        self._quiet_box.add_css_class("gw-feedbody")
-        self._quiet_box.set_visible(False)
-        feed.append(self._quiet_box)
+        # The dismissed-findings strip moved to the dock's Suppressions
+        # group (th-A): the page chrome stays put and the levers live
+        # where their group is.
         # The rows scroll on their own so the dossier keeps its height.
         self._scroll = scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -871,13 +1060,35 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
         kept_ids = {row["ext"] for row in self._kept}
         # Dismissed findings leave the desk the same way: the
         # store keeps every record, the ledger decides what paints.
+        # Two tiers (th-A): an exact dismissed id, and a (rule, subject)
+        # key a re-published warning with a new id still matches.
         self._quiet = store.quieted_findings(self.data_dir)
         quiet_ids = {row["id"] for row in self._quiet}
-        findings = [f for f in
-                    latest_findings(self.data_dir, limit=store.FINDINGS_KEEP)
-                    if _ext_parts(f)[0] not in kept_ids
-                    and str(f.get("id") or "") not in quiet_ids]
+        quiet_keys = {row["key"] for row in self._quiet if row["key"]}
+        # Closed findings (an action ran for them) collapse to one line.
+        self._resolved_lines = {r["id"]: r
+                                for r in store.resolved_findings(self.data_dir)}
+        open_f, resolved_f = [], []
+        for f in latest_findings(self.data_dir,
+                                 limit=store.FINDINGS_KEEP):
+            if _ext_parts(f)[0] in kept_ids:
+                continue
+            fid = str(f.get("id") or "")
+            if fid in quiet_ids:
+                continue
+            try:
+                if fid in quiet_keys or store.dedup_key(
+                        str(f.get("rule") or ""),
+                        engine.subject_value_of(f)) in quiet_keys:
+                    continue
+            except Exception:          # noqa: BLE001 - subject read fails
+                if fid in quiet_keys:  # → the id tier still applies
+                    continue
+            (resolved_f if fid in self._resolved_lines
+             else open_f).append(f)
+        findings = open_f
         self._findings = findings
+        self._resolved = resolved_f
         self._paint_kept()
         self._paint_quiet()
         unread = unread_notes(self.data_dir)
@@ -912,6 +1123,10 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
         self._paint_band(doc, findings, unread)
         self._paint_cover(doc, findings)
         self._watcher_tile.set_text(_watcher_line(doc))
+        # The dock's Watcher group: the cadence the hunter itself wrote.
+        interval = int((doc.get("interval_s") or 300.0) // 60) or 1
+        self._interval_label.set_text(
+            f"Interval: one sweep every {interval} minutes")
         flag = self._unread_flag
         if unread:
             flag.set_markup(
@@ -926,7 +1141,7 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
         for child in list(self._list.observe_children()):
             self._list.remove(child)
         self._row_widgets.clear()
-        if not findings:
+        if not findings and not self._resolved:
             if getattr(self, "_selected", None) is not None:
                 self._clear_selection()
             self._chip_counts(findings)
@@ -1009,25 +1224,64 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
                 chip.add_css_class("gw-chip-on")
             else:
                 chip.remove_css_class("gw-chip-on")
+        self._apply_filters()
+
+    def _on_drop(self, drop, _pspec) -> None:
+        """A dock Filter dropdown: the same three filter values (and the
+        chips stay in step — one filter state, two surfaces)."""
+        if not hasattr(self, "_list"):     # still building: never render
+            return
+        idx = drop.get_selected()
+        if drop is self._sev_drop:
+            picked = self._sev_drop.get_model().get_string(idx) or "All"
+            self._sev = {"All": "ALL", "High": "HIGH", "Medium": "MEDIUM",
+                         "Low": "LOW"}.get(picked, "ALL")
+            for label, val in SEV_CHIPS:
+                chip = self._chip_btns[label]
+                if (val.upper() or "ALL") == self._sev:
+                    chip.add_css_class("gw-chip-on")
+                else:
+                    chip.remove_css_class("gw-chip-on")
+        elif drop is self._rule_drop:
+            picked = self._rule_drop.get_model().get_string(idx) or ""
+            self._rule = "" if picked == "Every channel" else picked
+        elif drop is self._state_drop:
+            picked = self._state_drop.get_model().get_string(idx) or "All"
+            self._state = {"All": "ALL", "Open": "OPEN",
+                           "Resolved": "RESOLVED"}.get(picked, "ALL")
+        self._apply_filters()
+
+    def _apply_filters(self) -> None:
+        """Selection safety across ALL three filters, then one render."""
         selected_ok = any(
-            str(f.get("id") or "") == self._selected
-            for f in self._findings
-            if self._sev == "ALL"
-            or _bucket(f.get("severity")) == self._sev)
-        if not selected_ok:
+            str(f.get("id") or "") == self._selected and self._visible(f)
+            for f in self._findings)
+        if self._state != "RESOLVED" and not selected_ok:
             self._clear_selection()
         self._render()
 
+    def _visible(self, f: dict) -> bool:
+        """The feed pool behind every filter at once: severity (the
+        chips' bucket), channel (the dock's rule dropdown) and the card
+        state the filter asks for."""
+        if self._sev != "ALL" and _bucket(f.get("severity")) != self._sev:
+            return False
+        if self._rule and _channel_of(f.get("rule"))[0] != self._rule:
+            return False
+        return True
+
     def _render(self) -> None:
-        """Paint the feed from the pool behind the current filter, grouped
-        into the days the findings themselves span."""
-        pool = [f for f in self._findings
-                if self._sev == "ALL"
-                or _bucket(f.get("severity")) == self._sev]
-        pool = pool[:MAX_ROWS]
-        # The chips tally the whole pool on file, not the narrowed view —
-        # the mockup's "ALL 3 / HIGH 2" reads as an inventory, whatever the
-        # feed is showing right now.
+        """Paint the feed from the pool behind the current filters: open
+        cards day-grouped, then resolved findings as one honest line
+        each — no cards for what is already answered."""
+        open_pool = [f for f in self._findings
+                     if self._visible(f) and self._state in ("ALL", "OPEN")]
+        open_pool = open_pool[:MAX_ROWS]
+        resolved_pool = ([f for f in self._resolved if self._visible(f)]
+                         if self._state in ("ALL", "RESOLVED") else [])
+        # The chips tally the whole open pool on file, not the narrowed
+        # view — the mockup's "ALL 3 / HIGH 2" reads as an inventory,
+        # whatever the feed is showing right now.
         self._chip_counts(self._findings)
         # Diffs clear and re-append rows, and the cleared list clamps the
         # scroll to the top; hold the reading position and set it back at
@@ -1039,7 +1293,7 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
             self._list.remove(child)
         self._row_widgets.clear()
         last_day = None
-        for f in pool:
+        for f in open_pool:
             day = _day_label(_when(f.get("ts")))
             if day != last_day:
                 last_day = day
@@ -1048,16 +1302,31 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
                 strip.set_text(day)
                 self._list.append(strip)
             self._list.append(self._feed_row(f))
+        for f in resolved_pool:
+            line = Gtk.Label(xalign=0)
+            line.set_xalign(0)
+            line.set_wrap(True)
+            line.add_css_class("gw-fmeta")
+            line.add_css_class("gw-resolved-line")
+            how = self._resolved_lines.get(str(f.get("id") or ""),
+                                           {}).get("how", "")
+            title = str(f.get("title") or "").strip()
+            line.set_text(f"resolved - {how or 'closed'} · {title}"
+                          if title else f"resolved - {how or 'closed'}")
+            self._list.append(line)
         vadj.set_value(max(0.0, min(pos,
                         vadj.get_upper() - vadj.get_page_size())))
-        if not pool and self._findings:
-            # A filter emptied the feed — not "nothing to hunt", which the
-            # refresh path owns; say what the filter means.
-            self._empty.set_markup(
-                f"<span size='12000' font_family='Inter' "
-                f"color='{theme_muted()}'>No findings at this severity."
-                "</span>")
-            self._empty.set_visible(True)
+        if not open_pool and not resolved_pool:
+            if self._findings or self._resolved:
+                # A filter emptied the feed — not "nothing to hunt",
+                # which the refresh path owns; say what the filter means.
+                self._empty.set_markup(
+                    f"<span size='12000' font_family='Inter' "
+                    f"color='{theme_muted()}'>Nothing in the feed at "
+                    "this filter.</span>")
+                self._empty.set_visible(True)
+            else:
+                self._empty.set_visible(False)
         else:
             # Coming back to a filter with rows must hide the label a
             # previous filtered render left showing.
@@ -1080,11 +1349,18 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
             self._chip_btns[label].set_label(f"{label} {counts[label]}")
 
     def _feed_row(self, f: dict) -> Gtk.Box:
+        """One open finding: a card (th-A, rebuild round 2 task 8) —
+        severity tone, the rule that fired, the subject/path line, what
+        was caught, its first-seen age, and its own buttons. Clicking the
+        card body still opens the dossier; the copy-text is never the
+        primary — the rule map's real helpers are."""
         sev = str(f.get("severity") or "?")
         colour = severity_colour(sev)
         channel, _key = _channel_of(f.get("rule"))
-        row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        fid = str(f.get("id") or "")
+        row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         row.add_css_class("gw-frow")
+        row.add_css_class("gw-fcard")
         head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         dot = Gtk.Label(xalign=0)
         dot.set_markup(
@@ -1101,19 +1377,68 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
             f"color='{_ink()}'>{_esc(f.get('title'))}</span>")
         head.append(title)
         row.append(head)
-        when = _when(f.get("ts"))
-        stamp = (when.strftime("%H:%M") if when
-                 and _day_label(when) == "Today" else _fmt_ts(f.get("ts")))
         meta = Gtk.Label(xalign=0)
         meta.add_css_class("gw-fmeta")
         meta.set_xalign(0)
         meta.set_wrap(True)
         meta.set_markup(
             f"<span size='10500' font_family='IBM Plex Mono' "
-            f"color='{theme_muted()}'>{_esc(channel)} · "
-            f"{_esc(f.get('rule'))} · {_esc(stamp)}</span>")
+            f"color='{theme_muted()}'>{_esc(channel or '-')} · "
+            f"{_esc(f.get('rule'))} · {_esc(_first_seen_words(f.get('ts')))}"
+            f"</span>")
         row.append(meta)
-        fid = str(f.get("id") or "")
+        # The subject line: the file/path a file rule names, else the
+        # subject token the dedupe collapses on (a warning line, a scan
+        # id) — the one line someone needs when deciding.
+        subject = _subject_path(f) or _subject_text(f)
+        if subject and subject != str(f.get("title") or ""):
+            subj_l = Gtk.Label(xalign=0)
+            subj_l.add_css_class("gw-fmeta")
+            subj_l.add_css_class("gw-mono")
+            subj_l.set_xalign(0)
+            subj_l.set_wrap(True)
+            subj_l.set_markup(
+                f"<span size='10500' font_family='IBM Plex Mono' "
+                f"color='{_ink()}'>{_esc(subject[:200])}</span>")
+            row.append(subj_l)
+        what = str(f.get("what") or "")
+        if what:
+            what_l = Gtk.Label(xalign=0)
+            what_l.set_xalign(0)
+            what_l.set_wrap(True)
+            what_l.add_css_class("gw-prose")
+            what_l.set_text(what[:240] + ("…" if len(what) > 240 else ""))
+            row.append(what_l)
+        acts = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        for opt in _action_opts(f):
+            acts.append(self._card_action_btn(opt, f))
+        # Ask rides every card (th-A): the assistant seam is the window's
+        # chat, and the click focuses it on THIS finding.
+        ask = Gtk.Button(label="Ask")
+        ask.add_css_class("gw-mini")
+        ask.connect("clicked", self._on_card_ask, f)
+        acts.append(ask)
+        dis = Gtk.Button(label="Dismiss this finding")
+        dis.add_css_class("gw-mini")
+        dis.connect("clicked", self._on_card_dismiss, f)
+        acts.append(dis)
+        ign = Gtk.Button(label="Ignore forever")
+        ign.add_css_class("gw-mini")
+        ign.set_tooltip_text(
+            "Quiet for keeps: this rule and its subject never ask again, "
+            "even when the watcher re-publishes it past its window. "
+            "Show again sits in the dock's Suppressions group.")
+        ign.connect("clicked", self._on_card_ignore, f)
+        acts.append(ign)
+        row.append(acts)
+        note = str(self._card_notes.get(fid) or "")
+        if note:
+            note_l = Gtk.Label(xalign=0)
+            note_l.set_xalign(0)
+            note_l.set_wrap(True)
+            note_l.add_css_class("gw-fmeta")
+            note_l.set_text(note)
+            row.append(note_l)
         row._gw_finding_id = fid
         click = Gtk.GestureClick()
         click.connect("released", self._on_row_gesture)
@@ -1122,6 +1447,210 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
             row.add_css_class("gw-row-on")
         self._row_widgets[fid] = row
         return row
+
+    def _card_action_btn(self, opt: dict, f: dict) -> Gtk.Button:
+        """One wired control per rule-map opt. An opt with no lane to run
+        rides disabled with its reason: an honest control, never a dead
+        click or a fake one."""
+        b = Gtk.Button(label=str(opt.get("label") or "?"))
+        b.add_css_class("gw-mini")
+        tone = str(opt.get("tone") or "")
+        b.add_css_class({"danger": "gw-danger",
+                         "primary": "gw-primary"}.get(tone, ""))
+        if opt.get("kind") == "navigate":
+            b.set_tooltip_text("Hands off to the Scans page, where the "
+                               "run that produced this finding lives.")
+            b.connect("clicked", self._on_card_rescan, f)
+            return b
+        if opt.get("kind") == "scan":
+            b.set_tooltip_text("Requests the full scan the same way the "
+                               "Scans page does - the daemon honours "
+                               "only the fixed keys.")
+            b.connect("clicked", self._on_card_scan, f)
+            return b
+        helper = str(opt.get("helper") or "")
+        args = ", ".join(str(a) for a in (opt.get("args") or []))
+        why = str(opt.get("why") or "")
+        b.set_tooltip_text(
+            (f"Runs {helper} {args} through polkit - you will be asked "
+             f"for your password. ({why})") if helper else why)
+        if opt.get("sensitive") is False:
+            b.set_sensitive(False)
+            return b
+        b.connect("clicked", self._on_card_option, opt, f)
+        return b
+
+    def _on_card_option(self, _btn, opt: dict, f: dict) -> None:
+        """A card's permafix button: confirm first (the helper lane),
+        then run off the UI thread with the same pipeline the Activity
+        Log's fix cards use."""
+        self._confirm_and_run(opt, f)
+
+    def _on_card_scan(self, _btn, _f) -> None:
+        """"Run a full scan": the window's own scan-request seam (the
+        same validated-key write the Scans page makes); without a seam
+        the route is the Scans page itself."""
+        if callable(self.on_scan):
+            self.on_scan("full")
+        elif self.on_navigate is not None:
+            self.on_navigate("scans")
+
+    def _on_card_rescan(self, _btn, _f) -> None:
+        """"Re-run in Scans": the hand-off only - which scan to run is
+        the Scans page's subject, never this card's."""
+        if self.on_navigate is not None:
+            self.on_navigate("scans")
+
+    def _on_card_ask(self, _btn, f: dict) -> None:
+        """The card's Ask: hands the finding to the assistant the same
+        way the dossier's Ask does; without a seam it says so instead of
+        doing nothing. An injected reply lands in the dossier's answer
+        list."""
+        if not f:
+            return
+        if self.on_ask is None:
+            self._say("No assistant is wired up to answer here: the Ask "
+                      "button asks through the chat seam once the "
+                      "window hands the desk one.")
+            return
+        question = (f"Explain this hunter finding: {f.get('title', '')}. "
+                    f"What it found: {f.get('what', '')}"
+                    " - what should I do about it?")
+        fid = str(f.get("id") or "")
+        replies = self._replies.setdefault(fid, [])
+        reply = self.on_ask(question, f)
+        if isinstance(reply, str) and reply.strip():
+            replies.append(str(reply))
+            if self._selected == fid:
+                self._fill_detail(f)
+
+    def _on_card_dismiss(self, _btn, f: dict) -> None:
+        """This exact finding was seen and judged quiet (the id tier):
+        a changed subject is a new id and still alerts."""
+        if not str((f or {}).get("id") or ""):
+            return
+        store.quiet_finding(self.data_dir, f)
+        self.refresh(force=True)
+        self._say("Dismissed: nothing more is raised for this exact "
+                  "finding, and its records leave the feed. Show again "
+                  "sits in the dock's Suppressions group.")
+
+    def _on_card_ignore(self, _btn, f: dict) -> None:
+        """"Ignore forever": the (rule, subject) tier - the same warning
+        re-published under a new id never asks again, with the way back
+        in the dock's Suppressions group."""
+        if not str((f or {}).get("id") or ""):
+            return
+        store.quiet_finding(self.data_dir, f,
+                            subject=engine.subject_value_of(f))
+        self.refresh(force=True)
+        self._say("Ignored for keeps: this rule and its subject never "
+                  "ask again, even when the watcher re-publishes them "
+                  "past their window. Show again sits in the dock's "
+                  "Suppressions group.")
+
+    def _confirm_dialog(self, label: str) -> Gtk.Dialog:
+        d = Gtk.Dialog(
+            title=f"{label} : are you sure?",
+            transient_for=self.get_root()
+            if isinstance(self.get_root(), Gtk.Window) else None,
+            modal=False)
+        d.set_destroy_with_parent(True)
+        body = d.get_content_area()
+        body.set_margin_start(18)
+        body.set_margin_end(18)
+        body.set_margin_top(12)
+        body.set_margin_bottom(12)
+        ask = Gtk.Label(xalign=0, wrap=True)
+        ask.set_xalign(0)
+        ask.set_text(label)
+        body.append(ask)
+        d.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        d.add_button(label, Gtk.ResponseType.OK)
+        try:
+            from ui.eventclock import present_now  # noqa: PLC0415 - lazy
+            present_now(d)
+        except ImportError:
+            d.show()
+        return d
+
+    def _confirm_and_run(self, opt: dict, f: dict) -> None:
+        helper = str(opt.get("helper") or "")
+        args = " ".join(str(a) for a in (opt.get("args") or []))
+        words = (f"{helper} {args}\n\nYou will be asked for your "
+                 "password." if helper else "No lane names this ask.")
+        d = self._confirm_dialog(
+            f"{opt.get('label')} - {words}\n\n{args}")
+        d.connect("response", lambda dlg, rid, o=dict(opt), ff=dict(f):
+                  self._on_confirm_response(dlg, rid, o, ff))
+
+    def _on_confirm_response(self, d, rid, opt, f):
+        d.destroy()
+        if rid != Gtk.ResponseType.OK:
+            return
+        self._run_opt_now(opt, f)
+
+    def _run_opt_now(self, opt: dict, f: dict) -> None:
+        fid = str((f or {}).get("id") or "")
+
+        def worker():
+            # The write-down (spec §7 permaclean): hash the file BEFORE
+            # the helper takes it away, so the resolved line can carry
+            # the path and the hash it was.
+            sha = ""
+            path = str(opt.get("path") or "")
+            if path and opt.get("kind") == "file":
+                try:
+                    h = hashlib.sha256()
+                    with open(path, "rb") as fh:
+                        for chunk in iter(lambda: fh.read(1 << 20), b""):
+                            h.update(chunk)
+                    sha = h.hexdigest()
+                except OSError:
+                    sha = ""          # unreadable: recorded without hash
+            try:
+                from ui.decisionlist import _helper_exec
+                rc, err = _helper_exec(opt.get("helper"),
+                                       list(opt.get("args") or []))
+            except Exception:          # noqa: BLE001 - a lane crash is a
+                rc, err = -1, ""       # did-not-finish, never a page crash
+            GLib.idle_add(self._after_card_option, fid, dict(opt),
+                          int(rc), str(err), sha)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _after_card_option(self, fid: str, opt: dict, rc: int, err: str,
+                           sha: str) -> bool:
+        """The card says what actually happened, on the card: done lines
+        name the record (path + hash ride the resolved ledger), failures
+        quote the helper's own words verbatim."""
+        try:
+            from wiz.common import helper_detail  # noqa: PLC0415 - lazy
+        except ImportError:                # pragma: no cover - headless
+            helper_detail = lambda rc_, e_: f"exit {rc_}"  # noqa: E731
+        when = _dt.datetime.now().astimezone().strftime("%H:%M")
+        if rc == 0:
+            f = next((x for x in self._findings
+                      if str(x.get("id") or "") == fid), None) \
+                or dict(self._selected_finding or {}) or {"id": fid}
+            action = str(opt.get("action") or "")
+            if action == "delete":
+                note = "Deleted - path recorded in ledger."
+                how = f"deleted {when}"
+            elif action == "quarantine":
+                note = "Quarantined - the copy is held for undo."
+                how = f"quarantined {when}"
+            else:
+                note = ("Baseline updated - the checker re-raises only "
+                        "if the warning returns.")
+                how = f"baseline updated {when}"
+            store.mark_resolved(self.data_dir, f, how,
+                                path=str(opt.get("path") or ""), sha=sha)
+        else:
+            note = (f"{opt.get('label') or 'The action'} did not finish "
+                    f"({helper_detail(rc, err)}).")
+        self._card_notes[fid] = note
+        self.refresh(force=True)
+        return False
 
     def _on_row_gesture(self, gesture, n_press, x, y) -> None:
         row = gesture.get_widget()

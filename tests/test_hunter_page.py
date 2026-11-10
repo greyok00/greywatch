@@ -31,6 +31,7 @@ if not (os.environ.get("GREYWATCH_TEST_DISPLAY") == "1"
 from hunter import store  # noqa: E402
 from ui.hunterview import (MAX_ROWS, _channel_of, _day_label,  # noqa: E402
                            HunterPanel, latest_findings)
+from ui import guided  # noqa: E402
 
 
 def pump(n=20):
@@ -600,3 +601,161 @@ def test_copy_facts_keeps_the_page_alive_and_reports(tmp_path):
     assert panel._status.get_visible()
     text = panel._status.get_text()
     assert ("copied" in text) or ("not reachable" in text), text
+
+# --- th-A (rebuild round 2, task 8): finding cards with wired actions ------
+
+def _buttons_of(widget):
+    stack, out = [widget], []
+    while stack:
+        w = stack.pop(0)
+        if isinstance(w, Gtk.Button):
+            out.append(w)
+        if hasattr(w, "observe_children"):
+            stack.extend(w.observe_children())
+    return out
+
+
+def _card_of(panel, fid):
+    return next((w for w in panel._list.observe_children()
+                 if getattr(w, "_gw_finding_id", None) == fid), None)
+
+
+def _card_labels(card):
+    return [b.get_child().get_text() if b.get_child() else b.get_label()
+            for b in _buttons_of(card)]
+
+
+def _now_stamp():
+    import datetime as dt
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def test_every_rule_kind_has_its_action_wired(tmp_path):
+    """The rule-to-action map next to _RULE_CHANNELS gives every scanner
+    rule its real buttons on the card itself: malware-detected deletes
+    through the quarantine lane (with quarantine as the undo and a full
+    scan after), the one-shot scanner outputs get the baseline update and
+    the Scans hand-off. Every card, every rule, carries Ignore forever,
+    Ask and Dismiss."""
+    scans = []
+    seed = (
+        ("mal-1", "malware-detected", "HIGH",
+         ["path=/home/x/Downloads/bad.bin"], ["clamav FOUND hit"]),
+        ("rk-1", "rootkit-warning", "HIGH",
+         ["detail=Warning: file /etc/x.conf changed"], ["Warning: ..."]),
+        ("sp-1", "scan-positive", "MEDIUM",
+         ["scan_id=run-7"], ["scan run-7 finished"]),
+        ("dl-1", "download-double-extension", "HIGH",
+         ["path=/home/x/Downloads/doc.pdf.exe"], ["hazard"]),
+    )
+    for fid, rule, sev, facts, _ev in seed:
+        store.append_finding(tmp_path, {
+            "id": fid, "ts": _now_stamp(), "rule": rule, "title": fid,
+            "what": f"What happened for {fid}.", "next": "Next step.",
+            "severity": sev, "confidence": "medium", "status": "lead",
+            "facts": facts, "evidence": [], "hunter": "1"})
+    panel = HunterPanel(tmp_path, on_scan=scans.append)
+    pump(5)
+    # malware-detected: delete is the primary, quarantine is the undo
+    # lane, a full scan rides after, and the scan lane is wired (button
+    # present AND the injected handler asked).
+    assert set(_card_labels(_card_of(panel, "mal-1"))) >= {
+        "Delete now", "Quarantine (undo lane)", "Run a full scan",
+        "Ignore forever", "Ask", "Dismiss this finding"}
+    assert _card_labels(_card_of(panel, "rk-1")) >= [
+        "Update baseline", "Re-run in Scans"]
+    assert _card_labels(_card_of(panel, "sp-1")) >= [
+        "Update baseline", "Re-run in Scans"]
+    for fid, _rule, _sev, _facts, _ev in seed:
+        card = _card_of(panel, fid)
+        assert card is not None
+        labels = _card_labels(card)
+        for need in ("Ignore forever", "Ask", "Dismiss this finding"):
+            assert need in labels, f"{fid}: {need} missing"
+    # The "Run a full scan" button is a real wire, not copy-text: the
+    # click reaches the injected scan seam.
+    _buttons_of(_card_of(panel, "mal-1")) and [
+        b.emit("clicked") for b in _buttons_of(_card_of(panel, "mal-1"))
+        if b.get_child().get_text() == "Run a full scan"]
+    pump(5)
+    assert scans == ["full"], "the scan hand-off carries the full-scan key"
+
+
+def test_ignore_forever_keys_rule_and_subject(tmp_path):
+    """The suppression is keyed (rule, subject), not the finding id: a
+    re-published copy of the same warning under a brand-new id never
+    asks again, and the ledger row names the rule and the subject key."""
+    old_ts = _now_stamp()
+    store.append_finding(tmp_path, {
+        "id": "legacy-format:rkh", "ts": old_ts, "rule": "rootkit-warning",
+        "title": "The rootkit checker raised a warning",
+        "what": "rkhunter: Warning: file changed.", "next": "Review it.",
+        "severity": "HIGH", "facts": ["detail=Warning: file changed"],
+        "evidence": [], "hunter": "1"})
+    panel = HunterPanel(tmp_path)
+    pump(5)
+    card = _card_of(panel, "legacy-format:rkh")
+    assert any(b.get_child().get_text() == "Ignore forever"
+               for b in _buttons_of(card))
+    next(b for b in _buttons_of(card)
+         if b.get_child().get_text() == "Ignore forever").emit("clicked")
+    pump(10)
+    rows = store.quieted_findings(tmp_path)
+    want = store.dedup_key("rootkit-warning", "Warning: file changed")
+    assert rows[0]["rule"] == "rootkit-warning"
+    assert rows[0]["key"] == want, "the ledger keeps the rule+subject key"
+    assert want in store.quieted_keys(tmp_path)
+    assert panel._findings == [], "the ignored finding leaves the feed"
+    # A re-published identical warning with a NEW id matches the
+    # (rule, subject) key and is quieted, though its id is unknown.
+    store.append_finding(tmp_path, {
+        "id": "fresh-id-after-refire", "ts": _now_stamp(),
+        "rule": "rootkit-warning",
+        "title": "The rootkit checker raised a warning",
+        "what": "rkhunter: Warning: file changed.", "next": "Review it.",
+        "severity": "HIGH", "facts": ["detail=Warning: file changed"],
+        "evidence": [], "hunter": "1"})
+    panel.refresh(force=True)
+    pump(5)
+    assert [f["id"] for f in panel._findings] == [], (
+        "the refired warning is suppressed by rule+subject, not by id")
+
+
+def test_resolved_findings_collapse_to_one_honest_line(tmp_path):
+    store.append_finding(tmp_path, {
+        "id": "rk-2", "ts": _now_stamp(), "rule": "rootkit-warning",
+        "title": "The rootkit checker raised a warning",
+        "what": "rkhunter warned.", "next": "Review it.",
+        "severity": "HIGH", "facts": ["detail=Warning: x"], "evidence": [],
+        "hunter": "1"})
+    store.mark_resolved(tmp_path, {"id": "rk-2"},
+                        "baseline updated 13:58")
+    panel = HunterPanel(tmp_path)
+    pump(5)
+    texts = [w.get_text() for w in panel._list.observe_children()]
+    assert any("resolved - baseline updated 13:58" in t for t in texts), texts
+    assert _card_of(panel, "rk-2") is None, "resolved means no card"
+    assert panel._findings == [], "resolved findings are not open leads"
+
+
+def test_dock_groups_filter_suppressions_watcher(tmp_path):
+    panel = HunterPanel(tmp_path)
+    pump(5)
+    groups = panel.dock_groups()
+    assert [name for name, _w in groups] == ["Filter", "Suppressions",
+                                             "Watcher"]
+    filter_widgets = dict(groups)["Filter"]
+    texts = [w.get_text() for w in filter_widgets
+             if isinstance(w, Gtk.Label) and w.get_text()]
+    assert any("rkhunter" in t or "severity" in t.lower() for t in texts) \
+        or len(filter_widgets) >= 3, "the Filter group holds its dropdowns"
+    # The suppression list rides in the dock's own group, with a way
+    # back per row.
+    sup = dict(groups)["Suppressions"]
+    assert any(hasattr(w, "observe_children") for w in sup)
+
+
+def test_thunter_page_entry_pulses_filter():
+    """PAGE_ENTRY gains the hunter page: its arrival greets the Filter
+    group like the other rebuilt pages greet their first group."""
+    assert guided.PAGE_ENTRY.get("thunter") == "Filter"

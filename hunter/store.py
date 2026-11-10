@@ -118,10 +118,15 @@ def unkeep_extension(data_dir, ext_id: str) -> list[dict]:
 
 def quieted_findings(data_dir) -> list[dict]:
     """Findings the user dismissed, as the ledger on file: a list of
-    {"id": <finding id>, "rule": <rule>, "label": <title fragment>}.
-    The finding id IS the dedup key (rule + subject), so an unchanged
-    subject re-raises onto the same id and never re-appends; a changed
-    subject is a new id and still alerts."""
+    {"id": <finding id>, "rule": <rule>, "label": <title fragment>,
+    "key": <dedup key of (rule, subject)>}.
+
+    Two suppression tiers (rebuild round 2, task 8): the finding id IS
+    the dedup key (rule + subject) for everything the modern writer
+    published, and the "" key (rows written before the subject key
+    existed) keeps its exact-id tier — an unchanged subject re-raises
+    onto the same id and never re-appends; a changed subject is a new id
+    and still alerts."""
     rows = read_config(data_dir).get("quieted_findings")
     if not isinstance(rows, list):
         return []
@@ -130,30 +135,90 @@ def quieted_findings(data_dir) -> list[dict]:
         if isinstance(row, dict) and str(row.get("id") or "").strip():
             out.append({"id": str(row["id"]),
                         "rule": str(row.get("rule") or ""),
-                        "label": str(row.get("label") or "")})
+                        "label": str(row.get("label") or ""),
+                        "key": str(row.get("key") or "")})
     return out
 
 
 def quieted_ids(data_dir) -> set[str]:
+    """The id tier: the finding ids on the ledger."""
     return {row["id"] for row in quieted_findings(data_dir)}
 
 
-def quiet_finding(data_dir, f: dict) -> list[dict]:
+def quieted_keys(data_dir) -> set[str]:
+    """The (rule, subject) tier: dedup keys written with the finding, so
+    a re-published identical warning with a new id is quieted where the
+    exact-id tier alone would re-ask (the 72 h refire). Old rows read
+    back with an empty key and ride the id tier only."""
+    return {row["key"] for row in quieted_findings(data_dir)
+            if row["key"]}
+
+
+def quiet_finding(data_dir, f: dict, subject: str | None = None) -> list[dict]:
+    """Record a dismissal. ``subject`` (the engine's subject_of value)
+    upgrades the entry to the (rule, subject) tier; without it the entry
+    matches that exact id alone. Matching is id OR key, so a warning
+    already quieted under another id is never recorded twice."""
     fid = str((f or {}).get("id") or "")
     if not fid:
         return quieted_findings(data_dir)
+    rule = str((f or {}).get("rule") or "")
+    key = dedup_key(rule, str(subject or "")) if subject else ""
     rows = quieted_findings(data_dir)
     for row in rows:
-        if row["id"] == fid:
-            if row["label"] != str(f.get("title") or "")[:80]:
+        if row["id"] == fid or (key and row["key"] == key):
+            if (row["label"] != str(f.get("title") or "")[:80]
+                    or row["key"] != key):
                 row["label"] = str(f.get("title") or "")[:80]
+                row["key"] = key
                 write_config(data_dir, {**read_config(data_dir),
                                         "quieted_findings": rows})
             return rows
-    rows.append({"id": fid, "rule": str(f.get("rule") or ""),
+    rows.append({"id": fid, "rule": rule, "key": key,
                  "label": str(f.get("title") or "")[:80]})
     write_config(data_dir, {**read_config(data_dir), "quieted_findings": rows})
     return quieted_findings(data_dir)
+
+
+# ------------------------------------------------------------ resolved
+
+def resolved_findings(data_dir) -> list[dict]:
+    """Findings the desk closed with a real action (deleted, quarantined,
+    baseline updated), as the ledger on file: a list of
+    {"id", "how", "ts", "path", "sha"}. Resolved is not suppressed — the
+    feed keeps rendering the finding, collapsed to one honest line."""
+    rows = read_config(data_dir).get("resolved_findings")
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for row in rows:
+        if isinstance(row, dict) and str(row.get("id") or "").strip():
+            out.append({"id": str(row["id"]),
+                        "how": str(row.get("how") or ""),
+                        "ts": str(row.get("ts") or ""),
+                        "path": str(row.get("path") or ""),
+                        "sha": str(row.get("sha") or "")})
+    return out
+
+
+def mark_resolved(data_dir, f: dict, how: str, path: str = "",
+                  sha: str = "") -> list[dict]:
+    """Record that a finding was closed by an action (how is the honest
+    one-line answer, e.g. "baseline updated 13:58"). Upset by id: a
+    second action rewrites the line the feed shows."""
+    fid = str((f or {}).get("id") or "")
+    if not fid:
+        return resolved_findings(data_dir)
+    import datetime as _dt
+    row = {"id": fid, "how": str(how or "")[:120],
+           "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(
+               timespec="seconds"),
+           "path": str(path or "")[:4096], "sha": str(sha or "")[:80]}
+    rows = [r for r in resolved_findings(data_dir) if r["id"] != fid]
+    rows.append(row)
+    write_config(data_dir, {**read_config(data_dir),
+                            "resolved_findings": rows})
+    return rows
 
 
 def unquiet_finding(data_dir, fid: str) -> list[dict]:

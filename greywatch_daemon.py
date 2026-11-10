@@ -747,11 +747,28 @@ class Daemon:
         # hunter's findings (minus the ones already quieted) are published
         # here; rebuild Phase 2's panel renders this and only this.
         try:
+            from hunter import engine as hunter_engine
             from hunter import store as hunter_store
-            quiet = hunter_store.quieted_ids(self.data_dir)
-            snap["browser_watch"] = [
-                f for f in hunter_store.read_findings(self.data_dir, 30)
-                if str(f.get("id", "")) not in quiet]
+            # Two suppression tiers (rebuild round 2, task 8): exact ids
+            # plus the (rule, subject) keys - a refired warning under a
+            # new id is quiet for the GUI digest too, matched the same
+            # way the desk matches one (engine.subject_value_of).
+            quiet = (hunter_store.quieted_ids(self.data_dir)
+                     | hunter_store.quieted_keys(self.data_dir))
+            out = []
+            for f in hunter_store.read_findings(self.data_dir, 30):
+                if str(f.get("id", "")) in quiet:
+                    continue
+                try:
+                    key = hunter_store.dedup_key(
+                        str(f.get("rule") or ""),
+                        hunter_engine.subject_value_of(f))
+                except Exception:
+                    key = ""     # subject read fails: the id tier decides
+                if key and key in quiet:
+                    continue
+                out.append(f)
+            snap["browser_watch"] = out
         except Exception as e:
             self.count_failure("status", "browser watch digest", e)
         snap["dropped"] = self.queue.dropped

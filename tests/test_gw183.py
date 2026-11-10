@@ -12,6 +12,7 @@ dossier, permanently by id (the id is the dedup key, so an unchanged
 subject never re-appends; a changed crontab is a new id and alerts),
 with a HIDDEN strip and a Show-again way back. The store stays
 append-only — dismiss hides, it never deletes evidence."""
+import json
 import os
 import pathlib
 import sys
@@ -230,7 +231,57 @@ def test_dismiss_hides_and_show_again_restores(tmp_path):
     head = [w for w in panel._quiet_box.observe_children()
             if hasattr(w, "get_text") and "HIDDEN" in w.get_text()]
     assert head, "the hidden strip names itself"
-    assert _click("Stop hiding", panel._quiet_box)
+    assert _click("Show again", panel._quiet_box)
     pump(20)
     assert [f["id"] for f in panel._findings] == [fid]
     assert store.quieted_ids(tmp_path) == set()
+
+
+# ------------------------------------------------- the refire law (th-A)
+
+def test_tick_quiets_a_republished_warning_by_rule_and_subject(
+        tmp_path, monkeypatch):
+    """Rebuild round 2, task 8: the ledger's suppression is keyed
+    (rule, subject). A warning dismissed once never re-asks, even when
+    it is re-published past its suppression window under a different id
+    than the finding the owner saw and dismissed."""
+    events = tmp_path / "events.jsonl"
+    line = json.dumps({"ts": "2026-11-05T01:00:00+00:00",
+                       "from_tool": "rkhunter",
+                       "text": "Warning: a probe was found in history"})
+
+    def hunt_once():
+        # The event lanes hunt only when the tail hands them fresh
+        # events, so every phase appends one and drives a tick itself.
+        with open(events, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+        main.tick(tmp_path, str(tmp_path), ai_enabled=False,
+                  intel_enabled=False)
+
+    def rootkit_rows():
+        return [f for f in store.read_findings(tmp_path, limit=100)
+                if f["rule"] == "rootkit-warning"]
+
+    events.write_text(
+        '{"ts": "2026-11-05T00:00:00+00:00", "from_tool": "auditd", '
+        '"text": "warm-up"}\n')
+    hunt_once()
+    assert not rootkit_rows(), "history is never replayed as new"
+    hunt_once()
+    assert len(rootkit_rows()) == 1, "the warning fires once"
+    # Dismissed under a legacy id presentation, but the key written is
+    # the (rule, subject) pair - the modern republished id is hex that
+    # no legacy entry ever carried. The subject is the warning VALUE the
+    # finding's one fact carries (the same value the card's Ignore
+    # forever and the tick's quiet check both read), label stripped.
+    f = rootkit_rows()[0]
+    store.quiet_finding(tmp_path, {
+        "id": "legacy-id-presentation", "rule": "rootkit-warning",
+        "title": "The rootkit checker raised a warning"},
+        subject=str((f.get("facts") or [""])[0]).partition("=")[2])
+    assert store.quieted_keys(tmp_path), "the dismissal wrote its key"
+    _expire_seen(tmp_path)            # the 72 h window also passes
+    hunt_once()
+    assert len(rootkit_rows()) == 1, (
+        "a (rule, subject) dismissal holds even past the window and "
+        "under a new id")

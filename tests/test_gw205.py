@@ -205,7 +205,8 @@ def test_rail_groups_follow_the_two_system_design():
     assert len(keys) == len(set(keys))
     for k in keys:
         assert _LEGACY_PAGE.get(k, k) in ("overview", "defense",
-                                          "services", "auditlog",
+                                          "thunter", "services",
+                                          "auditlog",
                                           "settings", "help")
 
 

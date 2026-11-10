@@ -85,10 +85,12 @@ TIME_W = 104     # "18:35:39" plus breathing room
 # retired page key keep working through _LEGACY_PAGE below and the pane
 # stack. The rebuild (Phase 4) folds the ten-row rail into four pages, so
 # every retired key resolves once, centrally, to the page that absorbed it
-# (the fold-in map: Threat Hunter to Firewall, Scans/Protections/Tools/
-# Harden to Services, logs to Activity Log, Home to Overview; 'security'
-# and 'deep' were pre-wave-D names for the same Protections page).
-_LEGACY_PAGE = {"home": "overview", "thunter": "defense",
+# (the fold-in map: Scans/Protections/Tools/Harden to Services, logs to
+# Activity Log, Home to Overview; 'security' and 'deep' were pre-wave-D
+# names for the same Protections page). The round-2 rebuild (task 8)
+# gives the Threat Hunter its page back, so "thunter" is a real builder
+# again, not a legacy alias.
+_LEGACY_PAGE = {"home": "overview",
                 "scans": "services", "protect": "services",
                 "tools": "services", "harden": "services",
                 "logs": "auditlog",
@@ -436,6 +438,30 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         self.defense_view = DefenseView(win=self)
         return self.defense_view, self.defense_view.dock_groups()
 
+    def _thunter_view(self):
+        """The Threat Hunter page (rebuild round 2, task 8, owner th-A):
+        one finding card per open lead with its rule's REAL buttons
+        wired (the quarantine-lane delete, the baseline-update lane, the
+        full-scan request), resolved findings collapsed to one honest
+        line each, and the dock's Filter / Suppressions / Watcher
+        groups. The Ask button rides the same chat seam, the scan
+        hand-off the same validated-key request the Scans page writes."""
+        from ui.hunterview import HunterPanel
+        self.thunter_view = panel = HunterPanel(
+            self.data_dir, on_ask=self._ask_assistant,
+            on_navigate=self._show, on_scan=self._hunter_scan)
+        return panel, panel.dock_groups()
+
+    def _hunter_scan(self, scan_key: str = "full") -> None:
+        """The hunter card's scan hand-off: the same validated-key
+        request the Scans page's own buttons make - a mode key, never
+        finding text, so the daemon only ever honours fixed requests."""
+        mode = next((m for m in SCAN_MODES
+                     if m.get("key") == str(scan_key)), None)
+        if mode is None:
+            return
+        self._start_scan(None, mode, allowed=True)
+
     def _build_all(self):
         self._views = {}
         self._dock_groups = {}
@@ -448,6 +474,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
                           "services": self._services_view,
                           "auditlog": self._auditlog_view,
                           "defense": self._defense_view,
+                          "thunter": self._thunter_view,
                           "settings": self._settings_view,
                           "logs": self._logs_view,
                           "help": self._help_view}
@@ -1299,16 +1326,16 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
                 self._sync_selection_buttons()
             elif self._selected_tool and self._selected_from == "tools":
                 tools_desk.fill_dossier(self._selected_tool)
-        # The Firewall rail row shows its unread count before it is
-        # opened. The badge and the pinned digest must agree, so both
-        # count the same pointer-relative list (home_unread, homepage.py);
-        # the hunter's unread now rides the Firewall page's badge (Phase 4).
+        # The rail rows show their counts before they are opened (round
+        # 2 moved the hunter's unread back to the hunter row): the
+        # Firewall badge carries the watchlist's HIGH findings, the
+        # Threat Hunter badge the hunter's unread notes - badge and
+        # pinned digest keep counting the same pointer-relative list
+        # (home_unread, homepage.py).
         if getattr(self, "_badges", None):
             from ui.defense import ptp_high_count
-            # additive: unread notes plus any HIGH findings the watchlist
-            # is carrying; no watch run contributes nothing
-            self.set_badge("defense", len(home_unread(self.data_dir))
-                           + ptp_high_count(self.data_dir))
+            self.set_badge("defense", ptp_high_count(self.data_dir))
+            self.set_badge("thunter", len(home_unread(self.data_dir)))
         # The suite verdict leads Home; it repaints on the same
         # cycle as the digest so neither can drift from status.json.
         self._refresh_fw()

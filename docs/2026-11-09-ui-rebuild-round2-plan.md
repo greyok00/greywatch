@@ -4,7 +4,7 @@
 
 **Goal:** Rebuild the GreyWatch UI on the 0.3 shell per `docs/2026-11-09-ui-rebuild-round2-design.md`: graphite/paper theme voices, thin always-visible rail with the owner's 10-page menu, three-pane frame with per-page control docks, guided-attention pulses/pointers with hand-off auto-navigation, per-page layouts as picked, full tool control with in-card raw-config editing and the baseline permafix loop, two-tier assistant (heuristics always; owner-toggled resident GPU model), and the fix-wave behavior carried over with recreated pins.
 
-**Architecture:** The repo's existing modules stay (window.py shell entry, page modules, daemon publishes status.json). Changes: theme token system gets the two owner voices; rail/`_LEGACY_PAGE` regrow to the 10-page menu; window gains a DockHost (one dock per page) and a GuidedLayer (pulse + pointer + hand-off router); page modules rebuild their layouts; toolsdesk gains the config-edit lane; assistant gains the tier gate. Cython twins recompile at the end per `build-cython.sh` rules.
+**Architecture:** The repo's existing modules stay (window.py shell entry, page modules, daemon publishes status.json). Changes: theme token system gets the two owner voices; rail/`_LEGACY_PAGE` regrow to the 10-page menu; window gains a DockHost (one dock per page) and a GuidedLayer (pulse + pointer + hand-off router); page modules rebuild their layouts; toolsdesk gains the config-edit lane; assistant gains the tier gate. The repo ships open readable Python (owner law 2026-11-10): no Cython, no .so, anywhere.
 
 **Tech Stack:** Python 3.13, GTK4 (gi), pytest, Cython (repo twins), no new pip dependencies, no new model, no ollama/network in GreyWatch.
 
@@ -13,7 +13,7 @@
 - Spec: `docs/2026-11-09-ui-rebuild-round2-design.md` (owner-verified through visual-planner round 2). Where this plan compresses, the spec wins.
 - HARD: no ollama, no cloud, no external server anywhere in GreyWatch; assistant = local gguf (GPU offload) + heuristics; model loads ONLY on the owner's toggle, stays resident until toggled off, NEVER on window open/actions/timers.
 - HARD: rail never collapses/hides/truncates; every row resolves on its own row (primary button = the permanent fix); one subject per page; resolved stays resolved (key rule+subject, never the instance id alone).
-- Global Constraints: no new pip dependency, no new model (gameplan C5). `build-cython.sh` compiles all non-entrypoint .py; .so shadows .py on import; entry points (ui/app.py, ui/tray_helper.py) stay plain.
+- Global Constraints: no new pip dependency, no new model (gameplan C5). NO CYTHON (owner law 2026-11-10): the tree ships plain .py only; `build-cython.sh` and every .so are removed; tests import .py sources; entry points (ui/app.py, ui/tray_helper.py) stay plain.
 - Tests run: `python3 -m pytest tests -q` from the repo root; every task ends green before commit. UI tests stay headless (GTK objects built but not main-looped, per existing test patterns in tests/test_tab_shell.py).
 - Palette: validate categorical sets at build time against BOTH surfaces with the dataviz skill's `scripts/validate_palette.js` (re-invoke the dataviz skill to get its base dir if the path is stale). Dark surface `#14161a`, light surface `#f4f4f2`.
 - Language: pages/actions named for their subject/effect ("Firewall", "Delete now", "Update baseline"); no "Sidekick"/retired naming; no em dashes in UI copy.
@@ -224,9 +224,11 @@ has no outer ScrolledWindow and its natural layout height fits, with
 inner lists allowed their own scrollers. Wizard dialog included. Done at
 Task 16 with the screenshots (1080p check at the real window size).
 
-### Task 16: Cython twins + install + screenshot verification
+### Task 16: install + screenshot verification (open Python, no Cython)
 
-**Files:** `build-cython.sh` run once; install built `.so` set into `/opt/greywatch/ui` BESIDE the plain `app.py`/`tray_helper.py` stubs (owner runs the guarded `~/tmp/gw-deploy-fixwave.sh` — script's fingerprint guard is now OBSOLETE and must be updated: after the rebuild ships, remove the legacy-fingerprint refusal and re-point /opt at the rebuild); screenshot each page at the owner's real window size (HiDPI) with a scripted GTK grab; verify rail 5% + every page's dock pulse. Owner verdict gate before calling done.
+**Files:** install the plain-Python tree into `/opt/greywatch` (owner runs the guarded `~/tmp/gw-deploy-fixwave.sh`, updated 2026-11-10: excludes `*.so`, deletes stale compiled twins from the installed tree, keeps the legacy-UI fingerprint guard until the rebuild ships); after the install the fingerprint guard's legacy phase is retired in a follow-up owner-approved flip; screenshot each page at the owner's real window size (HiDPI) with the 1080p fit-law check (Task 7a) and verify rail 5% + every page's dock pulse. Owner verdict gate before calling done.
+
+**OWNER LAW (2026-11-10): no Cython anywhere in this project — open readable Python is the deliverable.** Every instruction in this plan that says "run ./build-cython.sh after edits" is DELETED; tests import .py sources; the shipped tree contains no .so.
 
 ---
 

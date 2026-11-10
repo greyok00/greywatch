@@ -132,16 +132,17 @@ def test_launch_opens_overview_with_ai(win):
 
 def test_care_group_row_routes_resolve(win):
     """Every menu row opens its page through the one legacy map: the
-    four Care rows land on Services, thunter joins Firewall, logs joins
-    the Activity Log."""
+    four Care rows land on Services, logs joins the Activity Log - and
+    thunter is its own page again (rebuild round 2, task 8: the Threat
+    Hunter's cards returned from the fold-in)."""
     from ui.window import _LEGACY_PAGE as routes
     win._show("scans")
     pump(6)
     assert win.stack.get_visible_child_name() == "services"
     for key, page in (("protect", "services"), ("tools", "services"),
-                      ("harden", "services"), ("thunter", "defense"),
+                      ("harden", "services"), ("thunter", "thunter"),
                       ("logs", "auditlog")):
-        assert routes.get(key) == page, key
+        assert routes.get(key, key) == page, key
         win._show(key)
         pump(6)
         assert win.stack.get_visible_child_name() == page, key

@@ -115,6 +115,32 @@ def subject_of(f: dict) -> str:
     return f.get("rule", "?") + ":" + f.get("title", "")
 
 
+def subject_value_of(f: dict) -> str:
+    """The suppression key's subject: the same walk subject_of does, but
+    a fact the emitter wrote as ``detail=Warning: a config changed``
+    contributes only what it says, not the fact label it rode in on.
+
+    Rebuild round 2, task 8 (the refire law): both ends of the (rule,
+    subject) ledger key - the card's Ignore forever and the hunt cycle's
+    quiet check - compute the subject THIS way, so a warning dismissed
+    once stays quiet even when the id on the next publish is new."""
+    for fact in f.get("facts") or []:
+        key, _, value = str(fact).partition("=")
+        if key.strip().lower() in _SUBJECT_FACT_KEYS and _:
+            return value
+    for row in f.get("evidence") or []:
+        if row.get("url"):
+            return str(row["url"])
+        if row.get("source") == "fs" and row.get("path"):
+            return str(row["path"])
+    stable = [str(fact) for fact in f.get("facts") or []
+              if "=" in str(fact) and str(fact).partition("=")[0].strip()
+              .lower() not in _SUBJECT_VOLATILE_KEYS]
+    if stable:
+        return stable[0].partition("=")[2] or stable[0]
+    return f.get("rule", "?") + ":" + f.get("title", "")
+
+
 # ------------------------------------------------------------- event tail
 
 def read_events(path, saved: dict) -> tuple[list[dict], dict]:

@@ -158,9 +158,20 @@ def tick(data_dir, home, *, ai_enabled: bool = True,
     # it before it reaches the feed, while a changed subject is a new id
     # and still alerts.
     quiet_ids = store.quieted_ids(data_dir)
+    quiet_keys = store.quieted_keys(data_dir)
     for f in kept:
-        f["id"] = store.dedup_key(f.get("rule", ""), engine.subject_of(f))
-        if f["id"] in quiet_ids:
+        fid = store.dedup_key(f.get("rule", ""), engine.subject_of(f))
+        f["id"] = fid
+        # Two tiers (rebuild round 2, task 8): the exact id, and the
+        # (rule, subject) key - both ends compute the subject the same
+        # way (engine.subject_value_of), so a warning the owner quieted
+        # never re-asks, even re-published with a new id past its window.
+        try:
+            key = store.dedup_key(f.get("rule", ""),
+                                  engine.subject_value_of(f))
+        except Exception:            # noqa: BLE001 - subject read fails
+            key = ""
+        if fid in quiet_ids or fid in quiet_keys or key in quiet_keys:
             continue
         store.append_finding(data_dir, f)
         store.append_defender(data_dir, explain.rule_note(f))

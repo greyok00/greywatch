@@ -287,25 +287,25 @@ def _window_reports(win):
 
 
 def test_hybrid_home_starts_clean_without_hunter_files(notebook):
-    """Phase 4 re-root: the Home page retired; the unread pin survives
-    through the Firewall rail row's badge - clean dir, no badge."""
+    """Round-2 re-root (task 8): the unread pin rides the Threat
+    Hunter's own rail row again - clean dir, no badge."""
     win, data_dir = notebook
     win.refresh()
     pump(6)
-    badge = win._badges["defense"]
+    badge = win._badges["thunter"]
     assert not badge.get_visible()
 
 
 def test_hybrid_home_pins_then_hands_over_once(notebook):
-    """Phase 4 re-root: the pin survives through the Firewall rail row's
-    badge - two unread notes show as 2, reading them (mark_read, the way
-    opening the Firewall page does) agrees at zero, and further refreshes
-    never re-count."""
+    """Round-2 re-root (task 8): the pin survives through the Threat
+    Hunter rail row's badge - two unread notes show as 2, reading them
+    (mark_read, the way opening the hunter page does) agrees at zero,
+    and further refreshes never re-count."""
     win, data_dir = notebook
     newest = _notes_at(data_dir, "14")
     win.refresh()
     pump(6)
-    badge = win._badges["defense"]
+    badge = win._badges["thunter"]
     assert badge.get_visible() and badge.get_text() == "2"
     explain.mark_read(data_dir, newest)
     win.refresh()
@@ -320,18 +320,18 @@ def test_hybrid_home_pins_then_hands_over_once(notebook):
 def test_hybrid_home_reports_follow_window_data_dir(notebook):
     """The unread count follows the window's data dir (tests swap it,
     tools re-point it) instead of freezing the directory it was built
-    with - Phase 4 re-root through the Firewall row's badge."""
+    with - re-rooted with the round-2 badge move to the hunter row."""
     win, data_dir = notebook
     _notes_at(data_dir, "15")
     win.refresh()
     pump(6)
-    assert win._badges["defense"].get_visible()
+    assert win._badges["thunter"].get_visible()
     # A different dir under the same pointer: the count follows the move.
     _notes_at(data_dir / "elsewhere", "16")
     win.data_dir = data_dir / "elsewhere"
     win.refresh()
     pump(6)
-    assert win._badges["defense"].get_text() == "2"
+    assert win._badges["thunter"].get_text() == "2"
     win.data_dir = data_dir
 
 def test_unread_notes_ride_each_notes_own_time(tmp_path):

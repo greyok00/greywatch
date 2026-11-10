@@ -9,8 +9,9 @@ from gi.repository import Gtk    # noqa: E402
 # HEADINGS[0], Overview, is the large clickable home row itself and holds
 # no group; group i of RAIL renders under HEADINGS[i + 1] (Care, Defense,
 # System). The rows route through the window's one legacy map into the
-# pane stack: the Care rows all serve the Services page, thunter shares
-# the Firewall page with defense, logs lands on the Activity Log.
+# pane stack: the Care rows all serve the Services page, logs lands on
+# the Activity Log, and thunter (rebuild round 2, task 8) is its own
+# Threat Hunter page again, not a fold-in of the Firewall page.
 HEADINGS = ("Overview", "Care", "Defense", "System")
 RAIL = (
     ("scans", "protect", "tools", "harden"),
