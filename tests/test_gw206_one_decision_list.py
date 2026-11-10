@@ -159,6 +159,20 @@ def test_actiongate_falls_back_when_unpublished(store):
 
 
 # ---- the Firewall page renders the one list -----------------------------------
+@pytest.fixture(autouse=True)
+def hermetic_probes(monkeypatch):
+    """The Firewall page's refresh kicks a probe worker thread since the
+    rebuild's task 7; these pins paint that page, so the subprocess
+    probes are stubbed to instant good reads - a suite never runs real
+    nft/ip/systemctl from a paint, and a late worker from a previous
+    test can never write a real read over this suite's view."""
+    from ui import defense
+    psad = {"fed": True, "table": True, "armed": True, "service": True}
+    arp = {"pinned": True, "sysctls": True}
+    monkeypatch.setattr(defense, "psad_status", lambda: dict(psad))
+    monkeypatch.setattr(defense, "arp_status", lambda: dict(arp))
+
+
 def test_defense_renders_every_pending_source(store):
     from ui import defense
     v = defense.DefenseView()

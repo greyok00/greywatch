@@ -6,12 +6,14 @@ import os
 import pathlib
 import re
 import subprocess
+import threading
+import time
 
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk    # noqa: E402
+from gi.repository import GLib, Gtk    # noqa: E402
 
-from cverules import active_rules, TOOL_LABEL
+from cverules import active_rules   # noqa: F401  (the Protections reader; task 10)
 from ptp import (watch_rows as ptp_watch_rows, load_map as ptp_load_map,
                  DASH_PROSE)
 from ui import metrics
@@ -102,7 +104,9 @@ def arp_status(ip_bin=None):
 
 def cve_rows(data_dir):
     """Active CVE rules for the managed tools, or None when this box has
-    never fetched a cache (the page says so rather than 'nothing')."""
+    never fetched a cache (the reader says so rather than 'nothing').
+    The Firewall page no longer renders these (rebuild task 7): the rows
+    move to Protections in rebuild task 10, which takes this reader."""
     cache = pathlib.Path(data_dir) / "cve-cache.json"
     if not cache.exists():
         return None
@@ -182,21 +186,51 @@ def _age(ts):
         return f"held {mins // 60} h"
     return f"held {mins // (60 * 24)} d"
 
-
 # --------------------------------------------------------------- the view
 
-_BLOCK_OPTS = {
-    "lift": ("Lift the block", "danger", "lift-block"),
-    "keep": ("Record: keep blocking", "primary", "block-review"),
-}
+# The armor probes are subprocesses (nft, systemctl, ip): they never run
+# on the UI thread (rebuild task 7). The page paints from the last cached
+# read and a worker thread lands the fresh one, and a read inside the
+# TTL is never re-run: a page re-show cannot cost the machine another
+# probe round. One round in flight is a property of the VIEW (its own
+# worker), never a module flag - a stale round somewhere else must never
+# suppress this page's fresh read.
+PROBE_TTL = 30.0
+_PROBE_CACHE = {"when": 0.0, "psad": None, "arp": None}
+
+_IP_RE = re.compile(
+    r"^\s*(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\s*$")
+
+
+def _ipv4_ok(text):
+    """A real dotted IPv4 address, 0..255 per group - nothing else gets
+    a Block or Unblock button."""
+    m = _IP_RE.match(text or "")
+    return m is not None and all(int(g) <= 255 for g in m.groups())
+
+
+def _group_state(*vals):
+    """One group's chip state: good only when every probe answers True;
+    one cannot-read answer keeps the whole group honest."""
+    if any(v is None for v in vals):
+        return None
+    return all(bool(v) for v in vals)
 
 
 class DefenseView(Gtk.Box):
-    """The network defense desk: who is blocked, what the Block Reviewer is
-    asking, how the wave-A armor chain stands. The page never blocks or
-    lifts anything itself: a blocked row defers to the window's
-    confirm-then-helper pipeline, and a reviewer card runs the same
-    decision machinery as the decisions window."""
+    """The network defense desk, owner variant fw-A (rebuild round 2,
+    task 7): a verdict strip that answers whether the wall is up, ONE
+    decisions card for the published pending list, the blocked-address
+    table with Unblock on the row and the armor chain as one chip line.
+    The page never blocks or lifts anything itself: a blocked row defers
+    to the window's confirm-then-helper pipeline through the lift-block
+    lane, a decision card runs the same answer machinery as the
+    decisions window, and the psad/arp probes run on a worker thread -
+    the UI thread only paints."""
+
+    _ARMOR_WORDS = {True: "good", False: "open", None: "cannot read"}
+    _ARMOR_CLASSES = {True: "gw-armor-good", False: "gw-armor-open",
+                      None: "gw-armor-unknown"}
 
     def __init__(self, win=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL,
@@ -205,60 +239,291 @@ class DefenseView(Gtk.Box):
         self.add_css_class("gw-lane-threat")
         self._win = win
         self._answering = set()
+        self._probe_thread = None
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         box.set_margin_top(metrics.PAGE_TOP)
         box.set_margin_bottom(metrics.PAGE_BOTTOM)
         box.set_margin_start(metrics.PAGE_X)
         box.set_margin_end(metrics.PAGE_X)
         self.append(box)
+        strip = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.append(strip)
+        self._strip = strip
         for title, host in (
-                ("Blocked addresses", "blocked"),
                 ("Decisions waiting", "asks"),
+                ("Blocked addresses", "blocked"),
                 ("Network armor", "armor"),
                 ("Browser Watch", "watch")):
-            head = Gtk.Label(label=title, xalign=0)
-            head.add_css_class("gw-page-title")
-            box.append(head)
+            lbl = Gtk.Label(label=title, xalign=0)
+            lbl.add_css_class("gw-page-title")
+            box.append(lbl)
             body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
             box.append(body)
             setattr(self, f"_{host}", body)
-        self._scroll = Gtk.ScrolledWindow()
-        self._scroll.set_policy(Gtk.PolicyType.NEVER,
-                                Gtk.PolicyType.AUTOMATIC)
+        self._build_dock()
+
+    def _build_dock(self):
+        """The dock's controls (fw-A), built once and handed over by
+        dock_groups(): the Rules group, the psad knobs and the Open
+        config buttons. Every control is enabled only where a lane
+        exists; where none does it sits disabled with an honest
+        tooltip, never a button that pretends to work."""
+        # Rules
+        self._rules_summary = Gtk.Label(
+            xalign=0, wrap=True,
+            label="Allow list: psad's whitelist and the appfw asks."
+                  " Block list: the addresses below, held in nftables"
+                  " and the ledger.")
+        self._rules_summary.add_css_class("gw-meta")
+        self._rules_entry = Gtk.Entry()
+        self._rules_entry.set_placeholder_text("Address to block")
+        self._rules_status = Gtk.Label(xalign=0, wrap=True)
+        self._rules_status.add_css_class("gw-meta")
+        self._rules_add = Gtk.Button(label="Block address")
+        self._rules_add.add_css_class("gw-danger")
+        self._rules_add.set_tooltip_text(
+            "block-ip.sh holds the address out of nftables and writes"
+            " the ledger; you will be asked for your password.")
+        self._rules_add.connect("clicked", self._on_block_add)
+        self._rules_allow = Gtk.Button(label="Allow address",
+                                       sensitive=False)
+        self._rules_allow.set_tooltip_text(
+            "no lane writes an allow rule outside a live appfw ask -"
+            " the app answers only when the firewall asks again, and"
+            " psad's house list lives in /etc/psad/psadwhitelist.")
+        # psad
+        self._arm = Gtk.Button(label="Arm auto-block")
+        self._arm.add_css_class("gw-primary")
+        self._arm.set_tooltip_text(
+            "psad-tune makes inbound traffic visible and arms psad's"
+            " auto-block; you will be asked for your password.")
+        self._arm.connect("clicked", self._run,
+                          {"id": "arm", "label": "Arm auto-block",
+                           "tone": "primary", "helper": "psad-tune",
+                           "args": []})
+        self._disarm = Gtk.Button(label="Disarm auto-block",
+                                  sensitive=False)
+        self._disarm.set_tooltip_text(
+            "no helper disarms psad's auto-block; disarm by hand in"
+            " psad.conf - the config editor lane arrives with the"
+            " tools rebuild, and Open config hands off there.")
+        self._alert = Gtk.Button(label="psad alert level",
+                                 sensitive=False)
+        self._alert.set_tooltip_text(
+            "psad-tune pins the alert level while it arms; no lane"
+            " turns the dial from here yet.")
+        # Open config
+        tip = ("the in-card config editor arrives with the tools"
+               " rebuild; for now this hands off to the tools desk.")
+        self._conf_nft = Gtk.Button(label="nftables rules")
+        self._conf_nft.set_tooltip_text(tip)
+        self._conf_nft.connect("clicked", self._open_tools)
+        self._conf_psad = Gtk.Button(label="psad.conf")
+        self._conf_psad.set_tooltip_text(tip)
+        self._conf_psad.connect("clicked", self._open_tools)
+
+    def dock_groups(self):
+        """The fixed dock's three groups (fw-A): Rules, psad, Open
+        config - window._defense_view hands these over as-is."""
+        return [("Rules", [self._rules_summary, self._rules_entry,
+                           self._rules_add, self._rules_status,
+                           self._rules_allow]),
+                ("psad", [self._arm, self._disarm, self._alert]),
+                ("Open config", [self._conf_nft, self._conf_psad])]
+
+    def _on_block_add(self, _btn=None):
+        """The Rules block lane: one dotted IPv4 through block-ip.sh
+        (the page's confirm pipeline); junk text never runs anything."""
+        ip = (self._rules_entry.get_text() or "").strip()
+        if not _ipv4_ok(ip):
+            self._rules_status.set_text(
+                f"{ip} is not an IPv4 address - nothing was blocked."
+                if ip else "Enter an IPv4 address to block.")
+            return
+        self._rules_status.set_text("")
+        self._run(None, {"id": "block", "label": f"Block {ip}",
+                         "tone": "danger", "helper": "block-ip",
+                         "args": [ip]})
+
+    def _open_tools(self, _btn):
+        """fw-A honesty: the config-editor lane lands with the tools
+        rebuild (task 9); until then the buttons hand off to the tools
+        desk through the guided router."""
+        w = self._win
+        if w is None:
+            return
+        if hasattr(w, "handoff"):
+            w.handoff("services")
+        elif hasattr(w, "_show"):
+            w._show("services")
 
     # -- data -------------------------------------------------------------
 
     def refresh(self, snap=None):
         from ui.decisionlist import _clear
-        for host in (self._blocked, self._asks, self._armor, self._watch):
+        snap = snap or {}
+        for host in (self._strip, self._asks, self._blocked,
+                     self._armor, self._watch):
             _clear(host)
-        doc = dict(snap or {}).get("defense") or {}
-        rows = doc.get("blocked")
-        self._paint_blocked(rows if isinstance(rows, list) else [])
-        # the ONE decision list, all sources (rebuild Phase 1): the page no
-        # longer reads reviewer-only digest asks, so a quarantine question
-        # or a scanner-ban prompt shows here exactly as the pill counts it
-        asks = (snap or {}).get("pending_list")
-        if asks is None:            # older daemon that has not published
-            asks = doc.get("asks")
-        self._paint_asks(asks if isinstance(asks, list) else [])
+        rows = [r for r in ((snap.get("defense") or {}).get("blocked")
+                            or []) if isinstance(r, dict)]
+        self._paint_strip(snap, rows)
+        # the ONE decision list, all sources: the page no longer reads
+        # reviewer-only digest asks when the daemon publishes its own
+        # pending list - both count the way the pill counts
+        self._paint_asks(self._need_specs(snap))
+        self._paint_blocked(rows)
         self._paint_armor()
-        self._paint_watch((snap or {}).get("browser_watch"))
+        self._paint_watch(snap.get("browser_watch"))
+        self._ensure_probe()
 
+    def _pending_specs(self, snap):
+        """The published pending list (the ONE list the pill counts),
+        each row as (spec, ts); the reviewer-only digest asks are the
+        fallback for an older daemon that has not published yet."""
+        rows = snap.get("pending_list")
+        if rows is None:
+            rows = (snap.get("defense") or {}).get("asks")
+        out = []
+        for item in (rows if isinstance(rows, list) else []):
+            spec = item.get("spec") if isinstance(item, dict) else None
+            ts = str(item.get("ts", "")) if isinstance(item, dict) else ""
+            if isinstance(spec, dict) and spec.get("id"):
+                out.append((spec, ts))
+        return out
+
+    def _need_specs(self, snap):
+        """The pending rows that actually need the user: the ones that
+        carry an answer button. A spec without options is not an ask
+        this page can serve, and one of those never inflates the count."""
+        out = []
+        for spec, ts in self._pending_specs(snap):
+            if [o for o in (spec.get("options") or [])
+                if isinstance(o, dict) and o.get("helper")]:
+                out.append((spec, ts))
+        return out
+
+    # -- the verdict strip -------------------------------------------------
+    def _paint_strip(self, snap, rows):
+        """The wall verdict, owner fw-A: glyph + "Wall up" + the counts
+        sentence + the psad age line. The strip reports the published
+        digest only - the armor chips below carry the probe truth."""
+        n_blocked = sum(1 for r in rows if r.get("ip"))
+        n_need = len(self._need_specs(snap))
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        card.add_css_class("gw-card")
+        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        glyph = Gtk.Label(label="●", xalign=0)
+        glyph.add_css_class("gw-pill")
+        glyph.add_css_class("warn" if n_need else "ok")
+        head = Gtk.Label(label="Wall up", xalign=0)
+        head.add_css_class("gw-headline")
+        head.set_hexpand(True)
+        counts = Gtk.Label(
+            xalign=0,
+            label=(f"{n_blocked} blocked - " + ("1 needs you"
+                    if n_need == 1 else f"{n_need} need you")))
+        counts.add_css_class("gw-meta")
+        top.append(glyph)
+        top.append(head)
+        top.append(counts)
+        card.append(top)
+        age = Gtk.Label(xalign=0, wrap=True)
+        age.add_css_class("gw-meta")
+        age.set_text(self._strip_age_text(snap))
+        card.append(age)
+        self._strip.append(card)
+        self._strip_glyph = glyph
+        self._strip_head = head
+        self._strip_counts = counts
+        self._strip_age = age
+
+    @staticmethod
+    def _psad_last(snap):
+        """The newest psad word in the published feed - the page's own
+        'live' reading of the inbound chain."""
+        last = None
+        for ev in (snap.get("recent") or []):
+            if (isinstance(ev, dict)
+                    and str(ev.get("from_tool", "")) == "psad"):
+                ts = str(ev.get("ts") or "")
+                if ts and (last is None or ts > last):
+                    last = ts
+        return last
+
+    @staticmethod
+    def _age_words(ts):
+        """How long ago a feed row is, in spoken units ('1 h'); None
+        never reaches here."""
+        try:
+            when = _dt.datetime.fromisoformat(ts)
+        except (ValueError, TypeError):
+            return "a while"
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=_dt.timezone.utc)
+        mins = max(0, int((_dt.datetime.now(_dt.timezone.utc)
+                           - when).total_seconds() // 60))
+        if mins < 1:
+            return "moments"
+        if mins < 60:
+            return f"{mins} min"
+        if mins < 60 * 24:
+            return f"{mins // 60} h"
+        return f"{mins // (60 * 24)} d"
+
+    def _strip_age_text(self, snap):
+        """One honest line: the digest's own age (the stale law's
+        clause when the 90 s window is out) plus the psad age."""
+        from ui.homepage import STALE_S
+        parts = []
+        updated = str(snap.get("updated") or "")
+        when = None
+        try:
+            when = _dt.datetime.fromisoformat(updated)
+        except (ValueError, TypeError):
+            when = None
+        if when is not None:
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=_dt.timezone.utc)
+            stamp = when.astimezone().strftime("%H:%M")
+            span = max(0.0, (_dt.datetime.now(_dt.timezone.utc)
+                             - when).total_seconds())
+            tail = f"snapshot {stamp} · {int(span)} s ago"
+            if span > STALE_S:
+                tail += " - waiting for the daemon"
+            parts.append(tail)
+        last = self._psad_last(snap)
+        if last:
+            parts.append(f"psad spoke {self._age_words(last)} ago")
+        else:
+            parts.append("psad has not spoken in this window")
+        return " · ".join(parts)
+
+    # -- helpers shared by the cards ---------------------------------------
     def _quiet(self, host, text):
         lbl = Gtk.Label(label=text, xalign=0, wrap=True)
         lbl.add_css_class("gw-meta")
         host.append(lbl)
 
+    def _run(self, btn, opt):
+        w = self._win
+        if w is not None and hasattr(w, "_run_log_option"):
+            w._run_log_option(btn, dict(opt))
+
+    # -- blocked addresses ---------------------------------------------------
     def _paint_blocked(self, rows):
-        if not rows:
+        shown = [r for r in rows if r.get("ip")]
+        if not shown:
             self._quiet(self._blocked, "Nothing is blocked right now.")
             return
-        for row in rows:
-            if isinstance(row, dict) and row.get("ip"):
-                self._blocked.append(self._blocked_row(row))
+        for row in shown:
+            self._blocked.append(self._blocked_row(row))
 
     def _blocked_row(self, row):
+        """One blocked row, fw-A: the address, WHY it is held, and its
+        own Unblock through the lift-block lane. A row with no address
+        (junk the digest could never produce but a caller might) carries
+        no button."""
         ip = str(row.get("ip", ""))
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         card.add_css_class("gw-card")
@@ -279,31 +544,35 @@ class DefenseView(Gtk.Box):
         meta.add_css_class("gw-meta")
         card.append(title)
         card.append(meta)
-        row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        for kind in ("lift", "keep"):
-            label, tone, helper = _BLOCK_OPTS[kind]
-            opt = {"id": kind, "label": label, "tone": tone,
-                   "helper": helper, "args": [ip] if kind == "lift"
-                   else [ip, "keep"]}
-            b = Gtk.Button(label=label)
-            b.add_css_class("gw-primary" if tone == "primary"
-                            else "gw-danger")
-            b.connect("clicked", self._run, dict(opt))
+        if _ipv4_ok(ip):
+            row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                              spacing=8)
+            b = Gtk.Button(label="Unblock")
+            b.add_css_class("gw-danger")
+            b.connect("clicked", self._run,
+                      {"id": "unblock", "label": "Unblock",
+                       "tone": "danger", "helper": "lift-block",
+                       "args": [ip]})
             row_box.append(b)
-        card.append(row_box)
+            card.append(row_box)
         return card
 
+    # -- the decisions card ------------------------------------------------
     def _paint_asks(self, asks):
+        """The one decisions card (fw-A): every published ask that waits
+        renders its own card through the same machinery as the
+        decisions window, and the card glows - the page's attention
+        target while an answer is owed."""
         from ui.decisionlist import card_widget
+        from ui import guided
         if not asks:
             self._quiet(self._asks, "Nothing is waiting for your answer.")
             return
-        for ask in asks:
-            spec = ask.get("spec") if isinstance(ask, dict) else None
-            if isinstance(spec, dict) and spec.get("id"):
-                self._asks.append(
-                    card_widget(spec, str(ask.get("ts", "")),
-                                self._on_answer))
+        for spec, ts in asks:
+            card = card_widget(spec, ts, self._on_answer)
+            card._spec_id = str(spec["id"])     # the stable handoff key
+            card.add_css_class(guided._PULSE)
+            self._asks.append(card)
 
     def _on_answer(self, _btn, spec, opt, buttons, state):
         sid = str(spec["id"])
@@ -326,7 +595,6 @@ class DefenseView(Gtk.Box):
             GLib.idle_add(self._after_answer, sid, opt, buttons, state,
                           rc, err)
 
-        import threading
         threading.Thread(target=work, daemon=True).start()
 
     def _after_answer(self, sid, opt, buttons, state, rc, err=""):
@@ -352,30 +620,7 @@ class DefenseView(Gtk.Box):
                            "again.")
         return GLib.SOURCE_REMOVE
 
-    def _run(self, _btn, opt):
-        w = self._win
-        if w is not None and hasattr(w, "_run_log_option"):
-            w._run_log_option(_btn, dict(opt))
-
-    def _armor_row(self, label, state, helper):
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        chip = Gtk.Button(label=f"{label}: {self._ARMOR_WORDS[state]}",
-                          sensitive=False)
-        chip.add_css_class(self._ARMOR_CLASSES[state])
-        row.append(chip)
-        # the button is the row's own fix and lives nowhere else: only an
-        # open or unreadable defense gets one, a good row gets nothing
-        if state is not True:
-            b = Gtk.Button(label=f"Arm: {label}")
-            b.add_css_class("gw-primary")
-            b.connect("clicked", self._run,
-                      {"id": "arm", "label": label, "tone": "primary",
-                       "helper": helper, "args": []})
-            row.append(b)
-        return row
-
-    # -- browser watch panel (rebuild Phase 2) ----------------------------
-
+    # -- browser watch panel ------------------------------------------------
     def _paint_watch(self, rows):
         if not isinstance(rows, list):
             self._quiet(self._watch,
@@ -416,22 +661,119 @@ class DefenseView(Gtk.Box):
                 card.append(d)
             self._watch.append(card)
 
-    # -- armor ------------------------------------------------------------
+    # -- armor: the one chip line ------------------------------------------
+    def _probe_snapshot(self):
+        """The freshest cached (psad, arp) read, or None when no probe
+        round has landed in this app run."""
+        if _PROBE_CACHE.get("psad") is None:
+            return None
+        return (dict(_PROBE_CACHE.get("psad") or {}),
+                dict(_PROBE_CACHE.get("arp") or {}))
 
-    # each probe row and the helper that stands the defense up if it is
-    # open or unreadable; a good row carries nothing to click (rebuild
-    # Phase 2: inline actions next to the thing they fix)
-    _ARMOR_PROBES = (
-        ("Sweep watcher feed", "fed", "psad-tune"),
-        ("Inbound log chain", "table", "psad-tune"),
-        ("Auto-block armed", "armed", "psad-tune"),
-        ("psad service", "service", "psad-tune"),
-        ("Router address pinned", "pinned", "hardening-arp"),
-        ("ARP replies closed", "sysctls", "hardening-arp"))
-    _ARMOR_WORDS = {True: "good", False: "open", None: "cannot read"}
-    _ARMOR_CLASSES = {True: "gw-armor-good", False: "gw-armor-open",
-                      None: "gw-armor-unknown"}
+    def _ensure_probe(self):
+        """Kick one worker probe round while the cache is older than the
+        TTL. The UI thread never waits on it - refresh has already
+        painted - and this view's own round in flight (or a read younger
+        than the TTL) never spawns a second one."""
+        t = getattr(self, "_probe_thread", None)
+        if t is not None and t.is_alive():
+            return
+        if time.time() - float(_PROBE_CACHE.get("when") or 0.0) < PROBE_TTL:
+            return
+        self._probe_thread = threading.Thread(target=self._probe_work,
+                                              daemon=True)
+        self._probe_thread.start()
 
+    def _probe_work(self):
+        """Worker: the two subprocess probes, off the UI thread."""
+        try:
+            psad, arp = psad_status(), arp_status()
+        except Exception:
+            psad, arp = {}, {}
+        _PROBE_CACHE.update(when=time.time(), psad=dict(psad),
+                            arp=dict(arp))
+        try:
+            GLib.idle_add(self._after_probe, dict(psad), dict(arp))
+        except (RuntimeError, TypeError):
+            pass                    # no main loop left; the cache keeps it
+
+    def _after_probe(self, psad, arp):
+        """Back on the UI thread: the chip line repaints from the fresh
+        read. Nothing else on the page moves - the digest feed is its
+        own paint."""
+        from ui.decisionlist import _clear
+        try:
+            _clear(self._armor)
+            self._paint_armor()
+        except (RuntimeError, TypeError):
+            pass                    # the page died mid-read; nothing lies
+        try:
+            return GLib.SOURCE_REMOVE
+        except (RuntimeError, TypeError):
+            return False
+
+    def _paint_armor(self):
+        """The armor chain as ONE chip line (owner fw-A): psad,
+        nftables, arpwatch - the words good / open / cannot read, an
+        all-green line only when every probe answers True, and the
+        arming buttons where a chain is not standing. No cached read
+        yet means the honest probing line, never green."""
+        cached = self._probe_snapshot()
+        wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        wrap.add_css_class("gw-armor")
+        self._armor.append(wrap)
+        if cached is None:
+            self._quiet(wrap, "Probing psad, nftables and arp - the"
+                        " chips fill in when the read lands.")
+            self._paint_watchlist()
+            return
+        psad, arp = cached
+        psad_state = _group_state(psad.get("armed"), psad.get("service"),
+                                  psad.get("fed"))
+        nft_state = psad.get("table")
+        arp_state = _group_state(arp.get("pinned"), arp.get("sysctls"))
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        wrap.append(row)
+        for label, state in (("psad", psad_state),
+                             ("nftables", nft_state),
+                             ("arpwatch", arp_state)):
+            chip = Gtk.Button(label=f"{label}: {self._ARMOR_WORDS[state]}",
+                              sensitive=False)
+            chip.add_css_class(self._ARMOR_CLASSES[state])
+            if label == "arpwatch":
+                chip.set_tooltip_text(
+                    "the arp hardening lane (hardening-arp): the"
+                    " router's address stays permanent and the reply"
+                    " sysctls stay closed")
+            row.append(chip)
+        if psad_state is True and nft_state is True and arp_state is True:
+            note = Gtk.Label(xalign=0)
+            note.set_text("all green - the chain is standing")
+            note.add_css_class("gw-armor-good")
+            wrap.append(note)
+        else:
+            acts = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            wrap.append(acts)
+            if psad_state is not True or nft_state is not True:
+                self._arm_button(acts, "Arm psad", "psad-tune")
+            if arp_state is not True:
+                self._arm_button(acts, "Arm ARP", "hardening-arp")
+        self._paint_watchlist()
+
+    def _arm_button(self, host, label, helper):
+        """The chain's own fix, next to the chips: only a group that is
+        open or unreadable gets one, a standing chain gets nothing."""
+        b = Gtk.Button(label=label)
+        b.add_css_class("gw-primary")
+        b.set_tooltip_text(
+            f"apply/{helper}.sh stands the chain up through the apply"
+            " lane; you will be asked for your password.")
+        b.connect("clicked", self._run,
+                  {"id": "arm", "label": label, "tone": "primary",
+                   "helper": helper, "args": []})
+        host.append(b)
+
+    # -- watchlist panel (under the chip line) ------------------------------
     def _paint_watchlist(self):
         """The Patch the Planet watch rows, under the armor pack: the
         program's public map matched to what is installed on this box.
@@ -577,8 +919,8 @@ class DefenseView(Gtk.Box):
 
     def _refresh_watch(self, btn):
         """The user-side refresh channel: the map refetch runs in a child
-        process (same channel as the CVE refresh), never on the UI
-        thread, and coverage matching catches up on the daemon's next
+        process (same channel as a CVE refresh elsewhere), never on the
+        UI thread, and coverage matching catches up on the daemon's next
         cycle in any case."""
         if getattr(self, "_watch_busy", False):
             return
@@ -596,7 +938,6 @@ class DefenseView(Gtk.Box):
             GLib.idle_add(self._after_watch_refresh, rc)
             return False
 
-        import threading
         threading.Thread(target=work, daemon=True).start()
 
     def _after_watch_refresh(self, rc):
@@ -611,35 +952,3 @@ class DefenseView(Gtk.Box):
             self._quiet(self._watch, f"The map refresh did not finish"
                         f" (exit code {rc}); the old map stands.")
         return False
-
-    def _paint_armor(self):
-        psad = psad_status()
-        arp = arp_status()
-        wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        wrap.add_css_class("gw-armor")
-        for label, key, helper in self._ARMOR_PROBES:
-            state = (psad if key in ("fed", "table", "armed", "service")
-                     else arp).get(key)
-            wrap.append(self._armor_row(label, state, helper))
-        self._armor.append(wrap)
-        self._paint_watchlist()
-        rules = cve_rows(getattr(self._win, "data_dir", "") or ".")
-        if rules is None:
-            self._quiet(self._armor,
-                        "The flaw list has never been fetched; the CVE"
-                        " refresh arms this section.")
-            return
-        if not rules:
-            self._quiet(self._armor,
-                        "No tracked flaw scoring 7.0+ touches a tool on"
-                        " this machine.")
-            return
-        for rule in rules:
-            who = TOOL_LABEL.get(rule.get("tool"), "a managed tool")
-            txt = (f"{rule.get('cve')} (score {rule.get('score')} "
-                   f"{rule.get('severity')}) affects {who}: "
-                   f"{str(rule.get('summary') or '')[:180]}")
-            meta = Gtk.Label(label=escape(txt), xalign=0, wrap=True,
-                             selectable=True)
-            meta.add_css_class("gw-meta")
-            self._armor.append(meta)

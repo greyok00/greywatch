@@ -227,10 +227,32 @@ def test_lane_tokens_exist_in_both_voices():
 # ---- the view wiring (no display needed to pin the contract) ----------------
 def test_defense_view_contract_is_importable_and_call_shaped():
     """The real window fixtures open real pages in test_tab_shell.py; this
-    pin only guards the import surface: the class exists, refresh takes the
-    status snapshot, and the blocked-row controls name real helpers."""
+    pin only guards the import surface: the class exists, refresh takes
+    the status snapshot, and the row-level controls name real helpers.
+    Re-rooted for rebuild task 7 (fw-A): the blocked row carries ONE
+    Unblock through the lift-block lane (the reviewer-answer lane the
+    old two-button row carried is the decisions machinery's), and the
+    dock hands the Rules / psad / Open config groups."""
     gi = __import__("gi")
     gi.require_version("Gtk", "4.0")
+    from gi.repository import Gtk
     assert callable(defense.DefenseView.refresh)
-    assert defense._BLOCK_OPTS["lift"][2] == "lift-block"
-    assert defense._BLOCK_OPTS["keep"][2] == "block-review"
+
+    def buttons(host):
+        out = []
+        try:
+            kids = list(host)
+        except TypeError:
+            return out
+        for k in kids:
+            out.extend(buttons(k))
+        if isinstance(host, Gtk.Button):
+            out.append(host)
+        return out
+
+    v = defense.DefenseView(win=None)
+    row = v._blocked_row({"ip": "203.0.113.9", "ts": "", "reason": "auto"})
+    assert [b.get_label() for b in buttons(row)] == ["Unblock"]
+    assert [t for t, _ws in v.dock_groups()] == ["Rules", "psad",
+                                                "Open config"]
+    v.unparent()

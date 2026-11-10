@@ -43,8 +43,10 @@ POINT_OFF = 22        # the arrow sits this far left of the target
 
 # The greeting table (page_key -> dock group name). Activity Log greets
 # its Filter group (variant 1 expanded the Task-3 Search group into
-# Filter/Sources/Actions); pages without a row here open quiet.
-PAGE_ENTRY = {"auditlog": "Filter", "overview": "Snapshot"}
+# Filter/Sources/Actions); Firewall greets Rules (fw-A's first group);
+# pages without a row here open quiet.
+PAGE_ENTRY = {"auditlog": "Filter", "overview": "Snapshot",
+              "defense": "Rules"}
 
 _PULSE = "gw-guided-pulse"
 _POINT = "gw-guided-point"

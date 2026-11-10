@@ -426,12 +426,15 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
                                        page._clear])]
 
     def _defense_view(self):
-        """The network defense desk (wave D): blocked addresses, Block Reviewer
-        questions and the wave-A armor chain, fed by the daemon's public
-        status digest since the ledger and event store stay root-only."""
+        """The Firewall desk (rebuild round 2, task 7, owner fw-A): the
+        wall verdict strip, the one decisions card, the blocked-address
+        table with Unblock on the row and the armor chip line, fed by
+        the daemon's public status digest (the ledger and event store
+        stay root-only) plus the dock's Rules / psad / Open config
+        groups."""
         from ui.defense import DefenseView
         self.defense_view = DefenseView(win=self)
-        return self.defense_view, []
+        return self.defense_view, self.defense_view.dock_groups()
 
     def _build_all(self):
         self._views = {}
