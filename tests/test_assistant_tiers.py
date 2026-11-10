@@ -467,6 +467,43 @@ def test_window_loader_passes_the_gpu_layers_constant(monkeypatch, tmp_path):
     assert ready == [True]
 
 
+def test_settled_repaint_hops_to_the_main_thread(monkeypatch, tmp_path):
+    """Review round 1 F1: the loader thread fires settled(), which must
+    not touch GTK labels itself — the repaint has to land via the main
+    loop. A fake loader that invokes ready from a spawned thread proves
+    every paint the window makes is the main thread's."""
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    import threading
+
+    import assistant.llm as llm_mod
+    import ui.window as W
+
+    class FakeLlm:
+        def __init__(self, model_path, n_gpu_layers=None):
+            pass
+
+        def start(self, ready, on_stage=None):
+            # The real loader's shape: ready() fires on a worker thread.
+            threading.Thread(target=lambda: ready(True, "resident"),
+                             daemon=True,
+                             name="gw-fake-llm-loader").start()
+    monkeypatch.setattr(llm_mod, "Llm", FakeLlm)
+    painted = []
+
+    class Win:
+        _chat_state = None
+
+        def _assistant_paint_seams(self):
+            painted.append(threading.current_thread())
+    W.MainWindow._assistant_gpu_enable(Win(), lambda name, frac: None,
+                                       lambda ok, err: None)
+    pump(20)
+    assert painted, "settled() must still request the repaint"
+    main = threading.main_thread()
+    for thread in painted:
+        assert thread is main, thread
+
+
 def test_window_disable_unloads_and_clears_the_model(monkeypatch):
     import ui.window as W
 

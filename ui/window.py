@@ -743,8 +743,11 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         model = gwpaths.data_dir() / "models" / MODEL_FILENAME
 
         def settled(ok, err):
+            # The loader thread runs this: touch facts only here, and hop
+            # the GTK repaint to the main loop (widgets are not thread-
+            # safe; the same hop the pre-togggle loader always made).
             self._chat_state = (ok, err or "")
-            self._assistant_paint_seams()
+            GLib.idle_add(self._assistant_paint_seams)
             on_ready(ok, err)
 
         self.chat_llm = Llm(model_path=str(model), n_gpu_layers=GPU_LAYERS)
