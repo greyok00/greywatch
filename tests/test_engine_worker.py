@@ -140,3 +140,32 @@ def test_backlog_measurement_reads_socket_ioctl(tmp_path):
     finally:
         a.close()
         b.close()
+
+
+# ------------------------- source-presence pins (final fix wave) ------
+def test_nfq_worker_source_ships_in_the_tree():
+    """CRITICAL-1 pin: appfw/nfq_worker.c is a runtime-required C source,
+    not a Cython artifact - engine.py compiles it with gcc at arm time
+    when the gitignored binary is absent, so a fresh checkout that lost
+    this file could never arm the firewall. It must always be tracked."""
+    import subprocess
+    repo = ROOT
+    src = repo / "appfw" / "nfq_worker.c"
+    assert src.is_file()
+    assert "libnetfilter_queue" in src.read_text()
+    tracked = subprocess.run(
+        ["git", "ls-files", "appfw/nfq_worker.c"], cwd=repo,
+        capture_output=True, text=True)
+    assert tracked.stdout.strip() == "appfw/nfq_worker.c"
+
+
+def test_ensure_worker_build_paths_stay_resolvable():
+    """Source-level: the ensure path's compile line still names gcc and
+    the netfilter-queue library it needs, and the shipped C source is the
+    file that line compiles - no compile executed here."""
+    import inspect
+    from appfw import engine
+    body = inspect.getsource(engine.Engine._ensure_worker_binary)
+    assert '"gcc"' in body and "-lnetfilter_queue" in body
+    assert engine.WORKER_SRC.name == "nfq_worker.c"
+    assert engine.WORKER_SRC.is_file()
