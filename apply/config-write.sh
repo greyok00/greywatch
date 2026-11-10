@@ -7,8 +7,10 @@
 # config to the same key. The staged file is validated for being present
 # and non-empty (line-level key checking lives in the app's validator,
 # which refuses the write before this lane is ever asked). The target is
-# rewritten atomically and the previous file is kept beside it with an
-# .old-YYYYMMDD suffix, so every write can be undone by hand.
+# rewritten atomically (inheriting the target's existing file mode - a
+# 0640 config never becomes 0644) and the previous file is kept beside it
+# with a .old-YYYYMMDD-HHMMSS suffix that is never overwritten the same
+# day, so every write can be undone by hand.
 set -uo pipefail
 
 [ $# -eq 2 ] || { echo "usage: config-write.sh <conf-key> <staged-file>" >&2; exit 64; }
@@ -36,13 +38,22 @@ if cmp -s "$STAGED" "$TARGET"; then
   exit 0
 fi
 
-STAMP="$(date +%Y%m%d)"
-cp -a "$TARGET" "$TARGET.old-$STAMP" || {
+STAMP="$(date +%Y%m%d-%H%M%S)"
+BACKUP="$TARGET.old-$STAMP"
+n=0
+while [ -e "$BACKUP" ]; do
+  # Same-day clobber protection: a minute-resolution stamp that somehow
+  # still collides (two writes in the same second) gets a counter tail,
+  # never an overwrite - an undo path that gets rewritten is no undo.
+  n=$((n + 1)); BACKUP="$TARGET.old-$STAMP.$n"
+done
+cp -a "$TARGET" "$BACKUP" || {
   echo "the backup failed - nothing was written" >&2; exit 6; }
 
-if install -m 0644 "$STAGED" "$TARGET.greywatch-new.$$" \
+if install -m "$(stat -c %a "$TARGET" 2>/dev/null || echo 0644)" \
+            "$STAGED" "$TARGET.greywatch-new.$$" \
      && mv "$TARGET.greywatch-new.$$" "$TARGET"; then
-  echo "wrote $TARGET (previous kept as $(basename "$TARGET").old-$STAMP)"
+  echo "wrote $TARGET (previous kept as $(basename "$BACKUP"))"
   exit 0
 fi
 echo "the write did not land - the previous file is untouched" >&2
