@@ -38,7 +38,7 @@ from wiz.common import helper_detail
 GROUPS = (
     ("care", "Care", "tools", None),
     ("defense", "Defense", "defense", None),
-    ("system", "System", "logs", "Search"),
+    ("system", "System", "logs", "Filter"),
 )
 
 TREND_RANGES = ("7d", "24h")
