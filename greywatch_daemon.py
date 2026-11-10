@@ -829,6 +829,11 @@ class Daemon:
             ask=self._appfw_ask_user)
         from ui.settings import TrustList
         from ui.blocklist import BlockList
+        # Seed the dedupe from the mirror BEFORE arming, so both the
+        # re-arm announcement and early engine notices honour what the
+        # previous process just said (daemon restarts no longer wall
+        # the feed with 156 copies of "engine armed").
+        self._seed_appfw_dedupe()
         eng = Engine(self.data_dir, on_event=self._appfw_event,
                      trust_list=TrustList(), blocklist=BlockList(),
                      ask=self._ask_gate.ask)
@@ -852,9 +857,11 @@ class Daemon:
         dedupe window is dropped. Without this, a persistently failing engine
         (nft install, worker spawn) retries every 10 s and floods the event
         feed and the UI with thousands of identical MEDIUM rows — the exact
-        flood that pinned the daemon at its memory cap. Event-path failures
-        still reach the mirror log via count_failure; this only shapes the
-        feed the user reads."""
+        flood that pinned the daemon at its memory cap. The dedupe table is
+        seeded from the mirror log on arm, so a daemon restart does not say
+        again what was said moments before it died (the arm-row wall).
+        Event-path failures still reach the mirror log via count_failure;
+        this only shapes the feed the user reads."""
         key = text[:500]
         now = time.monotonic()
         prev = self._appfw_notice_at.get(key)
@@ -876,10 +883,32 @@ class Daemon:
                 self._outbox.append(json.dumps(ev.to_dict(), separators=(",", ":")))
             log = self.data_dir / "appfw" / "events.jsonl"
             log.parent.mkdir(parents=True, exist_ok=True)
-            append_checked(str(log), text[:500] + "\n")
+            append_checked(str(log), now + " " + text[:500] + "\n")
         except Exception as e:
             self.count_failure("write", "appfw mirror", e)
             print("appfw mirror write failed:", e, flush=True)
+
+    def _seed_appfw_dedupe(self) -> None:
+        """Prime the dedupe table from the mirror log's recent lines so
+        the first minutes after a re-arm do not repeat what the last
+        engine said. The mirror carries a wall-clock stamp per line; the
+        table wants monotonic, so the stamp's age is subtracted."""
+        try:
+            log = self.data_dir / "appfw" / "events.jsonl"
+            tail = log.read_text(errors="ignore").splitlines()[-512:]
+        except OSError:
+            return
+        now_wall = time.time()
+        now = time.monotonic()
+        for line in tail:
+            try:
+                ts_s, text = line.split(" ", 1)
+                age = now_wall - _dt.datetime.fromisoformat(ts_s).timestamp()
+            except (ValueError, OSError):
+                continue
+            if age < 0 or age > 300.0:
+                continue
+            self._appfw_notice_at[text] = now - age
 
     def _netwatch_event(self, severity: str, text: str):
         try:
@@ -1160,6 +1189,26 @@ class Daemon:
 
     KERNEL_LANE = {"journal:kern": "-k -f -o cat"}
 
+    def _init_healer(self) -> None:
+        """Build the self-heal loop (staged boot: +60 s after the loop
+        starts, never at t=0)."""
+        try:
+            from selfheal import SelfHealer
+            import triage as _triage
+            self.healer = SelfHealer(
+                self.data_dir, self.registry,
+                log=lambda n, t: self._notice(n, "MEDIUM", t),
+                alert=lambda n, t: self._notice(n, "HIGH", t,
+                                                dedupe_window_s=3600.0),
+                triage=_triage.make(self.data_dir),
+                user=UI_USER, runtime_dir=ui_runtime_dir() or "")
+            print("greywatch self-heal: on"
+                  + ("" if _triage.make(self.data_dir) is None
+                     else " (ai triage on)"), flush=True)
+        except Exception as e:
+            self.healer = None
+            self.count_failure("heal", "init", e)
+
     def _arm_scans(self, live) -> None:
         """Build the scan service and hand it the log tailers it must mute."""
         by_tool = {}
@@ -1219,38 +1268,26 @@ class Daemon:
         self.forever_mode = True
         stop = stop or threading.Event()
         self._beat = time.monotonic()
-        try:
-            served = self.start_appfw()
-            print("greywatch appfw engine:",
-                  "running (headless)" if served else
-                  "off - enable switch is data/appfw/enable.json")
-        except Exception as e:
-            served = False
-            print("appfw engine unavailable:", e)
+        # Staged boot (crash loop root cause 2026-11-09): the watchdog
+        # ping thread starts FIRST and READY=1 goes out before any boot
+        # work, with _beat refreshed between the remaining steps, so the
+        # 30 s systemd watchdog sees a live, petting service within
+        # seconds. The heavy pieces no longer land on the CPU all at
+        # once at t=0: the appfw engine arms from the loop's existing
+        # +10 s slot, the self-healer builds at +60 s, and the scan
+        # service arms at +30 s through the loop's re-arm slot.
+        from appfw.sd_notify import notify as _sd
+        threading.Thread(target=self._watchdog_ping_loop, args=(stop,),
+                         daemon=True, name="watchdog-ping").start()
+        _sd('READY=1')
+        self._beat = time.monotonic()
         try:
             threading.Thread(target=self._updates_later, daemon=True,
                              name="gw-updates-later").start()
         except Exception as e:
             self.count_failure("loop", "updates thread", e)
-        from appfw.sd_notify import notify as _sd
-        _sd('READY=1')
         live = tailers or self.build_collectors()
-        try:
-            from selfheal import SelfHealer
-            import triage as _triage
-            self.healer = SelfHealer(
-                self.data_dir, self.registry,
-                log=lambda n, t: self._notice(n, "MEDIUM", t),
-                alert=lambda n, t: self._notice(n, "HIGH", t,
-                                                dedupe_window_s=3600.0),
-                triage=_triage.make(self.data_dir),
-                user=UI_USER, runtime_dir=ui_runtime_dir() or "")
-            print("greywatch self-heal: on"
-                  + ("" if _triage.make(self.data_dir) is None
-                     else " (ai triage on)"), flush=True)
-        except Exception as e:
-            self.healer = None
-            self.count_failure("heal", "init", e)
+        self._beat = time.monotonic()
         self.supervisor = Supervisor()
         for t in live:
             t.start()
@@ -1258,9 +1295,7 @@ class Daemon:
                 f"tail:{getattr(t, 'tool', 'journal')}", target=t.start,
                 health=lambda t=t: getattr(t, "_thread", None) is not None
                 and t._thread.is_alive(), latched_target=False)
-        threading.Thread(target=self._watchdog_ping_loop, args=(stop,),
-                         daemon=True, name="watchdog-ping").start()
-        self._arm_scans(live)
+        self._beat = time.monotonic()
         status_at = time.monotonic() + unit_interval
         trim_at = time.monotonic() + trim_interval
         heartbeat_at = time.monotonic() + 900      # every tool: 15-min check-in
@@ -1274,8 +1309,12 @@ class Daemon:
         engine_broken_told = False              # GW-C2: breaker-said flag
         scan_arm_at = time.monotonic() + 30
         scan_arm_fails: list[float] = []   # the scan service's arm breaker
+        healer_at = time.monotonic() + 60   # self-healer builds here
         while not stop.is_set():
             self._beat = time.monotonic()
+            if self.healer is None and time.monotonic() >= healer_at:
+                healer_at = time.monotonic() + 60  # breaker pacing
+                self._init_healer()
             try:
                 for _ in range(10):
                     got = self.queue.drain(2000)

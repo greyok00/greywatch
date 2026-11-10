@@ -91,4 +91,10 @@
     <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
     <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/block-review.sh</annotate>
   </action>
+  <action id="com.greywatch.apply.baseline-update">
+    <description>greywatch refresh a checker baseline the keeper has reviewed (rkhunter propupd, or AIDE through its daily config; the previous baseline is kept)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/baseline-update.sh</annotate>
+  </action>
 </policyconfig>

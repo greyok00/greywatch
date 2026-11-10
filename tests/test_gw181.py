@@ -7,7 +7,7 @@ deliberate keep must outlive restarts.
 Three layers pin the whole chain: the ledger (hunter/store, config.json
 beside the AI keys), the discovery skip (browsers._extensions drops
 kept ids so the hunter never raises the rule again), and the desk
-(Keep this extension on the dossier, the KEPT strip with Warn again,
+(Keep this extension on the dossier, the KEPT strip with Stop keeping,
 and a feed that paints only what the owner asked for). The store itself
 stays append-only — a keep hides records from the desk, it never
 rewrites the record."""
@@ -151,9 +151,9 @@ def test_feed_hides_kept_and_warn_again_restores(tmp_path):
     head = [w for w in panel._kept_box.observe_children()
             if isinstance(w, Gtk.Label)][0]
     assert "1 extension" in head.get_text()
-    # Warn again is the way back: the row returns from the same record
+    # Stop keeping is the way back: the row returns from the same record
     # (latest first — the plain finding is the newer one).
-    assert _click("Warn again", panel._kept_box)
+    assert _click("Stop keeping", panel._kept_box)
     pump(20)
     assert [f["id"] for f in panel._findings] == ["plain-1", "cfg-1"]
     assert not panel._kept_box.get_visible()
@@ -176,7 +176,7 @@ def test_keep_button_persists_and_hides(tmp_path):
     assert [f["id"] for f in panel._findings] == ["plain-1"], (
         "keeping must empty the extension's rows at once")
     assert panel._kept_box.get_visible(), "the kept strip mounts at once"
-    assert panel._kept_box.observe_children(), "Warn again is reachable"
+    assert panel._kept_box.observe_children(), "Stop keeping is reachable"
     # The plain rule's dossier gets no keep button either way.
     panel._select_finding("plain-1")
     pump(10)

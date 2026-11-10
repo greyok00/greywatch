@@ -78,6 +78,41 @@ def test_daemon_appfw_event_lets_distinct_notices_through(tmp_path):
     assert len(evs) == 2
 
 
+def test_daemon_arm_seeds_dedupe_from_the_mirror(tmp_path):
+    """A daemon restart must not say again what the last process just
+    said: the arm seeds its dedupe table from the timestamped mirror
+    log, so no second "engine armed" wall immediately after a restart.
+    Old un-stamped mirror lines are ignored, not crashers."""
+    import greywatch_daemon as gd
+    data = tmp_path / "data"
+    log = data / "appfw" / "events.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    recent = now - __import__("datetime").timedelta(seconds=90)
+    old = now - __import__("datetime").timedelta(hours=2)
+    log.write_text(
+        recent.strftime("%Y-%m-%dT%H:%M:%S") + "+00:00"
+        f" appfw engine armed - ask the dashboard popup\n"
+        + old.strftime("%Y-%m-%dT%H:%M:%S") + "+00:00"
+        f" something hours old\n"
+        + "appfw legacy line without a stamp\n")
+    d = gd.Daemon(data_dir=data, registry=[])
+    d._seed_appfw_dedupe()
+    # stamped recent line is honoured by the deduper; old lines are not
+    d._appfw_event("appfw engine armed - ask the dashboard popup")
+    stale = "appfw some fresh notice moments after re-arm"
+    d._appfw_event(stale)
+    d.flush_outbox()
+    evs = gd.read_events(d.events_path)
+    texts = [e["text"] for e in evs]
+    assert texts == [stale], texts
+    d._appfw_event("appfw engine armed - ask the dashboard popup")
+    d.flush_outbox()
+    evs = gd.read_events(d.events_path)
+    texts = [e["text"] for e in evs]
+    assert texts == [stale], texts
+
+
 def test_rulestore_survives_inaccessible_rules_dir(tmp_path, monkeypatch):
     """Regression: RuleStore must NOT crash when the rules dir is
     unreadable (e.g. root-owned 0700 dir probed by a non-root process).

@@ -150,6 +150,44 @@ def test_unreadable_watch_file_names_no_channels(tmp_path):
         (tmp_path / "ptp-watch.json").chmod(0o644)
 
 
+# ---- the nft table probe never counts a blind reader as "open" -------
+def _nft_run(returncode, stderr=b""):
+
+    class R:
+        pass    # returncode/attrs fixed per instantiation below
+
+    def run(*a, **k):
+        r = R()
+        r.returncode = returncode
+        r.stdout = b""
+        r.stderr = stderr
+        return r
+    return run
+
+
+def test_table_probe_reads_nft_stderr_not_the_exit_code(monkeypatch):
+    # rc 0: the table stands
+    monkeypatch.setattr(subprocess, "run", _nft_run(0))
+    assert defense.psad_status()["table"] is True
+
+    # rc 1 AND nft's own "no such table" wording: genuinely absent
+    monkeypatch.setattr(subprocess, "run", _nft_run(
+        1, b"Error: No such table or other error during file operation\n"))
+    assert defense.psad_status()["table"] is False
+
+    # rc 1 from a permission error: the reader was BLIND, never an
+    # answer - this is what used to read as an open chain and flap the
+    # chip between "open" and "cannot read"
+    monkeypatch.setattr(subprocess, "run", _nft_run(
+        1, b"netlink: Error: cache initialization failed: "
+           b"Operation not permitted (you must be root)\n"))
+    assert defense.psad_status()["table"] is None
+
+    # any other exit is unreadable too, not an open chain
+    monkeypatch.setattr(subprocess, "run", _nft_run(2, b"boom\n"))
+    assert defense.psad_status()["table"] is None
+
+
 # ---- the defense page renders the UNKNOWN claim over a dead probe ----
 def _walk_labels(host):
     out = []

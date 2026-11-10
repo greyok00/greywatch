@@ -230,7 +230,7 @@ def test_dismiss_hides_and_show_again_restores(tmp_path):
     head = [w for w in panel._quiet_box.observe_children()
             if hasattr(w, "get_text") and "HIDDEN" in w.get_text()]
     assert head, "the hidden strip names itself"
-    assert _click("Show again", panel._quiet_box)
+    assert _click("Stop hiding", panel._quiet_box)
     pump(20)
     assert [f["id"] for f in panel._findings] == [fid]
     assert store.quieted_ids(tmp_path) == set()
