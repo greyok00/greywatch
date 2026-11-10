@@ -5,12 +5,16 @@ Source: man page psad(8), digested through the greysearch RAG ingester into gw-t
 WHAT IT IS: A daemon that reads firewall (iptables/nftables) logs, detects
 port scans and suspect traffic, assigns each source a danger level 1-5
 (5 highest), and can auto-block. Danger levels rise with signature matches
-in /etc/psad/signatures, hits listed in /etc/psad/auto_dl, the
+in /etc/psad/signatures, with IP danger-level adjustments from
+/etc/psad/auto_dl (which raises, lowers, or ignores danger levels for
+listed addresses), the
 PORT_RANGE_SCAN_THRESHOLD gap, and whether scans are allowed to timeout
 (SCAN_TIMEOUT).
 
 KEY COMMANDS: `psad` (daemon start/restart via the app), `psad -S` status
-summary, `psad --fw-check` re-verify firewall chain, `psad --DumpConfig`.
+summary, `psad --fw-analyze` and `psad --fw-dump` to verify and inspect
+the firewall chain (fwcheck_psad is a helper script, not a flag),
+`psad -D, --Dump-conf`.
 Config lives in /etc/psad/psad.conf; AUTO_BLOCK / ALERT levels control
 actions; GreyWatch also exposes `Alert level` and `auto-block` as dock
 knobs that write that config through the polkit apply lane.
