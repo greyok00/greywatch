@@ -103,6 +103,11 @@ packages = ["greywatch"]
 greywatch = ["_tree/**/*"]
 EOF
 
+# `build` is the one tool the wheel needs beyond stdlib (pytest and ruff
+# pin the dev toolchain, not the packaging one); the script carries it so
+# a fresh CI venv - or any machine without it - just works.
+python3 -c "import build" 2>/dev/null \
+    || python3 -m pip install --disable-pip-version-check build
 python3 -m build --wheel "$STAGE" --outdir "$OUT"
 # newest by mtime: a plain glob sorts alphabetically, so the report named
 # the previous version's wheel while the new one was just written.
