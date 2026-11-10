@@ -69,18 +69,34 @@ card offers the matching baseline refresh (rkhunter `--propupd`, AIDE
 `--update`) — the permafix loop. The boot-sweep schedule surfaces on
 Scans (VISUAL-PLAN-UI §6.5) and is editable like any tool schedule.
 
-## 5. Assistant — local model + heuristics only (owner HARD, verbatim)
+## 5. Assistant — heuristics tier + explicit GPU-model toggle (owner HARD)
 
 "DO NOT LET IT USE OLLAMA ... HEURISTICS AND LOCAL LLM ONLY ... GPU
 ENABLED LOCAL MODEL ONLY LIKE IT WAS BEFORE. DO NOT USE OLLAMA OR ANY
-OTHER SERVER FOR CLOUD." Implementation: the existing local gguf lane
-only, GPU offload enabled; load on first chat message (never on window
-open — the 2.6 GB RSS law), unload on idle; heuristic explanations
-first when a canned reason exists, model second. Docs corpus is LOCAL:
-curated per-tool cheat-sheets + heuristics in-repo, plus man-page
-digests compressed once at build time through the Greysearch RAG lane
-and shipped as plain files (`doc/tool-digests/`) the assistant retrieves
-at ask time. No server, no cloud call, anywhere in GreyWatch.
+OTHER SERVER FOR CLOUD."
+
+Two tiers, one toggle:
+
+- **Default tier (always, no model).** Purely heuristic: answers from the
+  daemon's canned reasons, the findings' structured facts, the docs corpus
+  below, and settings introspection — logs, advice, man-page settings,
+  next-step recommendations. Nothing loads. If a lane genuinely needs
+  free-text generation without the big model, a tiny CPU-only gguf may
+  serve that lane — never the GPU, never a server.
+- **GPU model toggle.** An explicit assistant button ("Enable GPU model",
+  states off → loading → on) loads the existing local gguf with GPU
+  offload into VRAM *only when clicked*, with a full staged progress
+  animation (weights → GPU layers → warmup, real progress not a spinner).
+  It stays resident until the owner clicks it again to disable (unload,
+  VRAM released). It NEVER loads on window open, on page actions, or on
+  idle timers (the 2.6 GB RSS law). Chat beyond heuristics rides this
+  model while on.
+
+Docs corpus is LOCAL: curated per-tool cheat-sheets + heuristics in-repo,
+plus man-page digests compressed once at build time through the
+Greysearch RAG lane and shipped as plain files (`doc/tool-digests/`) the
+assistant retrieves at ask time — both tiers read them. No server, no
+cloud call, anywhere in GreyWatch.
 
 ## 6. Fix carry-over (the bug wave survives the rebuild)
 
