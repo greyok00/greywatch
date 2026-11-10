@@ -89,12 +89,13 @@ TIME_W = 104     # "18:35:39" plus breathing room
 # Activity Log, Home to Overview; 'security' and 'deep' were pre-wave-D
 # names for the same Protections page). The round-2 rebuild gives pages
 # back from the fold-in as their variants land: task 8 un-retired the
-# Threat Hunter ("thunter"), and task 9 gives the Tools page its cards
-# back - both real builders again, not legacy aliases.
+# Threat Hunter ("thunter"), task 9 gave the Tools page its cards back,
+# and task 10 gives Scans and Protections their own pages again (the
+# old "security"/"deep" aliases now land on Protections, p1). Harden
+# stays folded into Services until its own variant lands.
 _LEGACY_PAGE = {"home": "overview",
-                "scans": "services", "protect": "services",
                 "harden": "services", "logs": "auditlog",
-                "security": "services", "deep": "services"}
+                "security": "protect", "deep": "protect"}
 
 # The settings panes' related-in-suite footers (approved mockup):
 # where/what/Open hand-offs to pages that genuinely hold the subject.
@@ -394,9 +395,9 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         return scroller, groups
 
     def _services_view(self):
-        """Services (rebuild Phase 3): lane two - scan actions, the scan
-        console, the tool grid, Service Healer rows. Lifecycle only; the
-        actions are the feed's own rows, no dock groups."""
+        """Services (rebuild Phase 3): lane two - the tool grid and the
+        Service Healer rows. Lifecycle only; the scan actions and the
+        console moved back to the Scans page (rebuild round 2, task 10)."""
         from ui.toolhealth import ServicesPage
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -405,6 +406,29 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         scroller.set_child(page)
         self.services_page = page
         return scroller, []
+
+    def _scans_view(self):
+        """The Scans page (rebuild round 2, task 10, owner s2): the three
+        mode cards (Quick sweep / Full suite / Deep audit) with their Run
+        buttons through the validated-key request seam, the ScanConsole
+        below (its inner scroll stays), and the dock's Schedule /
+        Throttle groups. The page never scrolls as a whole."""
+        from ui.scanview import ScansPage
+        page = ScansPage(win=self)
+        self.scan_page = page
+        return page, page.dock_groups()
+
+    def _protect_view(self):
+        """The Protections page (rebuild round 2, task 10, owner p1):
+        the "between this box and threats" strip with the run lane, the
+        PATCH ADVISORIES wall (the CVE rows moved here from the Firewall
+        page with the patch-the-planet coverage line), the recent
+        protection-run cards, and the dock's Advisory filter / Runs
+        groups."""
+        from ui.protectdesk import ProtectionsPage
+        page = ProtectionsPage(win=self)
+        self.protect_page = page
+        return page, page.dock_groups()
 
     def _auditlog_view(self):
         """The Activity Log page (rebuild round 2, task 6, variant 1):
@@ -486,6 +510,8 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         # launches.
         self._builders = {"overview": self._overview_view,
                           "services": self._services_view,
+                          "scans": self._scans_view,
+                          "protect": self._protect_view,
                           "auditlog": self._auditlog_view,
                           "defense": self._defense_view,
                           "thunter": self._thunter_view,
@@ -754,12 +780,12 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
             self._start_scan(None, mode)
 
     def _scan_tick(self):
-        """Redraw the live scan console (rebuild Phase 4: the Services
-        page) while that page is up."""
+        """Redraw the live scan console (rebuild round 2 task 10: the
+        Scans page) while that page is up."""
         vis = self.stack.get_visible_child_name()
-        spage = getattr(self, "services_page", None)
+        spage = getattr(self, "scan_page", None)
         console = getattr(spage, "scanconsole", None) if spage else None
-        if vis == "services" and console is not None \
+        if vis == "scans" and console is not None \
                 and console.get_root() is not None:
             console.refresh()
             self._scan_live = read_live(self.data_dir)
@@ -823,17 +849,21 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         if not ok:
             # The request never reached disk: say why where the scan
             # buttons live, never just return (a click that does nothing
-            # is the one failure mode this window refuses).
-            page = getattr(self, "services_page", None)
-            console = getattr(page, "scanconsole", None)
-            note = f"the scan could not start: {msg}"
-            if console is not None and hasattr(console, "show_scan_note"):
-                console.show_scan_note(note)
-            else:
-                print("greywatch:", note, flush=True)
+            # is the one failure mode this window refuses). Whichever
+            # page carries the console shows the note.
+            for owner in ("scan_page", "services_page"):
+                page = getattr(self, owner, None)
+                console = getattr(page, "scanconsole", None) \
+                    if page is not None else None
+                if console is not None and \
+                        hasattr(console, "show_scan_note"):
+                    console.show_scan_note(f"the scan could not start: "
+                                           f"{msg}")
+                    return
+            print("greywatch: the scan could not start:", msg, flush=True)
             return
         # The request file is written; the console is where the run shows.
-        self._show("services")
+        self._show("scans")
 
     def _confirm_max_speed(self, mode):
         """One ask before the single uncapped run. The everyday Full scan
@@ -1186,6 +1216,12 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         if shown == "services" \
                 and getattr(self, "services_page", None) is not None:
             self.services_page.refresh(snap)
+        if shown == "scans" \
+                and getattr(self, "scan_page", None) is not None:
+            self.scan_page.refresh(snap)
+        if shown == "protect" \
+                and getattr(self, "protect_page", None) is not None:
+            self.protect_page.refresh(snap)
         if shown == "tools" \
                 and getattr(self, "tools_page", None) is not None:
             # The Tools cards paint only while shown (the cost rule the

@@ -196,7 +196,8 @@ def test_rail_groups_follow_the_two_system_design():
     from ui import shell
     # Rebuild round 2 (task 2): the owner's ten-page menu — the Overview
     # home row plus nine grouped rows; every key resolves in the stack
-    # through the one legacy map.
+    # through the one legacy map (task 10: scans and protect are their
+    # own pages again, so they resolve to themselves).
     from ui.window import _LEGACY_PAGE
     keys = [k for group in shell.RAIL for k in group]
     assert keys == ["scans", "protect", "tools", "harden", "defense",
@@ -206,6 +207,7 @@ def test_rail_groups_follow_the_two_system_design():
     for k in keys:
         assert _LEGACY_PAGE.get(k, k) in ("overview", "defense",
                                           "thunter", "tools", "services",
+                                          "scans", "protect",
                                           "auditlog",
                                           "settings", "help")
 

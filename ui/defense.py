@@ -13,9 +13,15 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk    # noqa: E402
 
-from cverules import active_rules   # noqa: F401  (the Protections reader; task 10)
-from ptp import (watch_rows as ptp_watch_rows, load_map as ptp_load_map,
-                 DASH_PROSE)
+from ptp import load_map as ptp_load_map, DASH_PROSE
+# The advisories/watchlist readers MOVED to ui/protectdesk.py (rebuild
+# task 10): the Firewall page no longer renders CVE rows, the Protections
+# page does, and these names stay importable here for the pins that read
+# or monkeypatch through this module. The DefenseView's own watchlist
+# panel resolves them through this module's globals, so a monkeypatch on
+# one name still re-paints the page.
+from ui.protectdesk import (cve_rows, ptp_rows, ptp_probe_failed,
+                            ptp_high_count, ptp_watch_stamp)  # noqa: F401
 from ui import metrics
 from ui.plain import escape
 from wiz.common import helper_detail
@@ -49,10 +55,23 @@ def psad_status(conf=None, kern_log=None, nft_bin=None, systemctl_bin=None):
     except OSError:
         out["fed"] = None
     try:
-        rc = subprocess.run(
+        proc = subprocess.run(
             [nft_bin, "list", "table", "inet", "greywatch_psad"],
-            capture_output=True, timeout=5).returncode
-        out["table"] = True if rc == 0 else False if rc == 1 else None
+            capture_output=True, timeout=5)
+        err = proc.stderr or b""
+        if isinstance(err, bytes):
+            err = err.decode("utf-8", "replace")
+        rc = proc.returncode
+        if rc == 0:
+            out["table"] = True
+        elif rc == 1 and "no such table" in err.lower() \
+                and "not permitted" not in err.lower():
+            # nft's own wording says the table is genuinely absent
+            out["table"] = False
+        else:
+            # rc 1 from a permission error, or any other exit: the reader
+            # was blind - unknown, never "open" (GW-B2/GW-214 pin)
+            out["table"] = None
     except (OSError, subprocess.SubprocessError):
         out["table"] = None
     try:
@@ -100,73 +119,6 @@ def arp_status(ip_bin=None):
     else:
         out["sysctls"] = all(vals)
     return out
-
-
-def cve_rows(data_dir):
-    """Active CVE rules for the managed tools, or None when this box has
-    never fetched a cache (the reader says so rather than 'nothing').
-    The Firewall page no longer renders these (rebuild task 7): the rows
-    move to Protections in rebuild task 10, which takes this reader."""
-    cache = pathlib.Path(data_dir) / "cve-cache.json"
-    if not cache.exists():
-        return None
-    try:
-        return active_rules(cache)
-    except Exception:
-        return []
-
-
-def ptp_rows(data_dir):
-    """The Patch the Planet watchlist coverage the daemon wrote for this
-    machine, or None when no watch file exists yet (the page says so
-    rather than guessing; unreadable never reads as safe)."""
-    rows = ptp_watch_rows(pathlib.Path(data_dir))
-    if rows is None:
-        return None
-    return rows.get("projects") if isinstance(rows, dict) else []
-
-
-def ptp_high_count(data_dir):
-    """How many HIGH findings the covered projects carry, for the rail
-    badge riding the Defense count. Never fetched reads as 0: the badge
-    counts defense news, and no watch run is no defense news."""
-    rows = ptp_rows(data_dir)
-    if not isinstance(rows, list):
-        return 0
-    return sum(int(r.get("high") or 0) for r in rows
-               if isinstance(r, dict))
-
-
-def ptp_probe_failed(data_dir):
-    """Which package channels could not be read on the last watch run
-    (GW-B2), or [] - old watch files without the key read as all-ok."""
-    path = pathlib.Path(data_dir) / "ptp-watch.json"
-    try:
-        got = json.loads(path.read_text(encoding="utf-8")).get(
-            "probe_failed")
-    except (OSError, ValueError, AttributeError):
-        return []
-    return got if isinstance(got, list) else []
-
-
-def ptp_watch_stamp(data_dir) -> str:
-    """When coverage was last matched, in human words ('today 14:52');
-    empty when no watch run has arrived."""
-    path = pathlib.Path(data_dir) / "ptp-watch.json"
-    try:
-        ts = json.loads(path.read_text(encoding="utf-8")).get("ts")
-    except (OSError, ValueError, AttributeError):
-        return ""
-    try:
-        when = _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return ""
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=_dt.timezone.utc)
-    local = when.astimezone()
-    if local.date() == _dt.datetime.now().astimezone().date():
-        return "today " + local.strftime("%H:%M")
-    return local.strftime("%b %d %H:%M")
 
 
 def _age(ts):

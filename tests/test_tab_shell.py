@@ -131,15 +131,13 @@ def test_launch_opens_overview_with_ai(win):
 
 
 def test_care_group_row_routes_resolve(win):
-    """Every menu row opens its page through the one legacy map: the
-    remaining Care rows land on Services, logs joins the Activity Log -
-    and thunter (task 8) and tools (task 9) are their own pages again
-    through the round-2 rebuild."""
+    """Every menu row opens its page through the one legacy map: scans
+    and protect are their own pages again (rebuild round 2, task 10),
+    harden still lands on Services and logs joins the Activity Log -
+    thunter (task 8) and tools (task 9) are already their own pages."""
     from ui.window import _LEGACY_PAGE as routes
-    win._show("scans")
-    pump(6)
-    assert win.stack.get_visible_child_name() == "services"
-    for key, page in (("protect", "services"), ("harden", "services"),
+    for key, page in (("scans", "scans"), ("protect", "protect"),
+                      ("harden", "services"),
                       ("tools", "tools"),
                       ("thunter", "thunter"),
                       ("logs", "auditlog")):
@@ -151,17 +149,20 @@ def test_care_group_row_routes_resolve(win):
 
 
 def test_care_group_lights_as_one_group(win):
-    """The Care rows that still serve the Services page light as one
-    group (task 9 un-retired the Tools row), and the active row styling
-    follows the shown page; rows of other groups stay dark."""
+    """Task 10 un-folded Scans and Protections: a Care row is active when
+    the page IT opens is shown, so showing Scans lights only Scans and
+    the other Care rows stay dark (the one-subject-per-page law)."""
     win._show("scans")
     pump(6)
-    assert win.stack.get_visible_child_name() == "services"
-    for key in ("scans", "protect", "harden"):
-        assert "gw-active" in win._tabs[key].get_css_classes(), key
-    for key in ("defense", "thunter", "logs", "settings", "help",
-                "overview", "tools"):
+    assert win.stack.get_visible_child_name() == "scans"
+    assert "gw-active" in win._tabs["scans"].get_css_classes()
+    for key in ("protect", "harden", "defense", "thunter", "logs",
+                "settings", "help", "overview", "tools"):
         assert "gw-active" not in win._tabs[key].get_css_classes(), key
+    win._show("protect")
+    pump(6)
+    assert "gw-active" in win._tabs["protect"].get_css_classes()
+    assert "gw-active" not in win._tabs["scans"].get_css_classes()
 
 
 def test_every_page_switches(win):

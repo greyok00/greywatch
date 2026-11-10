@@ -148,7 +148,7 @@ def test_scan_start_success_still_navigates():
     from ui.window import MainWindow
     MainWindow._start_scan(w, None, {"key": "full", "title": "Full"},
                            allowed=True)
-    assert w.nav == ["services"]
+    assert w.nav == ["scans"]       # the console page, task 10 re-root
     assert notes == []              # success writes no note
 
 

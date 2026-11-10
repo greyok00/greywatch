@@ -189,10 +189,17 @@ class TestServices:
         from ui.toolhealth import ServicesPage
         return ServicesPage(win=_FakeWin(store))
 
-    def test_scan_actions_lead_the_page(self, store):
-        page = self._page(store)
+    def test_scan_actions_lead_the_scans_page(self, store):
+        """Task 10 re-root: the scan actions are the Scans page's mode
+        cards now; Services stays lifecycle-only (one subject per page)."""
+        from ui.scanview import ScansPage
+        page = ScansPage(win=_FakeWin(store))
         labels = [t.lower() for t in _labels(page)]
-        assert any("run clamav" in t for t in labels)
+        assert any("run full suite" in t for t in labels)
+        svc_labels = [t.lower() for t in _labels(self._page(store))]
+        assert not any("run " in t and "restart" not in t
+                       for t in svc_labels)
+        assert "quarantine" not in " ".join(svc_labels)
 
     def test_healer_rows_appear_only_for_failed_components(self, store):
         page = self._page(store)

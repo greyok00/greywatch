@@ -111,11 +111,11 @@ def test_scan_buttons_write_a_request_the_daemon_picks_up(win):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_a_scan_button_opens_the_services_page(win):
+def test_a_scan_button_opens_the_scans_page(win):
     # One page now: the progress rows and the findings live together
     # (owner 2026-10-30 — two pages showed the same scan twice).
-    # Phase 4: the request lands on the Services page, where the scan
-    # console lives.
+    # Task 10: the request lands on the Scans page, where the scan
+    # console lives again (s2: mode cards + console).
     from ui.cards import SCAN_MODES
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="gw-scan-test-"))
     old = win.data_dir
@@ -124,7 +124,7 @@ def test_a_scan_button_opens_the_services_page(win):
         mode = next(m for m in SCAN_MODES if m["key"] == "yara-tmp-scan")
         win._start_scan(None, mode)
         pump(10)
-        assert win.stack.get_visible_child_name() == "services"
+        assert win.stack.get_visible_child_name() == "scans"
     finally:
         win.data_dir = old
         shutil.rmtree(tmp, ignore_errors=True)

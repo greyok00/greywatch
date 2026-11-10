@@ -1146,3 +1146,156 @@ class ScanConsole(Gtk.Box):
             b.connect("clicked",
                       lambda _b, sid=doc.get("scan_id"): self.pin(sid))
             self.history.append(b)
+
+
+# ---------------------------------------------------------- the s2 page
+
+# The three cards (owner s2, rebuild round 2 task 10). The keys are the
+# machinery's own fixed mode keys - the request seam validates them and
+# the daemon honours exactly what the mode says, nothing else:
+#   quick sweep  = the lightweight tool only: the temp-folder check,
+#                  done in seconds (mode "yara-tmp-scan")
+#   full suite   = every scanner in turn, one per slot, throttled (mode
+#                  "full" - the five scanners the session staggers)
+#   deep audit   = adds the lynis system audit - the whole-box score
+#                  and its warnings (mode "lynis", the audit-system run)
+SCAN_MODE_CARDS = (
+    {"key": "yara-tmp-scan", "title": "Quick sweep",
+     "words": "the lightweight tool only - the temp-folder check, done "
+              "in seconds"},
+    {"key": "full", "title": "Full suite",
+     "words": "every scanner in turn, one per slot, throttled so the "
+              "desktop keeps working"},
+    {"key": "lynis", "title": "Deep audit",
+     "words": "adds the lynis system audit - the whole-box score and "
+              "its warnings"},
+)
+
+
+class ScansPage(Gtk.Box):
+    """Scans s2: the three mode cards with their Run buttons through the
+    existing validated-key request seam, and the ScanConsole below (its
+    inner scroll stays; the page itself never scrolls as a whole). The
+    dock carries the Schedule and Throttle groups - read-only where the
+    machine's truth is already fixed, disabled with an honest tooltip
+    where no lane exists."""
+
+    def __init__(self, win):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL,
+                         spacing=metrics.PAGE_SPACING)
+        self.add_css_class("gw-scans")
+        self.set_vexpand(True)
+        self._win = win
+
+        head = Gtk.Label(label="Scans", xalign=0)
+        head.add_css_class("gw-page-title")
+        self.append(head)
+
+        # the cards row: three honest mode cards
+        self.cards_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                                 spacing=8)
+        for spec in SCAN_MODE_CARDS:
+            self.cards_row.append(self._mode_card(spec))
+        self.append(self.cards_row)
+
+        # the console below the cards: the one the requests land on, kept
+        # whole (its findings inner scroll is the window-fit law)
+        self.scanconsole = ScanConsole(
+            win.data_dir, on_explain=win._ask_assistant,
+            on_scan=win._rescan_tool, on_show=win._show_folder,
+            on_navigate=win._show)
+        self.append(self.scanconsole)
+
+        self._build_dock()
+
+    # ------------------------------------------------------------ cards
+    def _mode_card(self, spec: dict) -> Gtk.Box:
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        card.add_css_class("gw-card")
+        card.set_hexpand(True)
+        title = Gtk.Label(label=spec["title"], xalign=0)
+        title.add_css_class("gw-headline")
+        card.append(title)
+        words = Gtk.Label(xalign=0, wrap=True)
+        words.set_text(spec["words"])
+        words.add_css_class("gw-meta")
+        words.set_max_width_chars(48)
+        card.append(words)
+        run = Gtk.Button(label=f"Run {spec['title']}")
+        run.add_css_class("gw-primary")
+        run.set_tooltip_text(
+            "Writes one validated mode request for the daemon; "
+            "throttled by default, like the strip always said.")
+        run.connect("clicked", self._on_run, spec["key"])
+        card.append(run)
+        return card
+
+    def _on_run(self, _btn, key):
+        """The existing machinery: the window's validated-key request
+        seam (_hunter_scan) - a mode key, never command text."""
+        w = self._win
+        if w is not None and hasattr(w, "_hunter_scan"):
+            w._hunter_scan(key)
+
+    # ------------------------------------------------------------- dock
+    def _build_dock(self) -> None:
+        """The dock controls s2 (built once; DockHost claims them).
+        status.json publishes no boot-sweep schedule, so the edit says
+        so against the real timer unit names; the throttle caps are the
+        session's own - read-only, with the reason in the tooltip."""
+        from scan_session import THROTTLE
+        units = sorted({t.get("unit") for t in (self._win.registry or [])
+                        if str(t.get("unit") or "").endswith(".timer")}) \
+            if self._win is not None else []
+        unit_bits = ", ".join(units) or \
+            "yara-tmp-scan.timer, aide-check.timer"
+        self._sched_fact = Gtk.Label(xalign=0, wrap=True)
+        self._sched_fact.set_text(
+            "No boot-sweep schedule is published in the suite's digest "
+            "yet. What exists already: " + unit_bits
+            + ". A scan session staggers its scanners one per slot.")
+        self._sched_fact.set_max_width_chars(60)
+        self._sched_fact.add_css_class("gw-meta")
+        self._sched_edit = Gtk.Button(label="Edit schedule",
+                                      sensitive=False)
+        self._sched_edit.set_tooltip_text(
+            "no lane writes a boot-sweep schedule from the app yet - the "
+            "stagger runs in the scan session one scanner per slot, and "
+            f"the timers these tools already keep: {unit_bits}")
+
+        lines = []
+        for tool in sorted(THROTTLE):
+            caps = THROTTLE[tool]
+            bits = [f"nice {caps.get('nice')}",
+                    f"io {caps.get('io_class')}"]
+            if caps.get("cpu_quota"):
+                bits.append(f"cpu {caps['cpu_quota']}")
+            if caps.get("mem"):
+                bits.append(f"mem {caps['mem']}")
+            lines.append(f"{NAMES.get(tool, tool)}: " + ", ".join(bits))
+        self._throttle_fact = Gtk.Label(xalign=0, wrap=True)
+        self._throttle_fact.set_text(
+            "The daemon's own caps (a run applies them per scanner; "
+            "Max-speed is the one uncapped exception):\n"
+            + "\n".join(lines))
+        self._throttle_fact.set_max_width_chars(60)
+        self._throttle_fact.add_css_class("gw-meta")
+        self._throttle_edit = Gtk.Button(label="Edit throttle",
+                                         sensitive=False)
+        self._throttle_edit.set_tooltip_text(
+            "no lane writes a systemd unit override from the app yet - "
+            "these caps are the daemon's own (scan_session.THROTTLE), "
+            "shown here read-only")
+
+    def dock_groups(self):
+        """("Title", [widgets]) groups for the fixed right dock."""
+        return [("Schedule", [self._sched_fact, self._sched_edit]),
+                ("Throttle", [self._throttle_fact, self._throttle_edit])]
+
+    # ------------------------------------------------------------ paint
+    def refresh(self, snap=None) -> None:
+        """The painted state is the console's; refresh here carries the
+        on-disk scan request digest (GW-C1) like the old owner page."""
+        cons = self.scanconsole
+        if cons is not None and hasattr(cons, "show_request"):
+            cons.show_request((snap or {}).get("scan_request"))

@@ -1,35 +1,143 @@
-"""The Protections desk.
+"""The Protections desk, and the Protections page (owner p1, round 2).
 
-The page follows the approved depth mockup - the same treatment as the
-other desks - so it is a desk, not a card: the verdict
-chip on the command strip, a five-tile stat band, the registry grouped
-into its protection classes on the coverage strip, the rows grouped the
-way refresh() already ranks them, and the selected row's side-by-side
-dossier. Every number reads only the snapshots the window's refresh()
-already loads (status.json, the event store's public digest, scan-live
-and the run history); nothing here invents a reason or starts a
-scanner.
+The page (rebuild round 2, task 10) answers "between this box and
+threats, what is pending": the strip with the Run-protections-now lane,
+PATCH ADVISORIES - the CVE wall moved here from the Firewall page
+(severity + affected tool per row, and the patch-the-planet machinery's
+coverage line) - and the recent protection-run cards below. The dock
+carries the advisory filter and the Runs facts. Nothing here invents a
+patch lane: where none exists the control sits disabled and says so.
 
-The reason rule (, recorded: when a scanner fails or
-exits oddly, the desk surfaces the real reason fields whenever they are
-present - exit code, the scanner's own detail text and its counts in its
-own units. It never substitutes a canned sentence for them, so the words
-change when the machine does.
+The desk class below (the Protections *desk* from the approved depth
+mockup) is kept for the tests that pin its dossier and narrowing laws.
 """
 from __future__ import annotations
 
 import datetime as _dt
+import json
+import pathlib
+import threading
 
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gtk  # noqa: E402
+from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
+from cverules import active_rules  # noqa: E402
+from ptp import cross_join as ptp_cross_join, watch_rows as ptp_watch_rows, \
+    DASH_PROSE  # noqa: E402
+from ui import metrics  # noqa: E402
+from ui.plain import escape  # noqa: E402
 from ui.desk import (DeskBand, DeskCoverage, DeskDossier, DeskFeed,
                      DeskStrip)  # noqa: E402
 from ui.plain import (sentence as plain_sentence, muted as _muted,
                       severity_colour, without_mark, what_is)  # noqa: E402
 from ui.models import age_words, status_words  # noqa: E402
+
+# ------------------------------------------------------- the wall readers
+# The CVE rule reader MOVED here from ui/defense.py (rebuild task 10):
+# the Firewall page no longer renders these rows, this page does, and
+# defense re-exports the names for the pins that monkeypatch through it.
+
+_TOOL_LABEL = {
+    "appfw": "the app firewall's netfilter stack",
+    "clamav": "the antivirus",
+    "fail2ban": "the login blocker",
+    "psad": "the scan watcher",
+    "kernel": "the running Linux kernel",
+}
+
+
+def _tool_words(tool: str) -> str:
+    return _TOOL_LABEL.get(str(tool or ""), f"tool '{tool or 'unknown'}'")
+
+
+def _rule_tone(score: float) -> str:
+    """The wall's own tone words: HIGH at the top of the scale, MEDIUM
+    for the rest of the active band."""
+    return "HIGH" if float(score) >= 9.0 else "MEDIUM"
+
+
+def cve_rows(data_dir):
+    """Active CVE rules for the managed tools, or None when this box has
+    never fetched a cache (the reader says so rather than 'nothing')."""
+    cache = pathlib.Path(data_dir) / "cve-cache.json"
+    if not cache.exists():
+        return None
+    try:
+        return active_rules(cache)
+    except Exception:
+        return []
+
+
+def ptp_rows(data_dir):
+    """The Patch the Planet watchlist coverage the daemon wrote for this
+    machine, or None when no watch file exists yet (the page says so
+    rather than guessing; unreadable never reads as safe)."""
+    rows = ptp_watch_rows(pathlib.Path(data_dir))
+    if rows is None:
+        return None
+    return rows.get("projects") if isinstance(rows, dict) else []
+
+
+def ptp_probe_failed(data_dir):
+    """Which package channels could not be read on the last watch run
+    (GW-B2), or [] - old watch files without the key read as all-ok."""
+    path = pathlib.Path(data_dir) / "ptp-watch.json"
+    try:
+        got = json.loads(path.read_text(encoding="utf-8")).get(
+            "probe_failed")
+    except (OSError, ValueError, AttributeError):
+        return []
+    return got if isinstance(got, list) else []
+
+
+def ptp_high_count(data_dir):
+    """How many HIGH findings the covered projects carry, for the rail
+    badge riding the Defense count. Never fetched reads as 0: the badge
+    counts defense news, and no watch run is no defense news."""
+    rows = ptp_rows(data_dir)
+    if not isinstance(rows, list):
+        return 0
+    return sum(int(r.get("high") or 0) for r in rows
+               if isinstance(r, dict))
+
+
+def ptp_watch_stamp(data_dir) -> str:
+    """When coverage was last matched, in human words ('today 14:52');
+    empty when no watch run has arrived."""
+    path = pathlib.Path(data_dir) / "ptp-watch.json"
+    try:
+        ts = json.loads(path.read_text(encoding="utf-8")).get("ts")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    try:
+        when = _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return ""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=_dt.timezone.utc)
+    local = when.astimezone()
+    if local.date() == _dt.datetime.now().astimezone().date():
+        return "today " + local.strftime("%H:%M")
+    return local.strftime("%b %d %H:%M")
+
+
+def coverage_line(data_dir, rows) -> str:
+    """The wall's coverage sentence: how much of what the advisories
+    name the program's reviewers already cover, plus the watch stamp."""
+    if not isinstance(rows, list) or not rows:
+        return ""
+    stamp = ptp_watch_stamp(data_dir)
+    if stamp == "":
+        return "the watchlist has never been read - coverage is not claimed"
+    covered = sum(1 for r in rows if isinstance(r, dict)
+                  and ptp_cross_join(pathlib.Path(data_dir),
+                                     r.get("tool")) is not None)
+    pct = round(100.0 * covered / max(1, len(rows)))
+    return (f"Patch the Planet: {pct}% of the advisory tools are on the "
+            f"review map - watchlist read {stamp}")
+
 
 # The registry's classes on the coverage strip (approved mockup). Members
 # are counted by class from the registry the desk receives, never read by
@@ -590,3 +698,413 @@ class ProtectDesk(Gtk.Box):
         """The strip's right-edge SNAPSHOT clock, filled from refresh."""
         self._strip.meta(str(text))
         self._strip.finish()
+
+
+# ----------------------------------------------------------- the p1 page
+
+_RUN_HISTORY_LIMIT = 5
+_PATCH_TIP = ("no patch lane exists yet on this machine - packages move "
+              "through your system's own update manager; the advisory "
+              "list itself refreshes from the update lane beside the "
+              "card title")
+_RUNS_NOTE = ("Runs arrive when the keeper starts them; the suite runs "
+              "one scanner per slot. The timers the tools already keep: "
+              "yara-tmp-scan.timer, aide-check.timer, "
+              "greywatch-cve.timer.")
+_RUNS_EDIT_TIP = ("no lane writes a schedule from the app yet - these "
+                  "timers keep their own time today: yara-tmp-scan."
+                  "timer, aide-check.timer, greywatch-cve.timer")
+
+
+def _sev_words(rule: dict) -> str:
+    sev = str(rule.get("severity") or "").upper()
+    if sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        return sev
+    try:
+        return "CRITICAL" if float(rule.get("score") or 0) >= 9.0 \
+            else "HIGH"
+    except (TypeError, ValueError):
+        return "HIGH"
+
+
+class ProtectionsPage(Gtk.Box):
+    """Protections p1: the strip, the PATCH ADVISORIES wall (the CVE
+    rows that moved here from the Firewall page), recent run cards, and
+    the dock's Advisory filter / Runs groups. The page never patches,
+    never starts a scanner except through the run lane, and every
+    control without a lane sits disabled with its reason."""
+
+    def __init__(self, win):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL,
+                         spacing=metrics.PAGE_SPACING)
+        self.add_css_class("gw-protect")
+        self.set_vexpand(True)
+        self._win = win
+        self._advisories: list = []
+        self._shown: list = []
+        self._sev = None            # None = every severity
+        self._tool = None
+        self._fixable = False
+        self._refreshing = False
+
+        # 1. the strip: the lane in plain words + the one run button
+        strip = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        strip.add_css_class("gw-card")
+        face = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        glyph = Gtk.Label(label="●")
+        glyph.add_css_class("gw-pill")
+        glyph.add_css_class("ok")
+        face.append(glyph)
+        words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        title = Gtk.Label(label="Between this box and threats", xalign=0)
+        title.add_css_class("gw-headline")
+        words.append(title)
+        self.strip_meta = Gtk.Label(xalign=0, wrap=True)
+        self.strip_meta.add_css_class("gw-meta")
+        words.append(self.strip_meta)
+        face.append(words)
+        face.set_hexpand(True)
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        run_btn = Gtk.Button(label="Run protections now")
+        run_btn.add_css_class("gw-primary")
+        run_btn.set_tooltip_text(
+            "Run the suite the existing protections lane runs - the run "
+            "arrives on the Scans page's console.")
+        run_btn.connect("clicked", self._on_run_protections)
+        actions.append(run_btn)
+        face.append(actions)
+        strip.append(face)
+        self.append(strip)
+
+        # 2. the PATCH ADVISORIES wall: the CVE rows live here now
+        wall = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        wall.add_css_class("gw-card")
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        eyebrow = Gtk.Label(label="PATCH ADVISORIES", xalign=0)
+        eyebrow.add_css_class("gw-eyebrow")
+        eyebrow.set_hexpand(True)
+        head.append(eyebrow)
+        self.refresh_adv = Gtk.Button(label="Refresh advisories")
+        self.refresh_adv.add_css_class("gw-mini")
+        self.refresh_adv.set_tooltip_text(
+            "Read the advisory cache again (the update lane the "
+            "settings page uses); coverage matching catches up on the "
+            "daemon's next cycle.")
+        self.refresh_adv.connect("clicked", self._on_refresh_cve)
+        head.append(self.refresh_adv)
+        wall.append(head)
+        self.coverage_lbl = Gtk.Label(xalign=0, wrap=True)
+        self.coverage_lbl.add_css_class("gw-meta")
+        self.coverage_lbl.set_max_width_chars(96)
+        wall.append(self.coverage_lbl)
+        # the rows scroll INSIDE the card (window-fit law: never a
+        # whole-page scroller)
+        self._wall_rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                                  spacing=4)
+        wall_scroll = Gtk.ScrolledWindow()
+        wall_scroll.set_policy(Gtk.PolicyType.NEVER,
+                               Gtk.PolicyType.AUTOMATIC)
+        wall_scroll.set_propagate_natural_height(True)
+        wall_scroll.set_max_content_height(260)
+        wall_scroll.set_child(self._wall_rows)
+        wall.append(wall_scroll)
+        self.append(wall)
+
+        # 3. the recent protection-run cards
+        runs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        runs.add_css_class("gw-card")
+        runs_eyebrow = Gtk.Label(label="RECENT RUNS", xalign=0)
+        runs_eyebrow.add_css_class("gw-eyebrow")
+        runs.append(runs_eyebrow)
+        self._runs_body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                                  spacing=6)
+        runs.append(self._runs_body)
+        self.runs_card = runs
+        self.append(runs)
+
+        self._build_dock()
+
+    # ------------------------------------------------------------- dock
+    def _build_dock(self) -> None:
+        """The dock controls p1 (built once; DockHost claims them). The
+        advisory filter carries working picks and live counts; the Runs
+        group stays honest where no lane exists."""
+        model = Gtk.StringList()
+        for word in ("All severities", "CRITICAL", "HIGH", "MEDIUM"):
+            model.append(word)
+        self._sev_pick = Gtk.DropDown(model=model)
+        self._sev_pick.connect("notify::selected", self._on_sev_pick)
+        self._adv_counts = Gtk.Label(xalign=0, wrap=True)
+        self._adv_counts.add_css_class("gw-meta")
+        self._fixable_pick = Gtk.CheckButton(
+            label="Covered by the watch map")
+        self._fixable_pick.set_tooltip_text(
+            "Only advisories whose tool the Patch the Planet map covers: "
+            "the flaw is fixed upstream, so the watch is to install it.")
+        self._fixable_pick.connect("toggled", self._on_fixable)
+        self._tool_pick = Gtk.DropDown(model=Gtk.StringList())
+        self._tool_pick.connect("notify::selected", self._on_tool_pick)
+        self._runs_note = Gtk.Label(xalign=0, wrap=True)
+        self._runs_note.set_text(_RUNS_NOTE)
+        self._runs_note.set_max_width_chars(60)
+        self._runs_note.add_css_class("gw-meta")
+        self._runs_edit = Gtk.Button(label="Edit run schedule",
+                                     sensitive=False)
+        self._runs_edit.set_tooltip_text(_RUNS_EDIT_TIP)
+
+    def dock_groups(self):
+        """("Title", [widgets]) groups for the fixed right dock."""
+        return [("Advisories", [self._sev_pick, self._tool_pick,
+                                self._fixable_pick, self._adv_counts]),
+                ("Runs", [self._runs_note, self._runs_edit])]
+
+    # ----------------------------------------------------------- lane
+    def _on_run_protections(self, _btn):
+        """The strip's run button through the EXISTING protections lane
+        (one request, the full suite; the machinery staggers it)."""
+        w = self._win
+        if w is not None and hasattr(w, "_run_protection"):
+            w._run_protection("full")
+
+    def _on_refresh_cve(self, btn):
+        """The advisory cache refresh through the EXISTING update lane
+        (ui.updates.refresh_cve, the settings page's own worker)."""
+        if self._refreshing:
+            return
+        self._refreshing = True
+        btn.set_sensitive(False)
+
+        def work():
+            try:
+                from ui.updates import refresh_cve
+                rc, msg = refresh_cve()
+            except Exception:
+                rc, msg = -1, ""
+            from gi.repository import GLib as _GLib
+            _GLib.idle_add(self._after_cve_refresh, rc, msg)
+            return False
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _after_cve_refresh(self, rc, msg=""):
+        self._refreshing = False
+        self.refresh_adv.set_sensitive(True)
+        note = ("the advisory cache was read again"
+                if rc == 0 else
+                f"the advisory refresh did not finish ({msg or 'no answer'})")
+        self.coverage_lbl.set_text(note)
+        self.refresh()
+        return False
+
+    # -------------------------------------------------------- refresh
+    def refresh(self, snap=None) -> None:
+        """Paint from the files refresh already owns (the CVE cache, the
+        watch file, run history and scan-live); no new reads invented."""
+        dd = getattr(self._win, "data_dir", "") or "."
+        raw = cve_rows(dd)
+        self._advisories = list(raw or [])
+        self._repaint_wall(dd)
+        self._repaint_runs(dd)
+        self._repaint_meta(dd)
+        self._sync_filter_counts()
+
+    # -------------------------------------------------------- the wall
+    def _filtered(self, dd):
+        rows = []
+        for r in self._advisories:
+            if not isinstance(r, dict):
+                continue
+            if self._sev and _sev_words(r) != self._sev:
+                continue
+            if self._tool and str(r.get("tool") or "") != self._tool:
+                continue
+            if self._fixable and ptp_cross_join(
+                    pathlib.Path(dd), r.get("tool")) is None:
+                continue
+            rows.append(r)
+        return rows
+
+    def _repaint_wall(self, dd) -> None:
+        while (c := self._wall_rows.get_first_child()) is not None:
+            self._wall_rows.remove(c)
+        raw = cve_rows(dd)
+        if raw is None:
+            self.coverage_lbl.set_text(
+                "No advisory cache on file yet - the advisory list has "
+                "never been fetched; the Refresh button reads it now.")
+            return
+        self.coverage_lbl.set_text(coverage_line(dd, raw))
+        if not raw:
+            quiet = Gtk.Label(xalign=0, wrap=True)
+            quiet.set_text("no active advisory for this machine's tools")
+            quiet.set_xalign(0)
+            self._wall_rows.append(quiet)
+            return
+        for r in self._filtered(dd):
+            self._wall_rows.append(self._advisory_row(r))
+
+    def _advisory_row(self, rule: dict) -> Gtk.Box:
+        """One wall row: severity tone, the affected tool in its own
+        words, the flaw, and the Patch control. Disabled, because no
+        apt lane exists - the tooltip says so instead of pretending."""
+        sev = _sev_words(rule)
+        ink = severity_colour(_rule_tone(float(rule.get("score") or 0)))
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        chip = Gtk.Label(label=sev)
+        chip.add_css_class("gw-sev")
+        chip.set_size_request(88, -1)
+        chip.set_markup(
+            f"<span color='{ink}' weight='700'>{sev}</span>")
+        row.append(chip)
+        text = Gtk.Label(xalign=0, wrap=True, selectable=True)
+        text.set_hexpand(True)
+        text.set_max_width_chars(96)
+        head = (str(rule.get("cve") or "?")
+                + f" (score {rule.get('score')} {sev}) "
+                + f"affects {_tool_words(rule.get('tool'))}")
+        summary = str(rule.get("summary") or "")
+        text.set_markup(
+            escape(head) + (": " + escape(summary) if summary else ""))
+        row.append(text)
+        patch = Gtk.Button(label="Patch")
+        patch.add_css_class("gw-mini")
+        patch.set_sensitive(False)
+        patch.set_tooltip_text(_PATCH_TIP)
+        row.append(patch)
+        return row
+
+    # ---------------------------------------------------- the run cards
+    def _repaint_runs(self, dd) -> None:
+        from ui.scanview import STATE_WORDS, TITLES, read_history, \
+            read_live, when_label
+        while (c := self._runs_body.get_first_child()) is not None:
+            self._runs_body.remove(c)
+        cards = []
+        live = read_live(dd) or {}
+        if live.get("state") in ("running",):
+            finds = int(live.get("real_findings") or 0)
+            cards.append((
+                TITLES.get(live.get("key"), "Scan"),
+                (f"{finds} finding{'s' if finds != 1 else ''} so far - "
+                 "scanning now")))
+        for doc in read_history(dd, limit=_RUN_HISTORY_LIMIT):
+            state = str(doc.get("state") or "done")
+            finds = int(doc.get("real_findings") or 0)
+            failed = [k for k, v in (doc.get("scanners") or {}).items()
+                      if isinstance(v, dict)
+                      and v.get("state") in ("failed", "interrupted")]
+            when = when_label(doc.get("ended_at") or doc.get("started_at")
+                              or "")
+            if state == "done":
+                tail = (f"{finds} finding{'s' if finds != 1 else ''}"
+                        if finds else "clean" if not failed
+                        else "finished, some scanners did not")
+            else:
+                tail = STATE_WORDS.get(state, state)
+            if failed:
+                tail += f" - {', '.join(failed)} did not finish"
+            cards.append(
+                (f"{TITLES.get(doc.get('key'), 'Scan')} · {when}", tail))
+        if not cards:
+            quiet = Gtk.Label(xalign=0, wrap=True)
+            quiet.set_text("No runs on file yet - run protections now, "
+                           "or start a scan from the Scans page.")
+            quiet.add_css_class("gw-meta")
+            self._runs_body.append(quiet)
+            self.runs_card.set_visible(False)   # bug-9: no empty card
+            return
+        self.runs_card.set_visible(True)
+        for head_text, tail in cards:
+            card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            card.add_css_class("gw-run-card")
+            head = Gtk.Label(label=head_text, xalign=0, wrap=True)
+            head.add_css_class("gw-meta")
+            head.set_xalign(0)
+            card.append(head)
+            meta = Gtk.Label(label=tail, xalign=0)
+            meta.set_ellipsize(Pango.EllipsizeMode.END)
+            meta.add_css_class("gw-page-meta")
+            meta.set_xalign(0)
+            card.append(meta)
+            self._runs_body.append(card)
+
+    def _repaint_meta(self, dd) -> None:
+        n = len(self._advisories)
+        if not n:
+            self.strip_meta.set_text(
+                "no active advisory now - the scans keep the word")
+            return
+        self.strip_meta.set_text(
+            f"{n} active advisor"
+            f"{'y' if n == 1 else 'ies'} named below - the wall carries "
+            "the details")
+
+    # ------------------------------------------------------ the filters
+    def _sync_filter_counts(self) -> None:
+        dd = getattr(self._win, "data_dir", "") or "."
+        tool_model = self._tool_pick.get_model()
+        tools = sorted({str(r.get("tool") or "") for r in self._advisories
+                        if r.get("tool")})
+        wanted = ["All tools"] + tools
+        if tool_model is not None and tool_model.get_n_items() \
+                != len(wanted):
+            fresh = Gtk.StringList()
+            for word in wanted:
+                fresh.append(word)
+            self._tool_pick.set_model(fresh)
+            self._tool_pick.set_selected(0)
+        shown = len(self._filtered(dd))
+        self._adv_counts.set_text(f"{shown} of {len(self._advisories)} "
+                                  "advisories shown")
+
+    def advisory_count(self) -> int:
+        dd = getattr(self._win, "data_dir", "") or "."
+        return len(self._filtered(dd))
+
+    def set_severity_filter(self, sev) -> None:
+        self._sev = str(sev or "") or None
+        self._repaint()
+        self._sync_filter_counts()
+
+    def set_tool_filter(self, tool) -> None:
+        self._tool = str(tool or "") or None
+        self._repaint()
+        self._sync_filter_counts()
+
+    def set_fixable_filter(self, want) -> None:
+        self._fixable = bool(want)
+        self._repaint()
+        self._sync_filter_counts()
+
+    def _repaint(self) -> None:
+        dd = getattr(self._win, "data_dir", "") or "."
+        self._repaint_wall(dd)
+
+    def _on_sev_pick(self, _dd, _ps) -> None:
+        try:
+            model = self._sev_pick.get_model()
+            idx = int(self._sev_pick.get_selected())
+            word = str(model[idx]) if 0 <= idx < model.get_n_items() \
+                else None
+        except (TypeError, IndexError):
+            word = None
+        self._sev = None if not word or word.startswith("All ") else word
+        self._repaint()
+        self._sync_filter_counts()
+
+    def _on_tool_pick(self, _dd, _ps) -> None:
+        try:
+            model = self._tool_pick.get_model()
+            idx = int(self._tool_pick.get_selected())
+            word = str(model[idx]) \
+                if 0 < idx < model.get_n_items() else None
+        except (TypeError, IndexError):
+            word = None
+        self._tool = word
+        self._repaint()
+        self._sync_filter_counts()
+
+    def _on_fixable(self, _btn) -> None:
+        self._fixable = bool(self._fixable_pick.get_active())
+        self._repaint()
+        self._sync_filter_counts()
