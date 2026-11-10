@@ -101,6 +101,29 @@ def _never_escalate(monkeypatch):
     monkeypatch.setattr(subprocess, "run", guard(subprocess.run))
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _hermetic_stale_guard():
+    """GUI tests must not depend on the live daemon's heartbeat age.
+
+    The dashboard's stale-snapshot guard shows a waiting panel whenever
+    status.json's stamp is older than ui.homepage's 90 s law — and a test
+    run meets that whenever the machine's daemon is idle or wedged, which
+    would turn the whole suite environment-dependent. It is session-scoped
+    ON PURPOSE: the module-scoped MainWindow fixtures boot before any
+    function-scoped fixture could patch. The guard's own pins
+    (tests/test_dock_host.py) restore the real predicate captured at
+    import time, so the threshold and the None/missing branch stay
+    product-pinned there."""
+    try:
+        import ui.window as W
+        real = W.snapshot_stale
+        W.snapshot_stale = lambda *a, **k: False
+        yield
+        W.snapshot_stale = real
+    except Exception:                     # noqa: BLE001 — not a GUI run
+        yield
+
+
 @pytest.fixture
 def assume_kernel_modules(monkeypatch):
     """Pretend nfnetlink_queue/nft_queue are loaded.

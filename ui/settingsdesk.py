@@ -529,7 +529,9 @@ class SettingsDeskMixin:
         page.append(body)
         self._refresh_trust()
         self._refresh_apps()
-        return page
+        # The pane desk's controls live in its own rows, so the dock gets
+        # no groups (rebuild round 2, task 3's builder shape).
+        return page, []
 
     @staticmethod
     def _settings_section(*cards):

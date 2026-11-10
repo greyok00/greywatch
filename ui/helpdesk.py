@@ -93,7 +93,9 @@ class HelpDeskMixin:
         body.append(index)
         body.append(stack)
         page.append(body)
-        return page
+        # The help index-and-pane keeps its controls in the pane; the dock
+        # gets no groups (rebuild round 2, task 3's builder shape).
+        return page, []
 
     def _help_start(self):
         """Where each page is and what it is for, in one glance."""

@@ -19,7 +19,8 @@ from ui.cards import SCAN_MODES
 from ui.scanview import read_live, read_history
 from ui.desk import aperture
 from ui.eventclock import attach as clock_attach, present_now
-from ui.homepage import unread_notes as home_unread
+from ui.dock import DockHost
+from ui.homepage import STALE_S, unread_notes as home_unread
 from ui.toolicons import icon_name as tool_icon
 from ui.settings import (TrustList, PausedStore, LearningStore,
                          FirewallModeStore)
@@ -33,6 +34,44 @@ import greywatch_daemon as daemon_mod
 
 DATA_DIR = daemon_mod.DATA_DIR
 PAINT_MERGE_MS = 250
+
+# The stale-snapshot guard's stack page (the one centered waiting panel)
+# and its dock side.
+WAITING_KEY = "_waiting"
+
+
+def snapshot_stale(updated) -> bool:
+    """True when no digest is on file, or the one on file is older than
+    the 90 s staleness law ui.homepage already carries for the Home
+    verdict. One clock, two surfaces, no drift.
+
+    The daemon publishes a parseable ISO stamp in every snapshot it
+    writes, so a stamp that cannot be parsed is a broken digest and waits
+    like a missing one. GUI tests disarm the guard window-wide (conftest's
+    `_hermetic_stale_guard`) because a test run must not depend on the
+    live daemon's heartbeat age; the pins in tests/test_dock_host.py
+    restore this predicate and cover both branches."""
+    if updated is None:
+        return True
+    try:
+        stamp = _dt.datetime.fromisoformat(str(updated))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=_dt.timezone.utc)
+        return (_dt.datetime.now(_dt.timezone.utc)
+                - stamp).total_seconds() > STALE_S
+    except ValueError:
+        return True
+
+
+def dock_width(content_w, override=None) -> int:
+    """The control dock's fixed width: about a quarter of the page area,
+    floored at 220 (the groups must hold a control) and capped at 320 (a
+    4K panel never balloons the dock into a second page). A stored pick
+    from the UI settings file wins, clamped to a sane band; the pure law
+    is what the tests pin."""
+    if override is not None:
+        return max(200, min(400, int(override)))
+    return max(220, min(320, round(content_w * 0.26)))
 
 # Recent-activity table geometry. The header row in `_security_view` draws
 # plain labels over these widths, so they are shared rather than guessed in
@@ -130,6 +169,15 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         self.stack.set_hexpand(True)
         self.stack.set_vexpand(True)
         body.append(self.stack)
+
+        # The frame (rebuild round 2, task 3): rail | page feed | dock.
+        self.dock = DockHost(self)
+        body.append(self.dock)
+        self._size_dock()
+        self._dock_groups: dict = {}
+        self._stale = False
+        self._stale_prior = None
+        self._waiting = None
 
         self._views = {}
         self._theme_store = ThemeStore(self)
@@ -280,9 +328,14 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         key = _LEGACY_PAGE.get(key, key)
         if key not in self._builders:
             key = "overview"
-        if key not in self._views:
-            self._add_view(key, self._builders[key]())
-        self.stack.set_visible_child_name(key)
+        self._mount(key)
+        if self._stale:
+            # The waiting panel keeps the stack; the click is remembered
+            # so the recovery lands on the page the user picked.
+            self._stale_prior = key
+        else:
+            self.stack.set_visible_child_name(key)
+        self.dock.set_page(key, self._dock_groups.get(key, []))
         for k, b in self._tabs.items():
             # The ten-page menu routes several rows onto one page (the
             # Care rows all serve Services), so a row is active when the
@@ -302,18 +355,20 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
     def _overview_view(self):
         """Overview (rebuild Phase 3): the anchor desk - ribbon, advisory
         strip, two-lane feed, assistant terminal, action gate rows.
-        Reads only the daemon's published digest."""
+        Reads only the daemon's published digest. Its controls live in
+        the feed and the gate, so the dock gets nothing."""
         from ui.console import OverviewPage
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroller.set_vexpand(True)
         self.overview_page = OverviewPage(win=self)
         scroller.set_child(self.overview_page)
-        return scroller
+        return scroller, []
 
     def _services_view(self):
         """Services (rebuild Phase 3): lane two - scan actions, the scan
-        console, the tool grid, Service Healer rows. Lifecycle only."""
+        console, the tool grid, Service Healer rows. Lifecycle only; the
+        actions are the feed's own rows, no dock groups."""
         from ui.toolhealth import ServicesPage
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -321,11 +376,13 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         page = ServicesPage(win=self)
         scroller.set_child(page)
         self.services_page = page
-        return scroller
+        return scroller, []
 
     def _auditlog_view(self):
         """The Activity Log page (rebuild Phase 4): three tabs over the
-        suite's history, sharing one filter."""
+        suite's history. The tab strip stays in the feed; the shared
+        filter lives in the dock, so a long history never scrolls the
+        search away."""
         from ui.auditlog import ActivityLogPage
         page = ActivityLogPage(win=self)
         scroller = Gtk.ScrolledWindow()
@@ -333,7 +390,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         scroller.set_vexpand(True)
         scroller.set_child(page)
         self.auditlog_page = page
-        return scroller
+        return scroller, [("Search", [page._search])]
 
     def _defense_view(self):
         """The network defense desk (wave D): blocked addresses, Block Reviewer
@@ -341,10 +398,11 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         status digest since the ledger and event store stay root-only."""
         from ui.defense import DefenseView
         self.defense_view = DefenseView(win=self)
-        return self.defense_view
+        return self.defense_view, []
 
     def _build_all(self):
         self._views = {}
+        self._dock_groups = {}
         # The four rail pages, plus the panes Settings' related-open and
         # the footer reach (logs, diagnostics, help). Pages build on
         # demand — _show adds them — so a rail click only pays for the
@@ -357,7 +415,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
                           "settings": self._settings_view,
                           "logs": self._logs_view,
                           "help": self._help_view}
-        self._add_view("overview", self._builders["overview"]())
+        self._mount("overview")
 
     def _add_view(self, key, widget):
         # One cap and one center for every page (ui/desk.aperture): with
@@ -367,6 +425,21 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         shown = aperture(widget)
         self.stack.add_named(shown, key)
         self._views[key] = shown
+
+    def _mount(self, key):
+        """Build one page unless it already stands. The builder returns
+        (content, dock_groups): the content becomes the pane stack's page,
+        the groups wait for _show to hand them to the dock, so a page's
+        controls live in the dock and only its feed scrolls."""
+        if key in self._views:
+            return
+        built = self._builders[key]()
+        if isinstance(built, tuple):
+            content, groups = built
+        else:
+            content, groups = built, []   # a builder not yet docked
+        self._add_view(key, content)
+        self._dock_groups[key] = groups
 
     @staticmethod
     def _page_box(spacing=None):
@@ -381,8 +454,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         return box
 
     def _ensure_view(self, key):
-        if key not in self._views:
-            self._add_view(key, self._builders[key]())
+        self._mount(key)
 
     def _sync_selection_buttons(self):
         """The dossier's Pause/Resume/Details act on the selection: dim them
@@ -757,6 +829,15 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         for key, widget in list(self._views.items()):
             self.stack.remove(widget)
             del self._views[key]
+        # The rebuild recreates every page; the pages' dock groups describe
+        # the OLD widgets, so they drop with the views.
+        self._dock_groups = {}
+        # While stale the stack shows the waiting panel; the voice flip
+        # must come back to the page the user was on, not to "_waiting".
+        if getattr(self, "_stale", False):
+            visible = getattr(self, "_stale_prior", None) or "overview"
+            if visible not in self._builders:
+                visible = "overview"
         # The tab bar is built once, so its glyphs keep the OLD voice's
         # colours after a switch unless they are told to repaint.
         for sym in getattr(self, "_symbols", {}).values():
@@ -886,13 +967,93 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
             m.connect("changed", lambda *_a: self._schedule_paint())
             self._monitors.append(m)
 
+    def _pill(self, pill, pill_state):
+        """The header pill carries one truth per cycle: the verdict, or
+        the guard's wait. Warn styling travels with the words."""
+        if getattr(self, "header_pill", None) is None:
+            return
+        if isinstance(self.header_pill, Gtk.Button):
+            self.header_pill.set_label(pill)
+        else:
+            self.header_pill.set_text(pill)
+        for cls in ("ok", "warn", "fail"):
+            self.header_pill.remove_css_class(cls)
+        self.header_pill.add_css_class(pill_state)
+
+    def _waiting_enter(self):
+        """The stale-snapshot surface: while the daemon's digest is
+        missing or older than the 90 s law, the page stack IS one centered
+        waiting panel — the header keeps the rail, the pill says what is
+        being waited for. The page the user was on (and any page picked
+        while waiting) is remembered, because refresh paints straight
+        through the instant a fresh snapshot lands."""
+        self._stale = True
+        prev = self.stack.get_visible_child_name()
+        if prev and prev != WAITING_KEY and prev in self._views:
+            self._stale_prior = prev
+        if self._waiting is None:
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            box.add_css_class("gw-waiting")
+            big = Gtk.Label(label="Waiting for the daemon")
+            big.add_css_class("gw-headline")
+            meta = Gtk.Label(
+                wrap=True,
+                label=("the last snapshot is older than "
+                       f"{int(STALE_S)} seconds - this screen comes "
+                       "back the moment the daemon reports"))
+            meta.add_css_class("gw-page-meta")
+            box.append(big)
+            box.append(meta)
+            box.set_halign(Gtk.Align.CENTER)
+            box.set_valign(Gtk.Align.CENTER)
+            box.set_margin_start(metrics.PAGE_X)
+            box.set_margin_end(metrics.PAGE_X)
+            self._waiting = box
+            self.stack.add_named(box, WAITING_KEY)
+        self.stack.set_visible_child_name(WAITING_KEY)
+        self._pill("Waiting for the daemon", "warn")
+
+    def _waiting_leave(self):
+        """A fresh digest arrived: the stack is the user's pages again,
+        on the page that was shown before the wait — or the one they
+        picked while waiting."""
+        self._stale = False
+        child = self.stack.get_child_by_name(WAITING_KEY)
+        if child is not None:
+            self.stack.remove(child)
+        self._waiting = None
+        prior = self._stale_prior or "overview"
+        self._stale_prior = None
+        if self.stack.get_child_by_name(prior) is None:
+            prior = "overview"
+        self.stack.set_visible_child_name(prior)
+
+    def _size_dock(self):
+        """The dock is fixed at its quarter law (never collapsed), the
+        same shape of law as the rail's five percent. Re-derived on the
+        tick, so a user-resized window keeps the share."""
+        width = self.get_allocated_width() or metrics.window_size()[0]
+        self.dock.set_size_request(dock_width(width, self._dock_pref()), -1)
+
+    def _dock_pref(self):
+        """The stored dock-width pick from the UI settings file. Absent,
+        unreadable or zero falls to the pure law (dock_width)."""
+        try:
+            from ui.themes import SETTINGS_PATH
+            cfg = json.loads(pathlib.Path(SETTINGS_PATH).read_text())
+            return int(cfg.get("dock_width") or 0) or None
+        except (OSError, ValueError, TypeError):
+            return None
+
     def _periodic_refresh(self):
         from ui import shell
         # The rail is fixed at its five-percent law (never collapsed); the
         # width re-derives on this tick so a user-resized window keeps the
-        # rail at its share without any collapse step.
+        # rail at its share without any collapse step. The dock carries
+        # the same law at its quarter width.
         self.rail_bar.set_size_request(
             shell.rail_size(self.get_allocated_width()), -1)
+        self._size_dock()
         self.refresh()
         return True
 
@@ -923,6 +1084,16 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
             events = []
         if not events:                    # the event store is root-only (0600)
             events = snap.get("recent") or []   # → the daemon's public digest
+        # The stale-snapshot guard (rebuild round 2, task 3): the app
+        # never paints a verdict over a dead snapshot. Older than the
+        # 90 s law — or no digest at all — every page gives way to the
+        # one centered waiting panel; a fresh snapshot paints straight
+        # through again, file monitor or 5 s tick whichever lands first.
+        if snapshot_stale(snap.get("updated")):
+            self._waiting_enter()
+            return
+        if self._stale:
+            self._waiting_leave()
         # The Defense page repaints only while shown: its armor probes run
         # subprocesses and must not cost every 5-second cycle.
         if self.stack.get_visible_child_name() == "defense" \
@@ -979,14 +1150,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         # tally lives in the meta line below it rather than shrinking into
         # the same sentence. The Protections page builds on demand, so its
         # headline may not exist until the tab is first opened.
-        if getattr(self, "header_pill", None) is not None:
-            if isinstance(self.header_pill, Gtk.Button):
-                self.header_pill.set_label(pill)
-            else:
-                self.header_pill.set_text(pill)
-            for cls in ("ok", "warn", "fail"):
-                self.header_pill.remove_css_class(cls)
-            self.header_pill.add_css_class(pill_state)
+        self._pill(pill, pill_state)
         # Rank by what needs a human, not by registry order: anything failed
         # or unverified sits at the top, paused next, healthy last. A flat
         # alphabetical table makes the one broken tool the 14th row.

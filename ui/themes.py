@@ -526,6 +526,27 @@ switch:checked slider {{ background-color: #ffffff; }}
   text-transform: uppercase; color: {mute}; padding: 12px 10px 4px;
 }}
 
+/* --- the fixed control dock ------------------------------------------ */
+/* The frame's right pane (rebuild round 2, task 3): the same sidebar
+   surface as the rail, mirrored to the right edge. Group titles are
+   eyebrows; the flash is the accent-soft beat a hand-off points at. */
+.gw-dock {{
+  background-color: {sidebar}; border-left: 1px solid {hair};
+  padding: 10px 10px 14px;
+}}
+.gw-dock-group {{
+  background-color: {panel}; border: 1px solid {hair};
+  border-radius: {radius}; padding: 10px;
+}}
+.gw-dock-title {{
+  font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: {mute};
+  border-radius: 4px; padding: 2px 0;
+}}
+.gw-dock-title.gw-dock-flash {{
+  background-color: {accent_soft}; color: {accent};
+}}
+
 /* --- wizard step rail ----------------------------------------------- */
 /* Gtk.Assistant's rail is its own surface (a Box carrying Adwaita's
    .sidebar class), so it painted Adwaita's grey while the page content

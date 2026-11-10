@@ -128,8 +128,11 @@ class LogsDeskMixin:
         box.set_vexpand(True)
         self._refresh_logs()
         # The log table pages inside its own card; the page itself never
-        # scrolls, so its filter row can never be pushed off-screen.
-        return box
+        # scrolls, so its filter row can never be pushed off-screen. The
+        # filter and the clear action live IN the dock (rebuild round 2,
+        # task 3): raw-rows stay the feed's business.
+        return box, [("Filter", [self.logs_pick]),
+                     ("Actions", [clear_btn])]
 
     def _log_row_tooltip(self, view, x, y, kb, tip):
         """Every row announces its fix card where the pointer is: the

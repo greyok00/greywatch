@@ -151,7 +151,11 @@ class ActivityLogPage(Gtk.Box):
             Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
         switch = Gtk.StackSwitcher()
         switch.set_stack(self._stack)
-        page = self._win._logs_view()          # security events (existing)
+        # security events (the window's raw-logs desk): a docked builder
+        # now returns (content, dock groups); a plain widget stays valid
+        # for a window shape that carries no dock.
+        built = self._win._logs_view()
+        page = built[0] if isinstance(built, tuple) else built
         self._stack.add_titled(page, "events", "Security events")
 
         self._decisions = _DecisionsTab(_data_dir())
