@@ -305,11 +305,24 @@ def test_page_has_no_whole_page_scroller(key, fit_win):
 @pytest.mark.parametrize("key", sorted(list(PAGE_INNER.keys())))
 def test_page_scrollers_are_declared_inner_containers(key, fit_win):
     page = _painted(fit_win, key)
-    undeclared = [s.identity for s in _scrollers(page)
+    undeclared = [s for s in _scrollers(page)
                   if not s.declared(PAGE_INNER[key])]
-    assert not undeclared, (
+
+    def _path(scroller):
+        """The page ancestry of one undeclared scroll, so a foreign or
+        version-dependent container names itself instead of hiding
+        behind '<unnamed>'."""
+        chain = [scroller.widget]
+        node = chain[0].get_parent()
+        while node is not None and node is not page:
+            chain.append(node)
+            node = node.get_parent()
+        return "/".join(type(w).__name__ for w in reversed(chain))
+
+    detail = [f"{s.identity} ({_path(s)})" for s in undeclared]
+    assert not detail, (
         f"page '{key}' scrolls in a container it never declared as its "
-        f"inner list: {undeclared} - declare the legitimate inner "
+        f"inner list: {detail} - declare the legitimate inner "
         f"containers in PAGE_INNER, or stop scrolling the page")
 
 
