@@ -211,6 +211,19 @@ Curated sheet per tool (what its warnings mean, command surfaces, heuristics: wh
 
 **Files:** Modify `ui/window.py` (badge reads the ONE published pending list — same source `decisions.jsonl` published count the gate/drawer render; whole-file fallback stays behind `daemon unpublished` state), recreate `tests/test_gw215_badge_one_list.py` against the new sources; re-root `tests/test_gw211_ui_errors.py` (empty section laws per page). Commit `fix carryover: one-list badge + empty-section laws re-pinned`.
 
+### Task 7a (fit-law sweep): every shipped page FITS the window
+
+The owner's 2026-11-10 law (spec amendment): whole-page scroll is deleted;
+pages fit the window; only inner containers scroll (event table, console,
+in-card editor); wizard and dialogs behave the same. Retrofit EVERY page
+from Tasks 3-12 as they ship (per-page ScrolledWindow wrappers removed;
+sections compress/share width at 1080p with rail + dock present), then
+pin each page: `tests/test_fit_law.py` sweeps all `_builders` with a
+viewport of rail+dock+1080p height and asserts the page's top-level stack
+has no outer ScrolledWindow and its natural layout height fits, with
+inner lists allowed their own scrollers. Wizard dialog included. Done at
+Task 16 with the screenshots (1080p check at the real window size).
+
 ### Task 16: Cython twins + install + screenshot verification
 
 **Files:** `build-cython.sh` run once; install built `.so` set into `/opt/greywatch/ui` BESIDE the plain `app.py`/`tray_helper.py` stubs (owner runs the guarded `~/tmp/gw-deploy-fixwave.sh` — script's fingerprint guard is now OBSOLETE and must be updated: after the rebuild ships, remove the legacy-fingerprint refusal and re-point /opt at the rebuild); screenshot each page at the owner's real window size (HiDPI) with a scripted GTK grab; verify rail 5% + every page's dock pulse. Owner verdict gate before calling done.
