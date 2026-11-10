@@ -34,10 +34,10 @@ def db_tools():
             title = (rec.get("t") or rec.get("title") or "")
             title = title.replace("MAN PAGE: ", "").replace(" - part", "|part")
             head = title.split("|")[0].strip().lower()
-            tools.add(head)
-            for tool in title.replace("MAN PAGE:", "").split("|"):
-                tools.add(tool.strip().lower())
-    return {t for t in tools if t in DIGEST_TOOLS}
+            for tool in DIGEST_TOOLS:
+                if head == tool or head.split(" - ")[0] == tool:
+                    tools.add(tool)
+    return tools
 
 
 def check(digests_dir=DIGESTS, tools=DIGEST_TOOLS, out=sys.stdout):
