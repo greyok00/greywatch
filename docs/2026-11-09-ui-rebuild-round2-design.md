@@ -114,3 +114,66 @@ Recreated pins (gw215-equivalent badge pins, gw211 empty-section pins)
 re-rooted to the new page sources; phases land per VISUAL-PLAN-UI §4
 with the rail phase re-verified by screenshot at the owner's actual
 window size (HiDPI included) before install; suite green each phase.
+
+## 8. Visual-first readability (owner directive 2026-11-09: "go for
+visuals first ... bar graphs, tables, charts, images, animations")
+
+Every page is a stack of visually bounded, TITLED sections (cards with
+their subject in the card title), so a page reads by scanning its
+section titles first. Graphics carry what prose-tables did before:
+
+- **Stat tiles.** SuiteCard's row keeps four verdict tiles (tools online,
+  pending decisions, blocked, findings HIGH) with hero numbers.
+- **Bar graphs.** Findings per tool (which tool is the loudest), blocked
+  addresses by cause category, decisions waiting by age bucket. Vertical
+  thin bars, data-end labels on the top bars only, one axis.
+- **Trend lines.** Overview and Activity Log: findings/decisions/blocks
+  as a 24 h / 7 d line chart, one measure per panel (never dual axis),
+  2 px lines, hover tooltip naming the value and time.
+- **Tables.** Blocklist, decisions, events: the detailed rows, sortable,
+  with the §3 action buttons on each row.
+- **Images.** Tool cards carry each tool's logo/glyph; findings carry a
+  severity icon beside the status color (never color alone).
+
+Chart laws (applied, from the dataviz discipline): form follows the
+data's job; status colors (ok/warn/fail) are reserved for state and
+ship with an icon + label; categorical hues come in a fixed order
+derived from the theme's tokens and are VALIDATED at build time with
+the palette validator against the theme's surface in both light and
+dark voices; every chart has a table toggle; text wears ink tokens,
+never series color. Tables and charts both exist for the same data —
+the chart is the read, the table is the audit.
+
+## 9. Guided attention (owner example: "logs page ... right-side control
+menu ... flash highlight the title of that area or a pointer arrow")
+
+Two primitives, built once, reused everywhere:
+
+- **Highlight pulse.** A section's card title flashes with an accent-soft
+  glow (about 600 ms, twice), then settles. Never re-fires on the same
+  target within a cycle.
+- **Pointer.** A small arrow appears pointing at the target area, holds
+  about 1.5 s, fades. Drawn on the app surface so it can point at any
+  card, rail row, or button.
+
+Triggers:
+
+1. **Page open.** Opening a page pulses its primary section and points
+   at the control area that acts on that page's subject (the owner's
+   example: click Activity Log -> the right-side control menu's title
+   pulses and the arrow draws the eye to it). Every page declares its
+   own entry target.
+2. **Something arrives.** A new finding/decision/block pulses its
+   section and row; the rail's group title pulses once; the badge ticks.
+3. **An action completes.** The row/section that changed pulses and the
+   result line states what happened ("Allowed chrome — rule saved").
+4. **Guided walkthrough.** Help page can replay a first-visit sequence:
+   per page, each control area highlighted in order with the pointer —
+   the app teaches itself to the user.
+
+Rules: animations are short and interruptible, respect the system
+reduced-motion setting, never block input, never overlap each other
+(one active pulse at a time, newest wins). Each page's entry-target
+declaration is pinned by test (pulse fires on open; pointer targets the
+declared control), and verified by screenshot.
+
