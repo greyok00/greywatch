@@ -313,8 +313,8 @@ class DefenseView(Gtk.Box):
             "psad-tune pins the alert level while it arms; no lane"
             " turns the dial from here yet.")
         # Open config
-        tip = ("the in-card config editor arrives with the tools"
-               " rebuild; for now this hands off to the tools desk.")
+        tip = ("opens the tools page, where this file's raw config"
+               " editor expands inside its tool's card (task 9).")
         self._conf_nft = Gtk.Button(label="nftables rules")
         self._conf_nft.set_tooltip_text(tip)
         self._conf_nft.connect("clicked", self._open_tools)
@@ -346,16 +346,17 @@ class DefenseView(Gtk.Box):
                          "args": [ip]})
 
     def _open_tools(self, _btn):
-        """fw-A honesty: the config-editor lane lands with the tools
-        rebuild (task 9); until then the buttons hand off to the tools
-        desk through the guided router."""
+        """The in-card config-editor lane landed with the tools rebuild
+        (task 9); the buttons hand off to the Tools page, where psad's
+        card carries the raw psad.conf editor through the guided
+        router (the greeting opens the Show group)."""
         w = self._win
         if w is None:
             return
         if hasattr(w, "handoff"):
-            w.handoff("services")
+            w.handoff("tools")
         elif hasattr(w, "_show"):
-            w._show("services")
+            w._show("tools")
 
     # -- data -------------------------------------------------------------
 

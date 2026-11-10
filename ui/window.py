@@ -85,15 +85,15 @@ TIME_W = 104     # "18:35:39" plus breathing room
 # retired page key keep working through _LEGACY_PAGE below and the pane
 # stack. The rebuild (Phase 4) folds the ten-row rail into four pages, so
 # every retired key resolves once, centrally, to the page that absorbed it
-# (the fold-in map: Scans/Protections/Tools/Harden to Services, logs to
+# (the fold-in map: Scans/Protections/Harden to Services, logs to
 # Activity Log, Home to Overview; 'security' and 'deep' were pre-wave-D
-# names for the same Protections page). The round-2 rebuild (task 8)
-# gives the Threat Hunter its page back, so "thunter" is a real builder
-# again, not a legacy alias.
+# names for the same Protections page). The round-2 rebuild gives pages
+# back from the fold-in as their variants land: task 8 un-retired the
+# Threat Hunter ("thunter"), and task 9 gives the Tools page its cards
+# back - both real builders again, not legacy aliases.
 _LEGACY_PAGE = {"home": "overview",
                 "scans": "services", "protect": "services",
-                "tools": "services", "harden": "services",
-                "logs": "auditlog",
+                "harden": "services", "logs": "auditlog",
                 "security": "services", "deep": "services"}
 
 # The settings panes' related-in-suite footers (approved mockup):
@@ -452,6 +452,20 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
             on_navigate=self._show, on_scan=self._hunter_scan)
         return panel, panel.dock_groups()
 
+    def _tools_view(self):
+        """The Tools page (rebuild round 2, task 9, owner t2): one
+        full-width self-contained card per registered tool - lifecycle
+        through the lanes that exist (disabled with the honest reason
+        where none does), its schedule named where it really lives (the
+        systemd unit), and Open config expanding the RAW file INSIDE the
+        card with validate/apply through the config-write lane, then the
+        baseline permafix offer (rkhunter --propupd / aide --update).
+        The dock's Show group carries the all/live-only card filter."""
+        from ui.toolcontrol import ToolControlPage
+        page = ToolControlPage(win=self)
+        self.tools_page = page
+        return page, page.dock_groups()
+
     def _hunter_scan(self, scan_key: str = "full") -> None:
         """The hunter card's scan hand-off: the same validated-key
         request the Scans page's own buttons make - a mode key, never
@@ -475,6 +489,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
                           "auditlog": self._auditlog_view,
                           "defense": self._defense_view,
                           "thunter": self._thunter_view,
+                          "tools": self._tools_view,
                           "settings": self._settings_view,
                           "logs": self._logs_view,
                           "help": self._help_view}
@@ -1171,6 +1186,11 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         if shown == "services" \
                 and getattr(self, "services_page", None) is not None:
             self.services_page.refresh(snap)
+        if shown == "tools" \
+                and getattr(self, "tools_page", None) is not None:
+            # The Tools cards paint only while shown (the cost rule the
+            # Defense page runs): dot, status and the live-only filter.
+            self.tools_page.refresh(snap)
         if shown == "auditlog" \
                 and getattr(self, "auditlog_page", None) is not None:
             self.auditlog_page.refresh(snap)

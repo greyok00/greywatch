@@ -132,15 +132,16 @@ def test_launch_opens_overview_with_ai(win):
 
 def test_care_group_row_routes_resolve(win):
     """Every menu row opens its page through the one legacy map: the
-    four Care rows land on Services, logs joins the Activity Log - and
-    thunter is its own page again (rebuild round 2, task 8: the Threat
-    Hunter's cards returned from the fold-in)."""
+    remaining Care rows land on Services, logs joins the Activity Log -
+    and thunter (task 8) and tools (task 9) are their own pages again
+    through the round-2 rebuild."""
     from ui.window import _LEGACY_PAGE as routes
     win._show("scans")
     pump(6)
     assert win.stack.get_visible_child_name() == "services"
-    for key, page in (("protect", "services"), ("tools", "services"),
-                      ("harden", "services"), ("thunter", "thunter"),
+    for key, page in (("protect", "services"), ("harden", "services"),
+                      ("tools", "tools"),
+                      ("thunter", "thunter"),
                       ("logs", "auditlog")):
         assert routes.get(key, key) == page, key
         win._show(key)
@@ -150,16 +151,16 @@ def test_care_group_row_routes_resolve(win):
 
 
 def test_care_group_lights_as_one_group(win):
-    """The Care menu rows all route to the Services page, and the active
-    row styling follows the shown page, so all four read as the open
-    group; rows of other groups stay dark."""
+    """The Care rows that still serve the Services page light as one
+    group (task 9 un-retired the Tools row), and the active row styling
+    follows the shown page; rows of other groups stay dark."""
     win._show("scans")
     pump(6)
     assert win.stack.get_visible_child_name() == "services"
-    for key in ("scans", "protect", "tools", "harden"):
+    for key in ("scans", "protect", "harden"):
         assert "gw-active" in win._tabs[key].get_css_classes(), key
     for key in ("defense", "thunter", "logs", "settings", "help",
-                "overview"):
+                "overview", "tools"):
         assert "gw-active" not in win._tabs[key].get_css_classes(), key
 
 

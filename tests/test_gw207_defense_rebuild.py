@@ -542,13 +542,16 @@ def test_rules_allow_and_psad_knobs_are_disabled_honestly(tmp_path,
 
 def test_open_config_buttons_hand_off_to_the_tools_page(tmp_path,
                                                         monkeypatch):
+    """Re-rooted for task 9: the in-card config editor now exists on the
+    Tools page, so the Open-config handoff goes there (the psad card
+    carries the raw psad.conf editor)."""
     _stub_probes(monkeypatch)
     v, w = _build(_FakeWin(tmp_path))
     v.dock_groups()
     v._conf_nft.emit("clicked")
     v._conf_psad.emit("clicked")
-    assert w.handoffs == [("services", None, None),
-                          ("services", None, None)]
+    assert w.handoffs == [("tools", None, None),
+                          ("tools", None, None)]
     v.unparent()
 
 

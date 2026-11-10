@@ -97,4 +97,10 @@
     <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
     <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/baseline-update.sh</annotate>
   </action>
+  <action id="com.greywatch.apply.config-write">
+    <description>greywrite stage one allowlisted tool config back to its real path (the previous file is kept beside it as an .old copy, so the write can be undone by hand)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/config-write.sh</annotate>
+  </action>
 </policyconfig>
