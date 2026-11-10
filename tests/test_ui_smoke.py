@@ -81,10 +81,11 @@ def test_unknown_view_key_cannot_grey_the_app(win):
 
 def test_every_tab_switches(win):
     from ui import shell
-    for key in shell.RAIL_KEYS + ("settings", "help"):
+    from ui.window import _LEGACY_PAGE
+    for key in shell.RAIL_KEYS:
         win._show(key)
         pump(5)
-        assert win.stack.get_visible_child_name() == key
+        assert win.stack.get_visible_child_name() == _LEGACY_PAGE.get(key, key)
 
 
 def test_file_watchers_are_wired(win):
@@ -1078,12 +1079,12 @@ def test_appfw_choice_builds_appfw_pages_not_the_ufw_ones():
 def test_baseline_keeps_its_own_page(win):
     # Owner 2026-10-30: the baseline pass is its own page, named
     # Endpoint Hardening — not a card at the bottom of the tool list.
-    # Phase 4 re-root: the page dissolves into the suite; old callers
-    # still saying "harden" land on Services through the one legacy map,
-    # and the key is gone from the rail.
+    # Task 2 re-root: "harden" is a Rail ROW again (the owner's ten-page
+    # menu), still with no page of its own — the legacy map routes it to
+    # Services, the page that absorbed the suite.
     from ui import shell
     assert "harden" not in win._builders
-    assert "harden" not in shell.RAIL_KEYS
+    assert "harden" in shell.RAIL_KEYS
     win._show("harden")
     pump(5)
     assert win.stack.get_visible_child_name() == "services"

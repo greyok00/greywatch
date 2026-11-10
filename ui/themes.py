@@ -870,6 +870,18 @@ button.gw-send:hover {{ background-color: {accent_hover}; }}
   background-color: {fail}; color: #ffffff; font-size: 9px;
   font-weight: 700; border-radius: 999px; padding: 1px 6px; min-height: 0;
 }}
+/* The Overview home row: HEADINGS[0] made clickable - a large title,
+   not a group label; and the sun/moon at the rail's bottom-left. */
+.gw-rail button.gw-rail-home {{ min-height: 36px; padding: 8px 6px; }}
+.gw-rail .gw-rail-home .gw-rail-label {{
+  font-size: 16px; font-weight: 700; color: {ink};
+}}
+.gw-rail .gw-rail-home.gw-active .gw-rail-label {{ color: {accent}; }}
+.gw-voice-toggle {{
+  color: {ink_soft}; margin: 4px 6px 6px 8px; padding: 3px 12px;
+  font-size: 16px; background-color: transparent; border: none;
+}}
+.gw-voice-toggle:hover {{ background-color: {hover}; }}
 
 /* --- Home suite lead: the verdict reads first ---------------- */
 .gw-suite .gw-eyebrow {{ margin-bottom: 4px; }}

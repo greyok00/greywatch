@@ -225,17 +225,42 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         self._theme_store.apply(
             saved_apply_pick(load_setting(), self._theme_store.names()))
 
-    def _rail(self, parent):
-        """The sidebar shell, redrawn for wave D: grouped pages down the
-        left edge (Watch, Defense, Care, System) instead of a plate bar
-        across the top. Rows keep the shell's per-key API _tabs/_badges/
-        _symbols, so unread counts and activation styling stay the same
-        code the tab shell used."""
+    def _toggle_voice(self):
+        """The rail's sun/moon: flip between the two shipped voices
+        (graphite dark, paper light) through the one theme seam -
+        set_active_theme applies through the store, which repaints the
+        CSS provider and persists the pick."""
+        from ui.themes import THEMES, active_theme, set_active_theme
+        names = [n for n in THEMES if n in self._theme_store.names()]
+        if not names:
+            return False
+        try:
+            i = names.index(active_theme())
+        except ValueError:               # unknown/absent pick: go dark->light
+            i = 0
+        nxt = names[(i + 1) % len(names)]
+        if not set_active_theme(nxt, store=self._theme_store):
+            return False
+        # The pages read the voice's tokens through the rebuild; the rail's
+        # drawn glyphs keep the old colours until they are told to repaint.
+        self._retheme()
         from ui import shell
-        self.rail_collapsed = False
+        shell.voice_toggle_sync(self)
+        return True
+
+    def _rail(self, parent):
+        """The sidebar shell, redrawn for rebuild round 2: the owner's
+        ten-page menu - Overview as the large clickable home title, then
+        the Care / Defense / System groups - with the sun/moon voice
+        toggle pinned at the rail's bottom-left. Rows keep the shell's
+        per-key API _tabs/_badges/_symbols, so unread counts and
+        activation styling stay the same code the tab shell used."""
+        from ui import shell
         shell.build_rail(self)
+        shell.set_theme_toggle(self)
         parent.append(self.rail_bar)
-        self.rail_bar.set_size_request(shell.rail_size(self), -1)
+        width = self.get_allocated_width() or metrics.window_size()[0]
+        self.rail_bar.set_size_request(shell.rail_size(width), -1)
 
     def _tab_pick(self, _b, key):
         self._show(key)
@@ -259,7 +284,10 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
             self._add_view(key, self._builders[key]())
         self.stack.set_visible_child_name(key)
         for k, b in self._tabs.items():
-            on = k == key
+            # The ten-page menu routes several rows onto one page (the
+            # Care rows all serve Services), so a row is active when the
+            # page it opens is the page now shown.
+            on = _LEGACY_PAGE.get(k, k) == key
             if on:
                 b.add_css_class("gw-active")
             else:
@@ -860,8 +888,11 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
 
     def _periodic_refresh(self):
         from ui import shell
-        shell.collapse_rail(self, not shell.rail_pinned(self))
-        self.rail_bar.set_size_request(shell.rail_size(self), -1)
+        # The rail is fixed at its five-percent law (never collapsed); the
+        # width re-derives on this tick so a user-resized window keeps the
+        # rail at its share without any collapse step.
+        self.rail_bar.set_size_request(
+            shell.rail_size(self.get_allocated_width()), -1)
         self.refresh()
         return True
 

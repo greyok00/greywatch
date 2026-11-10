@@ -194,17 +194,19 @@ def test_cve_rules_never_patch_anything():
 # ---- the rail data ----------------------------------------------------------
 def test_rail_groups_follow_the_two_system_design():
     from ui import shell
-    # Phase 4: the four-page rail plus the footer pair; the group-tuple
-    # format survives with no heading ("" renders nothing).
-    keys = [k for _g, rows in shell.RAIL for k, _l in rows]
-    assert keys == ["overview", "defense", "services", "auditlog"]
-    footer = [k for _g, rows in (shell.RAIL_FOOTER,) for k, _l in rows]
-    assert footer == ["settings", "help"]
+    # Rebuild round 2 (task 2): the owner's ten-page menu — the Overview
+    # home row plus nine grouped rows; every key resolves in the stack
+    # through the one legacy map.
+    from ui.window import _LEGACY_PAGE
+    keys = [k for group in shell.RAIL for k in group]
+    assert keys == ["scans", "protect", "tools", "harden", "defense",
+                    "thunter", "logs", "settings", "help"]
     # every rail key is unique and resolvable in the pane stack
     assert len(keys) == len(set(keys))
     for k in keys:
-        assert k in ("overview", "defense", "services", "auditlog",
-                     "settings", "help")
+        assert _LEGACY_PAGE.get(k, k) in ("overview", "defense",
+                                          "services", "auditlog",
+                                          "settings", "help")
 
 
 def test_rail_keys_all_have_a_drawn_glyph():

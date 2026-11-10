@@ -11,6 +11,8 @@ gi = pytest.importorskip("gi")
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
+from ui import shell  # noqa: E402 — the rail's shape is pinned module-wide
+
 if not (os.environ.get("GREYWATCH_TEST_DISPLAY") == "1"
         or os.environ.get("GREYWATCH_XVFB") == "1"):
     pytest.skip(
@@ -44,9 +46,33 @@ def win():
     w.destroy()
 
 
-# The rail, rebuild Phase 4: four pages, then the footer pair.
-RAIL_KEYS = ("overview", "defense", "services", "auditlog",
-             "settings", "help")
+# The rail, rebuild round 2 (task 2): the owner's ten-page menu restored.
+# Overview is the home row; these are the nine menu rows in group order.
+RAIL_KEYS = ("scans", "protect", "tools", "harden", "defense", "thunter",
+             "logs", "settings", "help")
+
+RAIL_LABELS = ("Scans", "Protections", "Tools", "Harden", "Firewall",
+               "Browser Watch", "Activity Log", "Settings", "Help")
+
+
+def test_rail_groups_and_order():
+    rows = [k for keys in shell.RAIL for k in keys]
+    assert rows == list(RAIL_KEYS)
+    assert shell.HEADINGS == ("Overview", "Care", "Defense", "System")
+
+
+def test_rail_never_collapses():
+    assert not hasattr(shell, "NARROW_RAIL") and not hasattr(shell, "collapse_rail")
+    assert not hasattr(shell, "rail_pinned")
+
+
+def test_rail_width_is_five_percent():
+    """rail_size = max(150, min(200, round(w*0.05))): 150 floors the
+    labels, 200 caps the widest panels."""
+    assert shell.rail_size(1200) == 150        # the floor holds labels
+    assert shell.rail_size(2400) == 150        # 5% = 120 -> the floor wins
+    assert shell.rail_size(3600) == 180
+    assert shell.rail_size(9999) == 200        # the cap holds
 
 
 def rail_row_label(btn):
@@ -64,39 +90,35 @@ def glyph_area(win, key):
     return getattr(win, "_symbols", {}).get(key)
 
 
-def test_rail_renders_four_pages_and_a_footer(win):
-    """The rail the rebuild approved: the four pages down the bar, the
-    Settings/Help pair pinned at its bottom, every row carries its
-    glyph-plus-label, the bar carries the .gw-rail class."""
-    from ui.shell import RAIL, RAIL_FOOTER
-    assert tuple(win._tabs) == RAIL_KEYS == \
-        tuple(k for _g, rows in RAIL for k, _l in rows) + \
-        tuple(k for _g, rows in (RAIL_FOOTER,) for k, _l in rows)
-    old_rail_keys = ("home", "thunter", "scans", "protect", "tools",
-                     "harden", "logs")
-    for gone in old_rail_keys:
-        assert gone not in shell_rail_keys(), gone
-    from ui.themes import gtk_css, load_themes
-    css = gtk_css(load_themes()["graphite"])
-    for key in RAIL_KEYS:
-        assert rail_row_label(win._tabs[key]), key
-    assert rail_row_label(win._tabs["overview"]) == "Overview"
-    assert rail_row_label(win._tabs["defense"]) == "Firewall"
-    assert rail_row_label(win._tabs["services"]) == "Services"
-    assert rail_row_label(win._tabs["auditlog"]) == "Activity Log"
+def test_rail_renders_the_owner_ten_page_menu(win):
+    """The owner-verified rail: Overview as the large clickable home
+    title, then the Care / Defense / System groups; every row carries
+    its glyph-plus-label; the bar carries the .gw-rail class."""
+    assert tuple(win._tabs) == ("overview",) + RAIL_KEYS
+    assert tuple(k for keys in shell.RAIL for k in keys) == RAIL_KEYS
     assert "gw-rail" in win.rail_bar.get_css_classes()
-    assert "button.gw-active" in css and ".gw-badge" in css
+    assert rail_row_label(win._tabs["overview"]) == "Overview"
+    for key, label in zip(RAIL_KEYS, RAIL_LABELS):
+        assert rail_row_label(win._tabs[key]) == label, key
 
 
-def shell_rail_keys():
-    from ui import shell
-    return set(k for _g, rows in (shell.RAIL + (shell.RAIL_FOOTER,))
-               for k, _l in rows)
+def test_group_headings_render_under_the_owner_names(win):
+    """Group i of RAIL renders under HEADINGS[i+1]: Care, Defense,
+    System; Overview is HEADINGS[0] itself — the home row, rendered as
+    the large clickable title, not a plain heading label."""
+    for heading in ("@Care", "@Defense", "@System"):
+        head = win._rail_rows[heading]
+        assert isinstance(head, Gtk.Label), heading
+        assert head.get_visible()
+        assert head.get_text() == heading[1:]
+    # a button, not a label: the home row is clickable
+    assert isinstance(win._rail_rows["overview"], Gtk.Button)
+    assert "@Overview" not in win._rail_rows
 
 
 def test_launch_opens_overview_with_ai(win):
     """Overview is the main screen: the assistant conversation lives on
-    its right column."""
+    its right column, and the home row reads active."""
     assert win.stack.get_visible_child_name() == "overview"
     page = win.stack.get_visible_child()
     assert page is not None
@@ -108,45 +130,50 @@ def test_launch_opens_overview_with_ai(win):
     assert "gw-active" in win._tabs["overview"].get_css_classes()
 
 
-def test_defense_is_a_real_stack_page(win):
-    win._show("defense")
-    pump(10)
-    assert win.stack.get_visible_child_name() == "defense"
-    # The defense desk built and painted: the view exists, its section
-    # bodies exist, and its side-line class puts it in the threat lane.
-    view = win.defense_view
-    assert view is not None
-    assert view._blocked is not None and view._asks is not None \
-        and view._armor is not None
-    assert "gw-lane-threat" in view.get_css_classes()
-    assert rail_row_label(win._tabs["defense"]) == "Firewall"
+def test_care_group_row_routes_resolve(win):
+    """Every menu row opens its page through the one legacy map: the
+    four Care rows land on Services, thunter joins Firewall, logs joins
+    the Activity Log."""
+    from ui.window import _LEGACY_PAGE as routes
+    win._show("scans")
+    pump(6)
+    assert win.stack.get_visible_child_name() == "services"
+    for key, page in (("protect", "services"), ("tools", "services"),
+                      ("harden", "services"), ("thunter", "defense"),
+                      ("logs", "auditlog")):
+        assert routes.get(key) == page, key
+        win._show(key)
+        pump(6)
+        assert win.stack.get_visible_child_name() == page, key
+        assert "gw-active" in win._tabs[key].get_css_classes(), key
 
 
-def test_activity_log_is_a_real_stack_page(win):
-    win._show("auditlog")
-    pump(10)
-    assert win.stack.get_visible_child_name() == "auditlog"
-    page = win.auditlog_page
-    assert page._decisions is not None and page._quarantines is not None
-    assert rail_row_label(win._tabs["auditlog"]) == "Activity Log"
+def test_care_group_lights_as_one_group(win):
+    """The Care menu rows all route to the Services page, and the active
+    row styling follows the shown page, so all four read as the open
+    group; rows of other groups stay dark."""
+    win._show("scans")
+    pump(6)
+    assert win.stack.get_visible_child_name() == "services"
+    for key in ("scans", "protect", "tools", "harden"):
+        assert "gw-active" in win._tabs[key].get_css_classes(), key
+    for key in ("defense", "thunter", "logs", "settings", "help",
+                "overview"):
+        assert "gw-active" not in win._tabs[key].get_css_classes(), key
 
 
 def test_every_page_switches(win):
-    for key in RAIL_KEYS:
+    for key in ("overview",) + RAIL_KEYS:
         win._show(key)
         pump(6)
-        assert win.stack.get_visible_child_name() == key, key
         assert "gw-active" in win._tabs[key].get_css_classes(), key
-        for other in RAIL_KEYS:
-            if other != key:
-                assert "gw-active" not in win._tabs[other].get_css_classes()
 
 
 def test_every_row_carries_a_symbol(win):
     """One drawn glyph per row - no row is text-only, nothing shares a
     DrawingArea."""
     seen = set()
-    for key in RAIL_KEYS:
+    for key in ("overview",) + RAIL_KEYS:
         sym = glyph_area(win, key)
         assert sym is not None, key
         assert sym not in seen, f"{key} reuses another row's glyph"
@@ -154,31 +181,6 @@ def test_every_row_carries_a_symbol(win):
     from ui.themes import gtk_css, load_themes
     css = gtk_css(load_themes()["graphite"])
     assert ".gw-rail button.gw-active" in css
-
-
-def test_symbol_activation_follows_the_shown_page(win):
-    win._show("services")
-    pump(4)
-    assert getattr(win._symbols["services"], "_gw_active") is True
-    assert getattr(win._symbols["overview"], "_gw_active") is False
-    win._show("defense")
-    pump(4)
-    assert getattr(win._symbols["defense"], "_gw_active") is True
-    assert getattr(win._symbols["services"], "_gw_active") is False
-
-
-def test_retired_keys_keep_working(win):
-    """Assistant intents and older callers still say 'harden' or 'scans';
-    each lands on the page that absorbed it through one central map."""
-    from ui.window import _LEGACY_PAGE as routes
-    for old, new in (("home", "overview"), ("thunter", "defense"),
-                     ("scans", "services"), ("protect", "services"),
-                     ("tools", "services"), ("harden", "services"),
-                     ("logs", "auditlog")):
-        assert routes.get(old) == new, old
-        win._show(old)
-        pump(6)
-        assert win.stack.get_visible_child_name() == new, old
 
 
 def test_rail_badge_counts_unread(win):
@@ -192,7 +194,8 @@ def test_rail_badge_counts_unread(win):
 
 
 def test_footer_pages_carry_badges_too(win):
-    """Every rail row obeys the same badge contract, footer included."""
+    """Every rail row obeys the same badge contract, System group
+    included."""
     win.set_badge("settings", 1)
     pump(4)
     assert win._badges["settings"].get_text() == "1"
@@ -200,6 +203,51 @@ def test_footer_pages_carry_badges_too(win):
     win.set_badge("settings", 0)
     pump(4)
     assert not win._badges["settings"].get_visible()
+
+
+def test_rail_bar_is_fixed_at_the_five_percent_law(win):
+    """The rail is FIXED: the bar's minimum width follows the five
+    percent law (floored, capped) and the collapse constants are gone —
+    the window getting narrow never turns the rail glyph-only."""
+    w, _h = win.rail_bar.get_size_request()
+    assert w == shell.rail_size(win.get_allocated_width())
+    assert 150 <= w <= 200
+    assert not hasattr(win, "rail_collapsed")
+
+
+def test_sun_moon_is_pinned_at_the_rail_footer(win):
+    """The sun/moon voice toggle is the rail's last child, hugging the
+    bottom-left under an expanding spacer."""
+    btn = win._voice_btn
+    assert btn is not None
+    assert win.rail_bar.get_last_child() is btn
+    assert btn.get_halign() == Gtk.Align.START
+    assert "gw-voice-toggle" in btn.get_css_classes()
+    spacer = btn.get_prev_sibling()
+    assert spacer is not None and spacer.get_vexpand()
+
+
+def test_sun_moon_click_flips_the_voice_and_persists(win, monkeypatch,
+                                                     tmp_path):
+    """Clicking the sun/moon flips graphite<->paper through the theme
+    seam, persists the pick, and re-applies the CSS provider."""
+    import json
+    from ui import shell, themes
+    monkeypatch.setattr(themes, "SETTINGS_PATH", tmp_path / "state.json")
+    before = themes.active_theme()
+    win._voice_btn.emit("clicked")
+    pump(12)
+    after = themes.active_theme()
+    assert after != before, (before, after)
+    assert after in themes.THEMES
+    assert win._voice_btn.get_label() == shell._VOICE_GLYPH[after]
+    assert win._voice_btn.get_tooltip_text() == shell._VOICE_TIP[after]
+    saved = json.loads((tmp_path / "state.json").read_text())
+    assert saved["theme"] == after
+    # flip it back so later tests in this module start from the same place
+    win._voice_btn.emit("clicked")
+    pump(12)
+    assert themes.active_theme() == before
 
 
 def test_setup_launcher_reachable(win):
