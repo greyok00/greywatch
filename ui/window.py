@@ -13,8 +13,8 @@ from assistant import audit
 from registry import load_registry
 from ui.models import local_clock, recent_alerts, verdict_words
 from ui.plain import (sentence as plain_sentence, friendly_name, severity_colour as pc_severity_colour)
-from ui.themes import (ThemeStore, dark_default, load_setting,
-                       tab_symbol_active, THEME_CHOICES)
+from ui.themes import (ThemeStore, load_setting, resolve_pick,
+                       tab_symbol_active)
 from ui.cards import SCAN_MODES
 from ui.scanview import read_live, read_history
 from ui.desk import aperture
@@ -57,6 +57,16 @@ _LEGACY_PAGE = {"home": "overview", "thunter": "defense",
 # The settings panes' related-in-suite footers (approved mockup):
 # where/what/Open hand-offs to pages that genuinely hold the subject.
 # Open moves inside Settings when the key is a pane, else across pages.
+
+def saved_apply_pick(picked: str, names: list) -> str:
+    """The theme the startup apply paints for a raw saved pick: the same
+    shared resolver every theme read honors (themes.resolve_pick), so a
+    retired pick (agency, aperture, obsidian, swiss) applies the voice
+    that keeps its light/dark intent and is never overwritten by the
+    dark default; only an absent or unknown pick falls to the dark
+    default, floored by the store's actual sheets."""
+    return resolve_pick(picked, names)
+
 
 class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
                  ToolCtlMixin, Gtk.Window):
@@ -212,10 +222,8 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         parent.append(bar)
 
     def _apply_saved_theme(self):
-        picked = load_setting()
-        name = picked if picked in THEME_CHOICES.values() \
-            else dark_default(self._theme_store.names())
-        self._theme_store.apply(name)
+        self._theme_store.apply(
+            saved_apply_pick(load_setting(), self._theme_store.names()))
 
     def _rail(self, parent):
         """The sidebar shell, redrawn for wave D: grouped pages down the

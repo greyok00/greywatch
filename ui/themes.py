@@ -54,19 +54,31 @@ def dark_default(names: list) -> str:
 _ACTIVE = ""   # module pick; ThemeStore.apply() and set_active_theme() set it
 
 
-def active_theme(path=None) -> str:
+def resolve_pick(picked: str, names: list) -> str:
+    """A raw saved pick resolved onto the shipped voices: retired names
+    (agency, aperture, obsidian, swiss) migrate to the voice that keeps
+    their light/dark intent, a shipped pick stands, and anything absent
+    or unknown falls to the dark default. Floor: the store's actual
+    sheets (`names`), so a sheet-less pick can never be applied."""
+    if picked in _MIGRATE:
+        picked = _MIGRATE[picked]
+    if picked in THEME_CHOICES.values() and picked in names:
+        return picked
+    return dark_default(names)
+
+
+def active_theme(path=None, picked=None) -> str:
     """The theme name currently in charge, resolved from the module pick,
     then the saved setting (migrated off retired names), then the dark
     default. Never a hard-coded legacy value. `path` reads a settings
-    file other than the app's own (tests, and the first-boot probe)."""
+    file other than the app's own (tests, and the first-boot probe);
+    `picked` hands in an already-read raw saved pick (the startup apply)
+    so it resolves through the same migration instead of re-reading."""
     if _ACTIVE:
         return _ACTIVE
-    picked = load_setting(path)
-    if picked in _MIGRATE:
-        return _MIGRATE[picked]
-    if picked in THEME_CHOICES.values():
-        return picked
-    return dark_default(sorted(load_themes()))
+    if picked is None:
+        picked = load_setting(path)
+    return resolve_pick(picked, sorted(load_themes()))
 
 
 def set_active_theme(name: str, store=None, path=None) -> bool:
