@@ -102,6 +102,22 @@ checklist where every row applies itself in place; profile choice
 (recommended / strict / paranoid) lives in the dock and reshapes the
 checklist; recheck-after-apply is a dock toggle.
 
+### Settings = st2, Help = he1 (owner pick, round 2)
+
+Settings: group nav list inside the content area (Appearance /
+Behavior / Assistant / Notifications) with one group at a time on the
+right; the explicit tunables (voice via the rail sun/moon or here, rail
+width %, dock width %, auto-jump toggle, assistant model info, doc
+digest count, notification rules) live on their groups; dock carries a
+settings search. Every change saves on the spot and states itself.
+
+Help: the guided walkthrough IS the page's headline ("Show me around"
+— replays the pulse+pointer tour page by page, auto-runs once on first
+launch, re-runnable), plus the doc-digest library (the same digests the
+assistant reads, human-readable); dock carries About (version/build/
+suite-green) and the assistant's current brain state (heuristics on /
+GPU model on-off).
+
 ## 2. One subject per page (carried, VISUAL-PLAN-UI §5)
 
 Overview = "am I OK right now" (SuiteCard verdict + 4 stat tiles + recent
