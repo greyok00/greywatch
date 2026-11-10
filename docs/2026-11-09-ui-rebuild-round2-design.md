@@ -46,6 +46,16 @@ Entry pulse + pointer (§9 trigger 1) targets the dock's title. Pages
 wider sections (charts/tables dockless) may span center+right when a
 page declares it; that is per-page, never per-tick.
 
+### Activity Log = variant 1 (owner pick, round 2)
+
+ONE chronology table with a tab strip (Everything / Decisions / Blocks /
+Findings) and a time-range control; every row carries the actions of
+whatever produced it; a blocks-per-hour strip below the table; right
+dock groups Filter (query + severity + tool + time), Sources toggles,
+and Actions (live follow, export, clear resolved). On open the dock
+title pulses with the pointer; a row that needs the user glows as the
+hand-off target (§9 + Hand-off).
+
 ## 2. One subject per page (carried, VISUAL-PLAN-UI §5)
 
 Overview = "am I OK right now" (SuiteCard verdict + 4 stat tiles + recent
