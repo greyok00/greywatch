@@ -44,7 +44,7 @@ POINT_OFF = 22        # the arrow sits this far left of the target
 # The greeting table (page_key -> dock group name). Activity Log greets
 # its filter group, the owner's example; pages without a row here open
 # quiet.
-PAGE_ENTRY = {"auditlog": "Search"}
+PAGE_ENTRY = {"auditlog": "Search", "overview": "Snapshot"}
 
 _PULSE = "gw-guided-pulse"
 _POINT = "gw-guided-point"

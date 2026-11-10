@@ -379,17 +379,17 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
                               dock_group=dock_group, row=row)
 
     def _overview_view(self):
-        """Overview (rebuild Phase 3): the anchor desk - ribbon, advisory
-        strip, two-lane feed, assistant terminal, action gate rows.
-        Reads only the daemon's published digest. Its controls live in
-        the feed and the gate, so the dock gets nothing."""
-        from ui.console import OverviewPage
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_vexpand(True)
-        self.overview_page = OverviewPage(win=self)
-        scroller.set_child(self.overview_page)
-        return scroller, []
+        """Overview (round 2, variant 3): the verdict strip over the
+        published digest, one health card per rail group, the trend
+        chart and the Needs-you rows. The builder returns the dock
+        groups (Snapshot / Trend / Ask about) with the page."""
+        from ui.console import build_overview
+        scroller, groups = build_overview(self)
+        page = scroller.get_child()
+        if isinstance(page, Gtk.Viewport):   # the scroller's own wrapper
+            page = page.get_child()
+        self.overview_page = page
+        return scroller, groups
 
     def _services_view(self):
         """Services (rebuild Phase 3): lane two - scan actions, the scan

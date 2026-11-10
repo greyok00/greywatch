@@ -570,8 +570,9 @@ def test_missing_status_snapshot_is_not_reported_as_a_fault(win, monkeypatch):
                 or "none on file" in t) for t in texts(row)), texts(row)
 
 
-def test_theme_switch_on_another_page_keeps_the_activity_feed(win, monkeypatch):
-    """GW-105: a rebuilt Overview must fill its new feed."""
+def test_theme_switch_on_another_page_keeps_the_digest_source(win,
+                                                              monkeypatch):
+    """GW-105: a rebuilt Overview must fill its cards from the digest."""
     import ui.window as W
 
     ev = {"from_tool": "ufw", "severity": "MEDIUM",
@@ -591,11 +592,12 @@ def test_theme_switch_on_another_page_keeps_the_activity_feed(win, monkeypatch):
     pump(10)
     win._retheme()                 # theme changed while Settings is visible
     pump(20)
-    # GW-105 re-rooted (Phase 4): the activity feed is the Overview page's
-    # tool lane now, and a rebuilt Overview must fill it.
+    # GW-105 re-rooted (round 2, task 5): the Overview is the variant-3
+    # page now; the digest's recent list is its one event source and a
+    # retheme on another page must not lose it.
     win._show("overview")
     pump(20)
-    assert len(list(win.overview_page._feed["tool"]._rows)) == 1
+    assert win.overview_page._trend_evs == [ev]
 
 
 def test_verdict_names_the_decisions_waiting(win, monkeypatch):
@@ -615,9 +617,9 @@ def test_verdict_names_the_decisions_waiting(win, monkeypatch):
     assert "all clear" not in words.lower(), words
 
 
-def test_the_chip_tally_does_not_repeat_the_decision_count(win, monkeypatch):
-    """GW-167: the verdict chip's tally line repeated the figure already in
-    the headline ("Needs a look - 50 decisions waiting" over
+def test_the_chip_tally_names_each_count_once(win, monkeypatch):
+    """GW-167: the verdict chip's tally line repeated the figure already
+    in the headline ("Needs a look - 50 decisions waiting" over
     "50 decisions waiting") — the count lands once per tile."""
     import ui.window as W
     snap = {"updated": "2026-10-31T00:00:00+00:00", "pending_decisions": 50,
@@ -630,11 +632,14 @@ def test_the_chip_tally_does_not_repeat_the_decision_count(win, monkeypatch):
     pump(5)
     win.refresh()
     pump(5)
-    # GW-167 re-rooted (Phase 4): the verdict sentence lives in the header
-    # pill once; the Overview ribbon's own card carries the bare count.
+    # GW-167 re-rooted (round 2, task 5): the header pill carries the
+    # verdict sentence once; the strip's tally line is one chip per
+    # count, each naming its own subject, so the decisions figure never
+    # repeats inside the strip.
     assert "50 decisions waiting" in win.header_pill.get_label()
-    card = win.overview_page._stats["pending decisions"]
-    assert card._value.get_text() == "50"
+    chips = [str(c.get_text() or "") for c in win.overview_page._chips]
+    assert [t for t in chips if "decisions" in t] == ["decisions 50"]
+    assert len([t for t in chips if t]) == len(set(chips))
 
 
 def test_saved_theme_is_applied_at_startup(win):

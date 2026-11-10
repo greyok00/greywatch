@@ -158,13 +158,17 @@ def test_full_log_page_hands_its_controls_to_the_dock(win):
 
 
 def test_dock_groups_reset_across_pages(win):
+    """Each page hands its OWN groups: the dock rebuilds on every page
+    switch and never shows one page's controls on another. (Overview's
+    controls are its Snapshot / Trend / Ask-about groups since task 5 of
+    rebuild round 2; the dock-follows-the-page law itself never moved.)"""
     win._show("auditlog")
     pump(5)
     assert win.dock.group_titles() == ["Search"]
     win._show("overview")
     pump(5)
     assert win.dock.current == "overview"
-    assert win.dock.group_titles() == []
+    assert win.dock.group_titles() == ["Snapshot", "Trend", "Ask about"]
 
 
 # -------------------------------------------------------- stale guard

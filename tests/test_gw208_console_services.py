@@ -131,157 +131,56 @@ class _FakeWin:
         pass
 
 
-# ---- Overview page --------------------------------------------------------
+# ---- Overview page (rebuild round 2, task 5: variant-3 re-root) -----------
 class TestOverview:
     def _page(self, store, monkeypatch):
         from ui.console import OverviewPage
-        monkeypatch.setattr("ui.defense.cve_rows", lambda _dd: [1, 2])
         win = _FakeWin(store)
         page = OverviewPage(win=win)
         return page, win
 
-    def test_ribbon_counts_the_published_digest(self, store, monkeypatch):
+    def test_verdict_counts_the_published_digest(self, store, monkeypatch):
         page, _win = self._page(store, monkeypatch)
         page.refresh(page._win._get_status())
-        values = {cap: card._value.get_text()
-                  for cap, card in page._stats.items()}
-        assert values == {"blocked": "1", "tools online": "5 / 10",
-                          "watchlist": "not read",
-                          "CVE rules": "2", "pending decisions": "2"}
+        texts = [str(c.get_text() or "") for c in page._chips]
+        assert any("tools 5 / 10" == t for t in texts)
+        assert any(t.startswith("decisions 2") for t in texts)
+        assert "blocked 1" in texts
 
-    def test_watchlist_tile_counts_covered_projects(self, store,
-                                                    monkeypatch):
-        (store / "ptp-watch.json").write_text(json.dumps(
-            {"ts": "2026-11-06T21:00:00+00:00",
-             "projects": [{"project": "curl"}, {"project": "vllm"}]}))
-        page, _win = self._page(store, monkeypatch)
-        page.refresh(page._win._get_status())
-        assert page._stats["watchlist"]._value.get_text() == "2"
-
-    def test_feed_splits_the_two_lanes(self, store, monkeypatch):
-        page, _win = self._page(store, monkeypatch)
-        page.refresh(page._win._get_status())
-        assert len(list(page._feed["threat"]._rows)) == 1
-        assert len(list(page._feed["tool"]._rows)) == 1
-
-    def test_threat_row_click_paints_lane_truth_and_controls(
-            self, store, monkeypatch):
-        page, win = self._page(store, monkeypatch)
-        page.refresh(page._win._get_status())
-        row = list(page._feed["threat"]._rows)[0]
-        row.emit("clicked")
-        assert page._detail.get_visible()
-        labels = _labels(page._detail)
-        assert any("delete permanently" in t.lower() or "keep" in t.lower()
-                   for t in labels)
-        # tool rows never grow lifecycle controls
-        page._feed["tool"].picked = None
-        tool_row = list(page._feed["tool"]._rows)[0]
-        tool_row.emit("clicked")
-        labels = _labels(page._detail)
-        # the tool row's card carries its own real actions plus the copy
-        # and the page jump - but never a threat control
-        assert "copy details" in [t.lower() for t in labels]
-        assert not any(t in ("block", "quarantine")
-                       for t in (t.lower() for t in labels))
-
-    def test_jump_buttons_route_to_the_page_that_owns_the_lane(
-            self, store, monkeypatch):
-        page, win = self._page(store, monkeypatch)
-        page.refresh(page._win._get_status())
-        shown = []
-        page._win._show = lambda key: shown.append(key)
-        page._feed["tool"].picked = None
-        list(page._feed["tool"]._rows)[0].emit("clicked")
-        jumps = [b for b in list(page._detail._acts)
-                 if b.get_label() == "Open Services"]
-        jumps[0].emit("clicked")
-        page._feed["threat"].picked = None
-        list(page._feed["threat"]._rows)[0].emit("clicked")
-        jumps = [b for b in list(page._detail._acts)
-                 if b.get_label() == "Open Firewall"]
-        jumps[0].emit("clicked")
-        assert shown == ["services", "defense"]
-
-    def test_row_click_scrolls_the_card_into_view(self, store, monkeypatch):
-        """The card paints under two lane feeds, below the fold on a full
-        page; _show_detail schedules a scroll so the click reads."""
-        from gi.repository import GLib
-
-        class _Adj:
-            def __init__(self):
-                self.value = 0.0
-
-            def get_value(self):
-                return 0.0
-
-            def get_page_size(self):
-                return 100.0
-
-            def get_upper(self):
-                return 900.0
-
-            def set_value(self, v):
-                self.value = v
-
-        class _Sc(Gtk.ScrolledWindow):
-            pass
-
-        page, _win = self._page(store, monkeypatch)
-        page.refresh(page._win._get_status())
-        scroller, adj = _Sc(), _Adj()
-        scroller._adj = adj
-        scroller.get_vadjustment = lambda: adj
-        list(page._feed["threat"]._rows)[0].emit("clicked")
-        assert page._detail.get_visible()
-
-        monkeypatch.setattr(page, "_detail_offset", lambda: (600.0, scroller))
-        assert page._scroll_detail_in(0) == GLib.SOURCE_REMOVE
-        assert adj.value == min(600.0 - 12, 800.0)
-
-        # not laid out yet: retry, give up after five, no throw either way
-        monkeypatch.setattr(page, "_detail_offset", lambda: (-1, scroller))
-        assert page._scroll_detail_in(2) == GLib.SOURCE_CONTINUE
-        assert page._scroll_detail_in(9) == GLib.SOURCE_REMOVE
-        monkeypatch.setattr(page, "_detail_offset", lambda: (-1, None))
-        assert page._scroll_detail_in(0) == GLib.SOURCE_REMOVE
-
-    def test_tool_lane_row_carries_its_own_actions(self, store, monkeypatch):
-        page, _win = self._page(store, monkeypatch)
-        page.refresh(page._win._get_status())
-        # pick the one tool-lane row: its card carries the tool's own
-        # real actions (run the scan again), never a threat control
-        list(page._feed["tool"]._rows)[0].emit("clicked")
-        card_labels = [t.lower() for t in _labels(page._detail)]
-        assert any(t.startswith("run ") for t in card_labels)
-        assert not any(t in ("block", "quarantine", "keep")
-                       for t in card_labels)
-        # a service unit also gets its restart, routed through the
-        # standard confirm naming the helper and args
-        _win.by_name = {"clamav": {"name": "clamav",
-                                   "unit": "clamav-daemon.service"}}
-        page._detail.paint(dict(page._win._get_recent()[1]),
-                           page._win._run_log_option)
-        restart_btn = next(b for b in _buttons(page._detail) if str(
-            b.get_label() or "").lower().startswith("restart "))
-        restart_btn.emit("clicked")
-        assert _win._routed["args"] == ["restart", "clamav-daemon.service"]
-
-    def test_advisory_strip_only_advisories(self, store, monkeypatch):
-        page, _win = self._page(store, monkeypatch)
-        page.refresh(page._win._get_status())
-        # the strip renders the advisory's card; the question's helper
-        # button must NOT live here (its route is the gate and the drawer)
-        assert any("gw-card" in c.get_css_classes() for c in
-                   _walk(page._advisories))
-        assert "keep" not in [t.lower() for t in _labels(page._advisories)]
-
-    def test_gate_rows_are_the_published_list(self, store, monkeypatch):
+    def test_needs_you_are_the_published_list(self, store, monkeypatch):
         page, _win = self._page(store, monkeypatch)
         (store / "status.json").write_text(json.dumps(_SNAP))
         page.refresh(page._win._get_status())
-        labels = _labels(page._gate)
+        labels = _labels(page.needs_you_card)
         assert any("keep" in t.lower() for t in labels)
+
+    def test_needs_you_shows_only_the_question(self, store, monkeypatch):
+        """The advisory carries no helper, so it is not an item with
+        buttons: the needs-you section never renders it as one."""
+        page, _win = self._page(store, monkeypatch)
+        (store / "status.json").write_text(json.dumps(_SNAP))
+        page.refresh(page._win._get_status())
+        assert len(page.action_buttons()) == 1   # the quarantine keep only
+
+    def test_needs_you_empty_hides_the_whole_section(self, store,
+                                                     monkeypatch):
+        """The bug-9 law on the variant-3 page: no rows, no section, no
+        title; the empty-looking card never ships."""
+        page, _win = self._page(store, monkeypatch)
+        page.refresh(page._win._get_status())   # nothing published on disk
+        assert not page.needs_you_box.get_visible()
+
+    def test_group_cards_handoff_with_stable_row_keys(self, store,
+                                                      monkeypatch):
+        """The dedupe identity is the stable string key, never a widget;
+        the fake window has no router, so the cards fall through to the
+        window's own show (click-to-jump always works)."""
+        page, _win = self._page(store, monkeypatch)
+        shown = []
+        page._win._show = lambda key: shown.append(key)
+        for key in ("care", "defense", "system"):
+            page.group_cards[key].emit("clicked")
+        assert shown == ["tools", "defense", "logs"]
 
 
 # ---- Services page --------------------------------------------------------

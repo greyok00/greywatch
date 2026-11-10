@@ -223,24 +223,52 @@ def test_home_unreadable_status_is_starting(tmp_path):
 
 # ---------------------------------------------------------------- A5
 
-def test_overview_renders_scan_request_when_present():
-    ov = types.SimpleNamespace(
-        _advisories=Gtk.Box(orientation=Gtk.Orientation.VERTICAL),
-        _on_answer=lambda *a: None)
-    console_mod.OverviewPage._paint_advisories(ov, None, None)
-    assert len(_labels(ov._advisories)) == 1
-    console_mod.OverviewPage._paint_advisories(
-        ov, None, {"present": True, "age_s": 5})
-    texts = [l.get_text() for l in _labels(ov._advisories)]
-    assert any("scan request is on disk" in t for t in texts)
+class _StubWin:
+    """The window surface OverviewPage's constructor touches."""
+    registry = []
+    chat_llm = None
+
+    def _get_status(self):
+        return {}
+
+    def _get_recent(self):
+        return []
+
+    def _assistant_intent(self, *_a, **_k):
+        pass
 
 
-def test_overview_absent_scan_request_renders_nothing():
-    ov = types.SimpleNamespace(
-        _advisories=Gtk.Box(orientation=Gtk.Orientation.VERTICAL),
-        _on_answer=lambda *a: None)
-    console_mod.OverviewPage._paint_advisories(ov, None, None)
-    assert len(_labels(ov._advisories)) == 1
+def _overview(monkeypatch, tmp_path):
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    return console_mod.OverviewPage(win=_StubWin())
+
+
+def test_overview_renders_nothing_for_helperless_rows_and_request(
+        monkeypatch, tmp_path):
+    """A5, variant-3 face (rebuild round 2, task 5): the digest's
+    advisory rows carry no helper, so they are not items with buttons -
+    the needs-you section stays hidden - and an unpicked-up
+    scan_request digest (forward-compat GW-C1) is tolerated with no
+    fake row rendered for it."""
+    page = _overview(monkeypatch, tmp_path)
+    page.refresh({
+        "updated": "2026-11-06T09:00:00+00:00", "recent": [],
+        "scan_request": {"present": True, "age_s": 5},
+        "pending_list": [
+            {"id": "hunter:adv", "source": "browser-watch",
+             "kind": "advisory", "title": "scan finished", "detail": "",
+             "ts": "", "options": [{"id": "note", "label": "Noted"}],
+             "spec": {"id": "hunter:adv", "subject": "scan finished",
+                      "options": [{"id": "note", "label": "Noted"}]}}]})
+    assert not page.needs_you_box.get_visible()
+    assert page.action_buttons() == []
+
+
+def test_overview_absent_keys_render_nothing(monkeypatch, tmp_path):
+    page = _overview(monkeypatch, tmp_path)
+    page.refresh({"updated": "2026-11-06T09:00:00+00:00", "recent": []})
+    assert not page.needs_you_box.get_visible()
+    assert page.action_buttons() == []
 
 
 def test_scanconsole_show_request_appends_once():

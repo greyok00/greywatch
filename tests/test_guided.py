@@ -78,11 +78,13 @@ def test_entry_pulses_dock_title(win, monkeypatch):
 
 def test_page_without_entry_opens_quiet(win, monkeypatch):
     """Pages that declare no entry group see no pulse: entry is a
-    greeting, not a default."""
+    greeting, not a default. (Overview declares one since task 5: its
+    verdict strip arrives through the Snapshot dock group; a page that
+    has no row at all - Settings - is the quiet example now.)"""
     calls = []
     monkeypatch.setattr(guided, "pulse",
                         lambda w, c=calls: calls.append(w))
-    win._show("overview")
+    win._show("settings")
     assert calls == []
 
 
@@ -114,6 +116,10 @@ def test_pulse_beats_replaces_and_never_refires(win, monkeypatch):
     monkeypatch.setattr(guided.GLib, "source_remove",
                         lambda sid: gone.append(sid) or None)
     monkeypatch.setattr(guided, "reduced_motion", lambda: False)
+    # the boot entry greeting (task 5: Overview pulses its Snapshot dock
+    # group) may leave its own real beats in the slot; the pin measures
+    # this test's own scheduling, so start from an empty pulse slot.
+    guided._active.clear()
     a, b = Gtk.Label(label="a"), Gtk.Label(label="b")
     assert guided.pulse(a) is True
     assert "gw-guided-pulse" in a.get_css_classes()
