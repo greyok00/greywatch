@@ -35,6 +35,17 @@ Ten destinations, one subject each. Laws:
   with 14-16 px glyphs, generous vertical rhythm; current-row highlight
   by the theme's accent-soft, not a border.
 
+### 1a. Main layout = three panes (owner pick, visual plan round 2)
+
+Rail (left, §1) + page feed (center) + **fixed right control dock**
+(~26% of content width). The dock groups ONLY the open page's controls —
+filters, page actions, source toggles — in titled groups, one group per
+subject. It never scrolls away with the feed and never auto-collapses.
+Dock width is an explicit-tunable in Settings alongside rail width.
+Entry pulse + pointer (§9 trigger 1) targets the dock's title. Pages
+wider sections (charts/tables dockless) may span center+right when a
+page declares it; that is per-page, never per-tick.
+
 ## 2. One subject per page (carried, VISUAL-PLAN-UI §5)
 
 Overview = "am I OK right now" (SuiteCard verdict + 4 stat tiles + recent
