@@ -56,6 +56,22 @@ and Actions (live follow, export, clear resolved). On open the dock
 title pulses with the pointer; a row that needs the user glows as the
 hand-off target (§9 + Hand-off).
 
+### Firewall = fw-A, Threat Hunter = th-A (owner pick, round 2)
+
+Firewall: wall verdict strip on top ("wall up" + counts + psad live age),
+"Decisions waiting" as its own flashing card (Keep / Delete / Restore on
+the row), blocked-addresses table with Unblock-on-row, armor status as
+one chip line (psad / nftables / arpwatch). Dock = Rules (allow/block
+lists, add rule), psad knobs, Open-config buttons.
+
+Threat Hunter: finding CARDS, each carrying severity icon + the rule
+that fired + its real buttons per §5/§7 (malware: Delete now primary,
+Quarantine as undo; scanner warnings: Update baseline + Re-run in Scans;
+all: Ignore forever keyed rule+subject, Ask, Dismiss). Resolved findings
+collapse to one honest line with the resolution stated. Dock = Filter
+(severity/rule/state), Suppressions (rule+subject), Watcher (interval,
+pause). The 72 h refire dies by construction (§6/§7).
+
 ## 2. One subject per page (carried, VISUAL-PLAN-UI §5)
 
 Overview = "am I OK right now" (SuiteCard verdict + 4 stat tiles + recent
