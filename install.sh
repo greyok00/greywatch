@@ -98,8 +98,8 @@ _check_abi() { # $1 = program tree about to be deployed
         *" $want "*) return 0 ;;
     esac
     echo "ERROR: this tree is compiled for Python $abis, but /usr/bin/python3 is ${want:-unknown}." >&2
-    echo "       Build from a checkout on this machine (./build-cython.sh) or install" >&2
-    echo "       the wheel, which carries readable Python for any 3.12 or newer." >&2
+    echo "       The tree ships plain readable Python, so install the wheel," >&2
+    echo "       which carries readable Python for any 3.12 or newer." >&2
     exit 2
 }
 

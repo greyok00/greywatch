@@ -230,6 +230,8 @@ Task 16 with the screenshots (1080p check at the real window size).
 
 **OWNER LAW (2026-11-10): no Cython anywhere in this project — open readable Python is the deliverable.** Every instruction in this plan that says "run ./build-cython.sh after edits" is DELETED; tests import .py sources; the shipped tree contains no .so.
 
+Task 16 note (2026-11-10, final fix wave): no categorical series exist — palette validator run vacuous, will run before any categorical lands.
+
 ---
 
 ## Execution notes

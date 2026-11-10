@@ -7,9 +7,10 @@ Components: greywatch_daemon (publishes /var/lib/greywatch/status.json,
 keeps events.jsonl, owns the decisions gate), the resident hunter
 (publishes findings every watcher cycle by reading the tools' logs),
 scan_session.py (scanner schedules + throttling), responderd
-(quarantine/decision enforcement), the Cython-twinned UI (compiled .so
-shadows the .py twin on import; entry points ui/app.py and
-ui/tray_helper.py stay plain), and the apply/polkit privileged lane.
+(quarantine/decision enforcement), the plain-source UI (open readable
+.py everywhere - the owner law is no compiled twins; entry points
+ui/app.py and ui/tray_helper.py are plain), and the apply/polkit
+privileged lane.
 
 HEURISTICS:
 - status.json drives the UI: older than 90 s means "Waiting for the
