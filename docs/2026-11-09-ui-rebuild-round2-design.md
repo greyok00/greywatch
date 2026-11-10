@@ -136,6 +136,27 @@ rail's bottom-left and swaps voices in one click; Settings also carries
 the full voice/voice-related tunables. Categorical and status palettes
 are validated per voice with the palette validator at build time.
 
+### Overview = variant 3 (owner pick, round 2)
+
+Verdict strip (ok/warning + counts + snapshot age) -> one health card
+per rail group (Care / Defense / System), each with its own status line
+-> the 7-day trend -> a **Needs you** section listing only items that
+have buttons. Every item on the page is a button to its owning page
+(pointer to the dock, never a re-display). Sun/moon toggle lives in the
+rail's bottom-left on every page.
+
+### Hand-off: the app sends you (owner addition, round 2)
+
+Clicking any item on a card deep-links to the owning page: page
+changes, the correct dock opens, and the target row is highlighted
+selected in the feed. When something IMPORTANT arrives that needs a
+human decision (decisions waiting, HIGH findings), the app auto-navigates
+the same way — once per item, with the pulse + pointer showing where it
+sent you; the active rail row and a "came from Overview" breadcrumb
+stay visible so you always know where you are. Auto-jump is a Settings
+toggle (default on per owner directive); click-to-jump always works and
+is unaffected.
+
 ## 8. Visual-first readability (owner directive 2026-11-09: "go for
 visuals first ... bar graphs, tables, charts, images, animations")
 
