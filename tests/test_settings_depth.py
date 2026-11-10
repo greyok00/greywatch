@@ -56,15 +56,19 @@ def win():
         os.environ["GREYWATCH_DATA_DIR"] = old
 
 
-PANES = ("look", "firewall", "alerts", "connections", "computer",
-         "diagnostics", "updates", "sites", "programs")
+PANES = ("look", "behavior", "assistant", "alerts", "firewall",
+         "connections", "computer", "diagnostics", "updates", "sites",
+         "programs")
 
 
 def test_every_index_row_says_whats_inside(win):
     assert set(win._index_meta) == set(PANES)
     texts = {key: label.get_text() for key, label in win._index_meta.items()}
-    assert texts["look"] == "the two looks · workspace · the pick is" \
-                            " remembered"
+    assert texts["look"] == "the two looks · rail and dock width · " \
+                            "remembered"
+    assert texts["behavior"] == "auto-jump to what needs you · the fit law"
+    assert texts["assistant"] == "the model file · CPU or GPU · " \
+                                 "heuristics always on"
     assert texts["firewall"] == "on/off · its modes · per-program decisions"
     assert texts["alerts"] == "snooze 30 minutes · per-lane switches ·" \
                             " master silence"

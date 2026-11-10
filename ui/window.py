@@ -164,6 +164,13 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         # .persist_toggle), and the router's seen-set counts it.
         self._toggles = {"auto_jump": guided.load_toggle()}
         self._handoff_seen: set = set()
+        # The Help walkthrough (he1, task 12): state lives on the window
+        # so the tour survives page switches; the Help page builds the
+        # Stop control. Nothing walks until _tour_autorun says a first
+        # launch.
+        self._tour = None
+        self._tour_stop_btn = None
+        self._digest_viewer = None
 
         # The float layer (rebuild round 2, task 4): the pointer arrow of
         # the guided-attention layer rides this overlay above every page,
@@ -213,6 +220,10 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         self._glib_ids.append(
             GLib.timeout_add_seconds(1, self._scan_tick))
         self.connect("destroy", self._kill_timers)
+        # he1: a first launch takes the walkthrough once the boot has
+        # settled; the flag the loop honours ("tour_done") lives in the
+        # same settings file every tunable writes.
+        self._glib_ids.append(GLib.timeout_add(1600, self._tour_autorun))
 
     def _tick_id(self, fn, ms=200, seconds=False):
         sid = (GLib.timeout_add_seconds(seconds and ms or 0, fn)
@@ -284,6 +295,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         # Every later activation hands the window manager the timestamp of
         # the last real pointer/keyboard event, not CurrentTime.
         clock_attach(self)
+        self._header_bar = bar
         parent.append(bar)
 
     def _apply_saved_theme(self):
@@ -325,7 +337,8 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         shell.set_theme_toggle(self)
         parent.append(self.rail_bar)
         width = self.get_allocated_width() or metrics.window_size()[0]
-        self.rail_bar.set_size_request(shell.rail_size(width), -1)
+        self.rail_bar.set_size_request(
+            shell.rail_size(width, self._rail_pref()), -1)
 
     def _tab_pick(self, _b, key):
         self._show(key)
@@ -1153,14 +1166,27 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         except (OSError, ValueError, TypeError):
             return None
 
+    def _rail_pref(self):
+        """The stored rail-width percentage pick from the UI settings file
+        (the Settings rail slider writes it). Absent or unreadable falls
+        to the pure five-percent law (ui.shell.rail_size)."""
+        try:
+            from ui.themes import SETTINGS_PATH
+            cfg = json.loads(pathlib.Path(SETTINGS_PATH).read_text())
+            return int(cfg.get("rail") or 0) or None
+        except (OSError, ValueError, TypeError):
+            return None
+
     def _periodic_refresh(self):
         from ui import shell
-        # The rail is fixed at its five-percent law (never collapsed); the
-        # width re-derives on this tick so a user-resized window keeps the
-        # rail at its share without any collapse step. The dock carries
-        # the same law at its quarter width.
+        # The rail is fixed at its width law (the stored percentage pick
+        # when Settings set one, else five percent), never collapsed; the
+        # width re-derives on this tick so a user-resized window keeps its
+        # share without any collapse step. The dock carries the same law
+        # at its quarter width.
         self.rail_bar.set_size_request(
-            shell.rail_size(self.get_allocated_width()), -1)
+            shell.rail_size(self.get_allocated_width(), self._rail_pref()),
+            -1)
         self._size_dock()
         self.refresh()
         return True

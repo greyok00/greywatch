@@ -47,10 +47,12 @@ POINT_OFF = 22        # the arrow sits this far left of the target
 # the Threat Hunter greets Filter (th-A's first group, task 8); the
 # Tools page greets Show, its all/live-only card filter (task 9); the
 # Scans page greets Schedule and Protections greets Advisories (their
-# first dock groups, task 10); pages without a row here open quiet.
+# first dock groups, task 10); Settings greets the Search control and
+# Help greets About (task 12); pages without a row here open quiet.
 PAGE_ENTRY = {"auditlog": "Filter", "overview": "Snapshot",
               "defense": "Rules", "thunter": "Filter", "tools": "Show",
-              "scans": "Schedule", "protect": "Advisories"}
+              "scans": "Schedule", "protect": "Advisories",
+              "settings": "Search", "help": "About"}
 
 _PULSE = "gw-guided-pulse"
 _POINT = "gw-guided-point"

@@ -1,7 +1,9 @@
-"""The Settings page panes (rebuild Phase 4c): every pane builder, the
-firewall and learning wiring, and the trusted-lists editors live here;
-MainWindow composes this mixin for its panes, so window.py keeps the
-stack, activation, badges, and the header."""
+"""The Settings page panes (rebuild Phase 4c): the round-2 owner groups
+(Appearance / Behavior / Assistant / Notifications, task 12) with the
+tuned-on-the-spot controls, the dock's Search control, and the
+operational panes the firewall and learning wiring and the trusted-lists
+editors live in. MainWindow composes this mixin for its panes, so
+window.py keeps the stack, activation, badges, and the header."""
 import datetime as _dt
 import json
 import os
@@ -14,6 +16,7 @@ from gi.repository import Gtk, GLib, Gio
 
 from assistant import audit
 import greywatch_daemon as daemon_mod
+from ui import guided
 
 from ui import discover, metrics
 from ui.models import local_clock
@@ -21,10 +24,49 @@ from ui.desk import related_box
 from ui.plain import escape, muted as pc_muted, ok as pc_ok
 from ui.themes import dark_default, load_setting, THEME_CHOICES
 
+_RAIL_PICK_RANGE = (5, 10)     # the rail slider's band, in whole percent
+_DOCK_PICK_RANGE = (200, 400)  # the dock slider's band, the pick clamp
+
+
+def set_ui_setting(key, value, path=None) -> bool:
+    """One key through the app's settings-file seam: read-modify-write
+    with a temp+rename store, exactly how the theme pick and the guided
+    toggles write, so several writers never tear the file."""
+    from ui.themes import SETTINGS_PATH
+    p = pathlib.Path(path) if path is not None else pathlib.Path(SETTINGS_PATH)
+    try:
+        cfg = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cfg = {}
+    cfg[key] = value
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        from appfw.atomicio import write_json_atomic
+        write_json_atomic(p, cfg)
+        return True
+    except OSError:
+        return False
+
+
+def _muted_label(text=""):
+    """A settings pane's small note line."""
+    lab = Gtk.Label(xalign=0)
+    lab.set_xalign(0)
+    lab.set_wrap(True)
+    lab.set_markup(f"<span size='12000' font_family='Inter' "
+                   f"color='{pc_muted()}'>{escape(text)}</span>")
+    return lab
+
 _SETTINGS_RELATED = {
-    "look": (("Connections", "The lists the firewall consults", "connections"),
+    "look": (("Behavior", "What the app does without asking", "behavior"),
+             ("Connections", "The lists the firewall consults", "connections"),
              ("Tools", "Every protection, its row in the suite", "tools"),
              ("Browser Watch", "The findings desk", "thunter")),
+    "behavior": (("Overview", "What needs you, in one place", "overview"),
+                 ("Activity Log", "The raw record, newest first", "logs")),
+    "assistant": (("Overview", "The assistant lives on the home page",
+                   "overview"),
+                  ("Help", "The doc digests, readable in place", "help")),
     "firewall": (("Connections", "Add trusted sites or programs", "connections"),
                  ("Notifications", "Snooze popups or quiet a lane",
                   "alerts"),
@@ -415,12 +457,16 @@ class SettingsDeskMixin:
         return True
 
     def _settings_view(self):
-        """Settings as an index and a pane, the way macOS settings work.
+        """Settings as an index and a pane, the way macOS settings work
+        (rebuild round 2, task 12): the round-2 owner groups lead the
+        nav - Appearance, Behavior, Assistant, Notifications - with the
+        operational groups (firewall, the trusted lists, the machine)
+        after them, each group one pane at a time in the right pane. The
+        dock carries the Search control: a keyword hides the groups it
+        does not name and selects the best match.
 
-        Seven groups stacked in one scrolling column meant two were visible
-        and the other five lived below the fold. The index names every
-        group; the pane shows one at a time, each sized to fit the 720px
-        minimum window. There is no page scroller, so nothing can hide.
+        There is no page scroller, so nothing can hide; the window-fit
+        law holds because one group is on screen at a time.
         """
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         page.set_vexpand(True)
@@ -436,8 +482,8 @@ class SettingsDeskMixin:
         intro.set_wrap(True)
         intro.set_markup(
             f"<span size='13000' font_family='Inter' color='{pc_muted()}'>"
-            "How the dashboard behaves, what the app firewall does, and "
-            "what this computer is really running.</span>")
+            "How this app works, what its assistant runs on, and what it "
+            "changes the moment you touch a control.</span>")
         head.append(intro)
         page.append(head)
 
@@ -465,14 +511,19 @@ class SettingsDeskMixin:
         self._index_meta = {}
         self._settings_rows = {}
         self._settings_index = index
+        self._search_words = None
         self.trust = self._trust
         sections = (
             ("look", "preferences-desktop-symbolic", "Appearance",
              self._settings_look),
-            ("firewall", "security-high-symbolic", "App firewall",
-             self._settings_firewall),
+            ("behavior", "system-run-symbolic", "Behavior",
+             self._settings_behavior),
+            ("assistant", "avatar-default-symbolic", "Assistant",
+             self._settings_assistant),
             ("alerts", "preferences-desktop-notification-symbolic",
              "Notifications", self._settings_alerts),
+            ("firewall", "security-high-symbolic", "App firewall",
+             self._settings_firewall),
             ("connections", "network-wireless-symbolic", "Connections",
              self._settings_connections),
             ("computer", "computer-symbolic", "This computer",
@@ -527,11 +578,20 @@ class SettingsDeskMixin:
         body.append(index)
         body.append(stack)
         page.append(body)
+
+        # The dock's Search control (task 12): one entry over the whole
+        # group list - a keyword hides what it does not name and the best
+        # match is selected for you.
+        self._settings_search = Gtk.SearchEntry()
+        self._settings_search.set_placeholder_text("Find a setting")
+        self._settings_search.set_tooltip_text(
+            "Hides the groups your words do not name; picks the best "
+            "match. Clear it to see every group again.")
+        self._settings_search.connect("search-changed",
+                                      self._on_settings_search)
         self._refresh_trust()
         self._refresh_apps()
-        # The pane desk's controls live in its own rows, so the dock gets
-        # no groups (rebuild round 2, task 3's builder shape).
-        return page, []
+        return page, [("Search", [self._settings_search])]
 
     @staticmethod
     def _settings_section(*cards):
@@ -546,8 +606,20 @@ class SettingsDeskMixin:
     # The index's one-line what's-inside per group (approved depth; the
     # mockup's own wording). The two trust-list keys are the exception:
     # they carry a real count instead of a static line.
+    # Search names every group the way a person would word it, so "rail"
+    # finds Appearance and "alerts" finds Notifications.
+    _SEARCH_NAMES = {
+        "look": "Appearance", "behavior": "Behavior",
+        "assistant": "Assistant", "alerts": "Notifications",
+        "firewall": "App firewall", "connections": "Connections",
+        "computer": "This computer", "diagnostics": "Diagnostics",
+        "updates": "Updates", "sites": "Trusted sites",
+        "programs": "Trusted programs",
+    }
     _INDEX_METAS = {
-        "look": "the two looks · workspace · the pick is remembered",
+        "look": "the two looks · rail and dock width · remembered",
+        "behavior": "auto-jump to what needs you · the fit law",
+        "assistant": "the model file · CPU or GPU · heuristics always on",
         "firewall": "on/off · its modes · per-program decisions",
         "alerts": "snooze 30 minutes · per-lane switches · master silence",
         "connections": "trusted lists · learning mode · what the firewall "
@@ -594,10 +666,22 @@ class SettingsDeskMixin:
             return
         self._show(key)
 
+    def _slider(self, lo, hi, value, handler) -> Gtk.Scale:
+        """One whole-step slider with the theme's own width; the value
+        reads as a number only in the statement beside it."""
+        s = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, 1)
+        s.set_digits(0)
+        s.set_draw_value(False)
+        s.set_value(value)
+        s.set_valign(Gtk.Align.CENTER)
+        s.connect("value-changed", handler)
+        return s
+
     def _settings_look(self):
         app_frame, app_inner = self._settings_card(
             "Appearance and placement",
-            "Changes are remembered on this computer.")
+            "Changes are remembered on this computer, and each one states "
+            "itself as it saves.")
         theme_row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         radio_paper = Gtk.CheckButton(label="Paper, light")
         radio_graphite = Gtk.CheckButton(label="Graphite, dark")
@@ -614,6 +698,45 @@ class SettingsDeskMixin:
         theme_row.append(radio_graphite)
         app_inner.append(self._settings_row(
             "Theme", theme_row, "Two looks; the pick is remembered."))
+
+        # The rail's width (the sidebar): a stored pick - 5 to 10 percent -
+        # rides above the five-percent law (ui.shell.rail_size keeps its
+        # floor and cap); the slider saves on the spot and the rail moves
+        # while you drag.
+        rail_pct = self._rail_pref() or 5
+        self._rail_note = _muted_label(f"rail width = {rail_pct}%")
+        self._rail_scale = self._slider(*_RAIL_PICK_RANGE, rail_pct,
+                                        self._rail_apply)
+        rail_row = self._settings_row(
+            "Rail width",
+            self._rail_scale,
+            "The sidebar's share of the window, 5 to 10 percent.")
+        inner_rail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        inner_rail.append(rail_row)
+        self._rail_note.set_margin_start(4)
+        inner_rail.append(self._rail_note)
+        app_inner.append(inner_rail)
+
+        # The control dock's width: the stored pixel pick the window's
+        # read law clamps to 200..400.
+        from ui.window import dock_width
+        dock_px = self._dock_pref() or dock_width(
+            self.get_allocated_width() or metrics.window_size()[0])
+        dock_px = max(_DOCK_PICK_RANGE[0],
+                      min(int(dock_px), _DOCK_PICK_RANGE[1]))
+        self._dock_note = _muted_label(f"dock width = {dock_px}px")
+        self._dock_scale = self._slider(_DOCK_PICK_RANGE[0],
+                                        _DOCK_PICK_RANGE[1], dock_px,
+                                        self._dock_apply)
+        dock_row = self._settings_row(
+            "Dock width", self._dock_scale,
+            "The right control dock, 200 to 400 pixels wide.")
+        inner_dock = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        inner_dock.append(dock_row)
+        self._dock_note.set_margin_start(4)
+        inner_dock.append(self._dock_note)
+        app_inner.append(inner_dock)
+
         ws_combo = Gtk.ComboBoxText()
         for i in range(1, 7):
             ws_combo.append(str(i), f"Workspace {i}")
@@ -623,6 +746,198 @@ class SettingsDeskMixin:
             "Workspace", ws_combo,
             "The virtual desktop the dashboard opens on."))
         return self._settings_section(app_frame)
+
+    def _rail_apply(self, scale):
+        """Save the rail-width pick the moment the slider moves; the
+        statement and the rail itself follow it live."""
+        pct = max(_RAIL_PICK_RANGE[0], min(_RAIL_PICK_RANGE[1],
+                                           int(round(scale.get_value()))))
+        from ui import shell
+        if not set_ui_setting("rail", pct):
+            self._rail_note.set_text(
+                f"rail width = {pct}% (the pick could not be written)")
+            return True
+        self._rail_note.set_text(f"rail width = {pct}%")
+        width = self.get_allocated_width() or metrics.window_size()[0]
+        self.rail_bar.set_size_request(shell.rail_size(width, pct), -1)
+        return True
+
+    def _dock_apply(self, scale):
+        """Save the dock-width pick on the spot, inside the same clamp
+        the window's read law keeps."""
+        from ui.window import dock_width
+        px = max(_DOCK_PICK_RANGE[0], min(_DOCK_PICK_RANGE[1],
+                                          int(round(scale.get_value()))))
+        scale.set_value(px)
+        if not set_ui_setting("dock_width", px):
+            self._dock_note.set_text(
+                f"dock width = {px}px (the pick could not be written)")
+            return True
+        self._dock_note.set_text(f"dock width = {px}px")
+        self.dock.set_size_request(dock_width(self.get_allocated_width(), px),
+                                   -1)
+        return True
+
+    def _settings_behavior(self):
+        """Behavior (rebuild round 2, task 12): the auto-jump toggle the
+        guided router reads, plus the fit law as a static honesty line.
+        """
+        card, inner = self._settings_card(
+            "Behavior",
+            "How the app moves you when something needs you.")
+        want = bool(dict(getattr(self, "_toggles", None) or {})
+                    .get("auto_jump", True))
+        switch = Gtk.Switch()
+        switch.set_active(want)
+        switch.set_valign(Gtk.Align.CENTER)
+        switch.connect("notify::active", lambda w, _p: self._on_auto_jump(w))
+        self._auto_jump = switch
+        inner.append(self._settings_row(
+            "Auto-jump", switch,
+            "\"Send me to what needs me\": a hand-off opens the right "
+            "page itself instead of waiting for you."))
+        self._auto_jump_note = _muted_label(
+            f"auto-jump = {'on' if want else 'off'}")
+        self._auto_jump_note.set_margin_start(4)
+        inner.append(self._auto_jump_note)
+        inner.append(_muted_label(
+            "Every page fits the window. The only scrollers are a card's "
+            "own inner pane (a digest reader, a long table); the page "
+            "itself never scrolls."))
+        return self._settings_section(card)
+
+    def _on_auto_jump(self, switch):
+        """The one toggle the guided router reads: the window's live
+        state and the settings file move together."""
+        want = bool(switch.get_active())
+        self._toggles["auto_jump"] = want
+        guided.persist_toggle(want)
+        word = "on" if want else "off"
+        self._auto_jump_note.set_text(f"auto-jump = {word}")
+        return True
+
+    def _settings_assistant(self):
+        """Assistant (rebuild round 2, task 12): what the brain actually
+        is on this machine - the model file, the CPU/GPU state, the
+        digest count - honestly stated, never invented.
+        """
+        card, inner = self._settings_card(
+            "Assistant",
+            "The local brain that answers from your own logs.")
+        import gwpaths
+        from assistant.model import MODEL_FILENAME
+        model_path = gwpaths.data_dir() / "models" / MODEL_FILENAME
+        try:
+            state = (f"on file, {model_path.stat().st_size
+                          // (1024 * 1024)} MB")
+        except OSError:
+            state = "not fetched yet"
+        digest_count = self._assistant_digest_count()
+        self._assistant_note = Gtk.Label(xalign=0)
+        self._assistant_note.set_xalign(0)
+        self._assistant_note.set_wrap(True)
+        self._assistant_note.set_markup(
+            "<span size='12000' font_family='Inter' "
+            f"color='{pc_muted()}'>"
+            f"Model file: {escape(MODEL_FILENAME)} ({escape(state)}). "
+            f"{digest_count} tool digests on file.</span>")
+        inner.append(self._settings_row("Model", self._assistant_note,
+                                        ""))
+
+        # The GPU toggle ships with the assistant rebuild (round 2,
+        # task 13); until it lands the honest row is the note itself.
+        gpu = Gtk.Switch()
+        gpu.set_sensitive(False)
+        gpu.set_valign(Gtk.Align.CENTER)
+        gpu.set_tooltip_text("The Enable GPU toggle lives on the "
+                             "assistant itself.")
+        self._gpu_note = _muted_label(
+            "GPU model off: the assistant runs its model on the CPU. "
+            "The Enable GPU toggle lives on the assistant itself.")
+        self._gpu_note.set_margin_start(4)
+        inner.append(self._settings_row("GPU", gpu, ""))
+        inner.append(self._gpu_note)
+
+        inner.append(_muted_label(
+            "Heuristics always on: the advice engine answers model or "
+            "no model, and every word comes from your own logs."))
+        return self._settings_section(card)
+
+    @staticmethod
+    def _assistant_digest_count() -> int:
+        """The doc/tool-digests corpus, counted from the registry the
+        digests' own checker knows (tools.build_digests)."""
+        try:
+            from tools.build_digests import DIGESTS, DIGEST_TOOLS
+            return sum(1 for t in DIGEST_TOOLS
+                       if (DIGESTS / f"{t}.md").exists())
+        except Exception:                    # noqa: BLE001 - never paints
+            return 0
+
+    def _on_settings_search(self, entry):
+        """The dock's Search control: hide the groups the query's words
+        do not name and select the best match by hits. Clearing the
+        entry brings every group back and leaves the selection standing.
+        """
+        if not hasattr(self, "_settings_rows"):
+            return
+        words = self._settings_search_words()
+        query = (entry.get_text() or "").strip().lower()
+        tokens = [t for t in query.split() if t]
+        best = None
+        for key, row in self._settings_rows.items():
+            if not tokens:
+                row.set_visible(True)
+                continue
+            hay = " ".join(words.get(key, [])).lower()
+            hits = sum(1 for tok in tokens if tok in hay)
+            row.set_visible(hits > 0)
+            if hits and (best is None or hits > best[1]):
+                best = (key, hits)
+        if best is not None:
+            self._settings_index.select_row(self._settings_rows[best[0]])
+
+    def _settings_search_words(self) -> dict:
+        """What Search matches against, per group: its name, its
+        what's-inside line and the labels its pane's controls carry.
+        Built once, from the widgets that actually exist."""
+        if self._search_words is not None:
+            return self._search_words
+        stack = self._settings_stack
+        words = {}
+        for key in self._settings_rows:
+            texts = [self._SEARCH_NAMES.get(key, key),
+                     self._index_meta_text(key)]
+            pane = stack.get_child_by_name(key)
+            if pane is not None:
+                texts += [w.get_text() for w in self._walk_labels(pane)]
+                texts += [b.get_label() for b in self._walk_buttons(pane)]
+            words[key] = texts
+        self._search_words = words
+        return words
+
+    @staticmethod
+    def _walk_labels(widget) -> list:
+        """Every Gtk.Label under a pane, walking the containment tree."""
+        out = []
+        child = widget.get_first_child()
+        while child is not None:
+            if isinstance(child, Gtk.Label):
+                out.append(child)
+            out += SettingsDeskMixin._walk_labels(child)
+            child = child.get_next_sibling()
+        return out
+
+    @staticmethod
+    def _walk_buttons(widget) -> list:
+        out = []
+        child = widget.get_first_child()
+        while child is not None:
+            if isinstance(child, Gtk.Button) and child.get_label():
+                out.append(child)
+            out += SettingsDeskMixin._walk_buttons(child)
+            child = child.get_next_sibling()
+        return out
 
     def _settings_firewall(self):
         fw_frame, fw_inner = self._settings_card(
@@ -1359,4 +1674,8 @@ class SettingsDeskMixin:
             return            # the toggle also fires on the partner's uncheck
         if self._theme_store.apply(kit):
             self._tick_id(self._retheme, 0)
+            # the rail's sun/moon shows the voice clicking it would bring,
+            # so the pick here and the footer glyph move together (task 12)
+            from ui import shell
+            shell.voice_toggle_sync(self)
 

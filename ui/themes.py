@@ -1089,6 +1089,13 @@ class ThemeStore:
         toks = self.themes.get(name)
         if not toks:
             return False
+        # The module pick is the store's to update: apply() is the one
+        # seam both the radios and the sun/moon run through, and every
+        # reader of "the voice in charge" (active_theme, the rail's
+        # glyph) must see the pick that actually applied, no matter which
+        # seam carried it (its own doc line promised this).
+        global _ACTIVE
+        _ACTIVE = name
         css = gtk_css(toks)
         from gi.repository import Gdk
         display = (

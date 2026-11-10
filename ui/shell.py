@@ -38,11 +38,20 @@ _VOICE_TIP = {"graphite": "Switch to the paper light voice",
               "paper": "Switch to the graphite dark voice"}
 
 
-def rail_size(win_width: int) -> int:
+def rail_size(win_width: int, percent: int | None = None) -> int:
     """About five percent of the window, floored and capped: 150 so the
     labels always fit, 200 so very wide panels never balloon the rail.
-    The rail is FIXED at this width - it never collapses to glyphs."""
-    return max(150, min(200, round(win_width * 0.05)))
+    A stored pick (the Settings rail-width slider, `percent` in whole
+    points) wins over the five-percent law; the floor and the cap stay
+    either way. The rail is FIXED at this width - it never collapses to
+    glyphs."""
+    share = 0.05
+    if percent is not None:
+        try:
+            share = max(5, min(10, int(percent))) / 100.0
+        except (TypeError, ValueError):
+            share = 0.05
+    return max(150, min(200, round(win_width * share)))
 
 
 def build_rail(win):

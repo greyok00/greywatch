@@ -79,12 +79,13 @@ def test_entry_pulses_dock_title(win, monkeypatch):
 def test_page_without_entry_opens_quiet(win, monkeypatch):
     """Pages that declare no entry group see no pulse: entry is a
     greeting, not a default. (Overview declares one since task 5: its
-    verdict strip arrives through the Snapshot dock group; a page that
-    has no row at all - Settings - is the quiet example now.)"""
+    verdict strip arrives through the Snapshot dock group; task 12 gave
+    Settings/Search and Help/About rows - the Services page, which has
+    no dock groups, is the quiet example now.)"""
     calls = []
     monkeypatch.setattr(guided, "pulse",
                         lambda w, c=calls: calls.append(w))
-    win._show("settings")
+    win._show("services")
     assert calls == []
 
 
