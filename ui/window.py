@@ -405,10 +405,13 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         return scroller, []
 
     def _auditlog_view(self):
-        """The Activity Log page (rebuild Phase 4): three tabs over the
-        suite's history. The tab strip stays in the feed; the shared
-        filter lives in the dock, so a long history never scrolls the
-        search away."""
+        """The Activity Log page (rebuild round 2, task 6, variant 1):
+        ONE chronology table with the Everything/Decisions/Blocks/
+        Findings tab strip in the feed, the blocks-per-hour strip under
+        it and the waiting/glitch row that glows. The controls live in
+        the dock: Filter (search, severity, tool, time range), Sources
+        (per-tool toggles) and Actions (follow, export, clear) - so a
+        long history never scrolls its own levers away."""
         from ui.auditlog import ActivityLogPage
         page = ActivityLogPage(win=self)
         scroller = Gtk.ScrolledWindow()
@@ -416,7 +419,11 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         scroller.set_vexpand(True)
         scroller.set_child(page)
         self.auditlog_page = page
-        return scroller, [("Search", [page._search])]
+        return scroller, [("Filter", [page._search, page._sev_pick,
+                                      page._tool_pick, page._range_pick]),
+                          ("Sources", [page._sources]),
+                          ("Actions", [page._follow, page._export,
+                                       page._clear])]
 
     def _defense_view(self):
         """The network defense desk (wave D): blocked addresses, Block Reviewer

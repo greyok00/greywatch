@@ -72,7 +72,7 @@ def test_entry_pulses_dock_title(win, monkeypatch):
     monkeypatch.setattr(guided, "pulse",
                         lambda w, c=calls: calls.append(w))
     win._show("logs")
-    assert calls == [win.dock._titles["Search"]], \
+    assert calls == [win.dock._titles["Filter"]], \
         "page open must pulse its entry target"
 
 
@@ -168,12 +168,12 @@ def test_pulse_of_a_name_resolves_through_the_dock(win, monkeypatch):
     monkeypatch.setattr(guided, "entry", lambda w: None)  # arrival quiet
     win._show("auditlog")
     pump(5)
-    title = win.dock._titles["Search"]
-    assert guided.pulse("Search", win) is True
+    title = win.dock._titles["Filter"]
+    assert guided.pulse("Filter", win) is True
     assert "gw-guided-pulse" in title.get_css_classes()
-    assert guided.pulse(win.dock._titles["Search"]) is False  # still active
+    assert guided.pulse(win.dock._titles["Filter"]) is False  # still active
     assert guided.pulse("Nope", win) is False
-    assert guided.pulse("Search") is False    # name without a window
+    assert guided.pulse("Filter") is False    # name without a window
 
 
 # -------------------------------------------------------------- point
@@ -184,7 +184,7 @@ def test_point_floats_an_input_transparent_arrow(win, monkeypatch):
     monkeypatch.setattr(guided, "reduced_motion", lambda: True)
     win._show("auditlog")
     pump(10)
-    title = win.dock._titles["Search"]
+    title = win.dock._titles["Filter"]
     # reduced motion: not a single timer, held statically until replaced
     assert guided.point(title) is True
     pump(10)                              # the geometry settle is an idle
@@ -215,7 +215,7 @@ def test_point_holds_then_fades(win, monkeypatch):
     monkeypatch.setattr(guided, "reduced_motion", lambda: False)
     win._show("auditlog")
     pump(10)
-    guided.point(win.dock._titles["Search"])
+    guided.point(win.dock._titles["Filter"])
     pump(10)                              # the settle idle runs, hold lands
     arrow = win._guided_point
     assert arrow.get_opacity() == 1.0
@@ -263,13 +263,13 @@ def test_handoff_flash_point_and_row(win, monkeypatch):
     from gi.repository import Gtk
     monkeypatch.setattr(guided, "reduced_motion", lambda: True)
     row = Gtk.Label(label="blocked.example.invalid")
-    assert guided.handoff(win, "auditlog", dock_group="Search", row=row)
+    assert guided.handoff(win, "auditlog", dock_group="Filter", row=row)
     assert win.stack.get_visible_child_name() == "auditlog"
-    assert "gw-guided-pulse" in win.dock._titles["Search"].get_css_classes()
+    assert "gw-guided-pulse" in win.dock._titles["Filter"].get_css_classes()
     assert "gw-guided-point" in win._guided_point.get_css_classes()
     assert "gw-handoff-row" in row.get_css_classes()
-    assert ("auditlog", "Search", str(row)) in win._handoff_seen
-    assert not guided.handoff(win, "auditlog", dock_group="Search", row=row)
+    assert ("auditlog", "Filter", str(row)) in win._handoff_seen
+    assert not guided.handoff(win, "auditlog", dock_group="Filter", row=row)
 
 
 def test_handoff_respects_auto_jump_off(monkeypatch, win):
@@ -295,7 +295,7 @@ def test_handoff_without_group_routes_only(win, monkeypatch):
     assert sent == ["auditlog"]
     assert guided.handoff(win, "auditlog") is False
     assert sent == ["auditlog"]
-    assert guided.handoff(win, "auditlog", dock_group="Search") is True
+    assert guided.handoff(win, "auditlog", dock_group="Filter") is True
     assert sent == ["auditlog", "auditlog"]
 
 
@@ -303,9 +303,9 @@ def test_window_handoff_passthrough(win, monkeypatch):
     """win.handoff is the same router with the window bound, sharing the
     one seen-set."""
     monkeypatch.setattr(guided, "reduced_motion", lambda: True)
-    assert win.handoff("auditlog", dock_group="Search")
-    assert ("auditlog", "Search", "") in win._handoff_seen
-    assert not win.handoff("auditlog", dock_group="Search")
+    assert win.handoff("auditlog", dock_group="Filter")
+    assert ("auditlog", "Filter", "") in win._handoff_seen
+    assert not win.handoff("auditlog", dock_group="Filter")
 
 
 # ------------------------------------------------------------- toggle

@@ -42,9 +42,9 @@ FADE_STEPS = 8
 POINT_OFF = 22        # the arrow sits this far left of the target
 
 # The greeting table (page_key -> dock group name). Activity Log greets
-# its filter group, the owner's example; pages without a row here open
-# quiet.
-PAGE_ENTRY = {"auditlog": "Search", "overview": "Snapshot"}
+# its Filter group (variant 1 expanded the Task-3 Search group into
+# Filter/Sources/Actions); pages without a row here open quiet.
+PAGE_ENTRY = {"auditlog": "Filter", "overview": "Snapshot"}
 
 _PULSE = "gw-guided-pulse"
 _POINT = "gw-guided-point"

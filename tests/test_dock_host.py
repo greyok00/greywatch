@@ -139,11 +139,11 @@ def test_dock_flash_of_an_unknown_title_is_quiet(win):
     assert host.flash("Nope") is False
 
 
-def test_activity_log_search_lives_in_the_dock(win):
+def test_activity_log_filter_lives_in_the_dock(win):
     win._show("auditlog")
     pump(10)
     assert win.dock.current == "auditlog"
-    assert win.dock.group_titles() == ["Search"]
+    assert win.dock.group_titles() == ["Filter", "Sources", "Actions"]
     entry = win.auditlog_page._search
     # Gtk's is_ancestor misses across the scroller's internal Viewport;
     # get_ancestor answers the same question truthfully.
@@ -164,7 +164,7 @@ def test_dock_groups_reset_across_pages(win):
     rebuild round 2; the dock-follows-the-page law itself never moved.)"""
     win._show("auditlog")
     pump(5)
-    assert win.dock.group_titles() == ["Search"]
+    assert win.dock.group_titles() == ["Filter", "Sources", "Actions"]
     win._show("overview")
     pump(5)
     assert win.dock.current == "overview"
