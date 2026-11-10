@@ -1,7 +1,9 @@
 """Rebuild Phase 3: the Overview and Services pages, two-lane-tested.
 
-The amendment's hard line: a console page's feed never offers tool
-lifecycle controls, and the services page never offers threat controls.
+The amendment's hard line (resolve-everything wording): a console
+page's feed carries each row's own real actions - a tool row can run
+its scan again and restart its service, but never a threat control -
+and the services page never offers threat controls.
 Both pages read the daemon's published digest and nothing else.
 """
 import json
@@ -177,7 +179,11 @@ class TestOverview:
         tool_row = list(page._feed["tool"]._rows)[0]
         tool_row.emit("clicked")
         labels = _labels(page._detail)
-        assert labels == ["Copy details", "Open Services"], labels
+        # the tool row's card carries its own real actions plus the copy
+        # and the page jump - but never a threat control
+        assert "copy details" in [t.lower() for t in labels]
+        assert not any(t in ("block", "quarantine")
+                       for t in (t.lower() for t in labels))
 
     def test_jump_buttons_route_to_the_page_that_owns_the_lane(
             self, store, monkeypatch):
@@ -187,7 +193,9 @@ class TestOverview:
         page._win._show = lambda key: shown.append(key)
         page._feed["tool"].picked = None
         list(page._feed["tool"]._rows)[0].emit("clicked")
-        list(page._detail._acts)[1].emit("clicked")
+        jumps = [b for b in list(page._detail._acts)
+                 if b.get_label() == "Open Services"]
+        jumps[0].emit("clicked")
         page._feed["threat"].picked = None
         list(page._feed["threat"]._rows)[0].emit("clicked")
         jumps = [b for b in list(page._detail._acts)
@@ -238,13 +246,26 @@ class TestOverview:
         monkeypatch.setattr(page, "_detail_offset", lambda: (-1, None))
         assert page._scroll_detail_in(0) == GLib.SOURCE_REMOVE
 
-    def test_tool_lane_row_never_carries_start_controls(
-            self, store, monkeypatch):
+    def test_tool_lane_row_carries_its_own_actions(self, store, monkeypatch):
         page, _win = self._page(store, monkeypatch)
         page.refresh(page._win._get_status())
-        labels = _labels(page)
-        assert not any(t.lower().startswith(("run ", "restart ", "stop "))
-                       for t in labels)
+        # pick the one tool-lane row: its card carries the tool's own
+        # real actions (run the scan again), never a threat control
+        list(page._feed["tool"]._rows)[0].emit("clicked")
+        card_labels = [t.lower() for t in _labels(page._detail)]
+        assert any(t.startswith("run ") for t in card_labels)
+        assert not any(t in ("block", "quarantine", "keep")
+                       for t in card_labels)
+        # a service unit also gets its restart, routed through the
+        # standard confirm naming the helper and args
+        _win.by_name = {"clamav": {"name": "clamav",
+                                   "unit": "clamav-daemon.service"}}
+        page._detail.paint(dict(page._win._get_recent()[1]),
+                           page._win._run_log_option)
+        restart_btn = next(b for b in _buttons(page._detail) if str(
+            b.get_label() or "").lower().startswith("restart "))
+        restart_btn.emit("clicked")
+        assert _win._routed["args"] == ["restart", "clamav-daemon.service"]
 
     def test_advisory_strip_only_advisories(self, store, monkeypatch):
         page, _win = self._page(store, monkeypatch)

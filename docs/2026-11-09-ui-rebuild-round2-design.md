@@ -126,6 +126,16 @@ re-rooted to the new page sources; phases land per VISUAL-PLAN-UI §4
 with the rail phase re-verified by screenshot at the owner's actual
 window size (HiDPI included) before install; suite green each phase.
 
+### Theme (owner pick, visual plan round 2)
+
+Two voices, ONE component set with two token sheets: **Graphite (dark,
+warm charcoal, bone-white ink, warm-gray accent) is the DEFAULT; Paper
+(light, warm off-white, ink accent) is the light voice.** The old
+cyan/red dark accents are retired. A sun/moon toggle sits pinned at the
+rail's bottom-left and swaps voices in one click; Settings also carries
+the full voice/voice-related tunables. Categorical and status palettes
+are validated per voice with the palette validator at build time.
+
 ## 8. Visual-first readability (owner directive 2026-11-09: "go for
 visuals first ... bar graphs, tables, charts, images, animations")
 

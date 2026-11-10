@@ -72,9 +72,11 @@ def test_good_armor_rows_carry_no_button(monkeypatch, stub_armor):
     v.refresh({"defense": {}})
     labels = _labels(v._armor)
     # good probes carry nothing; the watchlist head's refresh and explain
-    # buttons are the only other controls the armor section ever holds
+    # buttons stay, and the flaw list refresh rides in under the
+    # resolve-everything law: the section always carries its own action
     assert labels == [f"{label}: good" for label, _k, _h
-                      in v._ARMOR_PROBES] + ["Refresh map", "Explain"]
+                      in v._ARMOR_PROBES] + ["Refresh map", "Explain",
+                                             "Refresh the flaw list"]
     v.unparent()
 
 
@@ -89,9 +91,11 @@ def test_open_and_unreadable_rows_carry_their_arming_helper(
     armed = [b for b in buttons if b.get_sensitive()]
     pairs = {b.get_label(): b for b in armed}
     # every open or unreadable probe carries its own Arm button; the two
-    # good rows (armed, sysctls) sit out. The watchlist refresh is the
-    # one remaining sensitive button and it arms nothing.
-    assert set(pairs) - {"Refresh map", "Explain"} == {
+    # good rows (armed, sysctls) sit out. The watchlist refresh and the
+    # flaw-list refresh are the remaining non-arming buttons; they arm
+    # nothing.
+    assert set(pairs) - {"Refresh map", "Explain",
+                         "Refresh the flaw list"} == {
         "Arm: Sweep watcher feed", "Arm: Inbound log chain",
         "Arm: psad service", "Arm: Router address pinned"}
     assert set(pairs) | {"Refresh map", "Explain"} == {
