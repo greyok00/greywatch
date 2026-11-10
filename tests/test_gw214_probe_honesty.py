@@ -25,7 +25,7 @@ import pytest
 
 import ptp  # noqa: E402
 import greywatch_daemon as daemon_mod  # noqa: E402
-from ui import defense  # noqa: E402
+from ui import defense, protectdesk  # noqa: E402
 
 
 def _runner(rc_dp=0, out_dp="curl\n", rc_pip=0, out_pip="flask\n"):
@@ -207,7 +207,7 @@ def defense_view(monkeypatch):
     import gi
     gi.require_version("Gtk", "4.0")
     v = defense.DefenseView()
-    monkeypatch.setattr(defense, "cve_rows", lambda _dd: [])
+    monkeypatch.setattr(protectdesk, "cve_rows", lambda _dd: [])
     monkeypatch.setattr(defense, "psad_status", lambda: {})
     monkeypatch.setattr(defense, "arp_status", lambda: {})
     return v

@@ -92,9 +92,9 @@ def test_daemon_arm_seeds_dedupe_from_the_mirror(tmp_path):
     old = now - __import__("datetime").timedelta(hours=2)
     log.write_text(
         recent.strftime("%Y-%m-%dT%H:%M:%S") + "+00:00"
-        f" appfw engine armed - ask the dashboard popup\n"
+        " appfw engine armed - ask the dashboard popup\n"
         + old.strftime("%Y-%m-%dT%H:%M:%S") + "+00:00"
-        f" something hours old\n"
+        " something hours old\n"
         + "appfw legacy line without a stamp\n")
     d = gd.Daemon(data_dir=data, registry=[])
     d._seed_appfw_dedupe()

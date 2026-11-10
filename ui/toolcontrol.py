@@ -898,7 +898,7 @@ class ToolCard(Gtk.Box):
         label = str(opt.get("label") or opt.get("op") or "")
         if rc == 0:
             if opt.get("helper") == "baseline-update":
-                self.note(f"baseline refreshed - the old baseline is "
+                self.note("baseline refreshed - the old baseline is "
                           "kept beside the new one.")
                 _clear(self._permafix)   # answered: the offer is done
             else:

@@ -712,8 +712,8 @@ class HardenPage(Gtk.Box):
     # -------------------------------------------------- row apply (h1)
     def _on_row_apply(self, _btn, control):
         self.status.set_text(
-            f"Applying this row. One password prompt, then the checks "
-            f"re-run…")
+            "Applying this row. One password prompt, then the checks "
+            "re-run…")
         _btn.set_sensitive(False)
 
         def worker():

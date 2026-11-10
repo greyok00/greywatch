@@ -135,7 +135,7 @@ def test_score_bar_renders_at_page_top_with_the_number():
     state = {"pass": False}
     page = make_page(state)
     # the bar is page-top chrome: h1, intro, then the score band
-    first = page.get_first_child()
+    page.get_first_child()
     page._scan_done([F("good-control", detector.PASS),
                      F("gap-control", detector.GAP),
                      F("manual-control", detector.GAP),

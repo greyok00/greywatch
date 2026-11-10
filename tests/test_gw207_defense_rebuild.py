@@ -29,7 +29,7 @@ gi = pytest.importorskip("gi")
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from ui import defense, guided  # noqa: E402
+from ui import defense, guided, protectdesk  # noqa: E402
 
 GOOD_PSAD = {"fed": True, "table": True, "armed": True, "service": True}
 GOOD_ARP = {"pinned": True, "sysctls": True}
@@ -150,7 +150,7 @@ def fresh_cache(monkeypatch):
 
 
 def _build(win=None):
-    win = win or _FakeWin(tmp_path := pathlib.Path("/tmp/gw207-nondata"))
+    win = win or _FakeWin(pathlib.Path("/tmp/gw207-nondata"))
     v = defense.DefenseView(win=win)
     return v, win
 
@@ -216,7 +216,7 @@ def test_probe_results_land_and_cache_holds_within_ttl(monkeypatch):
 
 
 def test_probe_paint_says_probing_only_until_read_lands(monkeypatch):
-    calls = _stub_probes(monkeypatch)
+    _stub_probes(monkeypatch)
     v, _w = _build()
     v.refresh({"defense": {}})
     _drain(v)
@@ -441,7 +441,7 @@ def test_cve_rows_are_gone_from_the_firewall_page(monkeypatch, tmp_path):
         called.append(_dd)
         return [{"cve": "CVE-2026-0001", "score": 9.8, "severity":
                  "CRITICAL", "tool": "nginx", "summary": "boom"}]
-    monkeypatch.setattr(defense, "cve_rows", fake_cve_rows)
+    monkeypatch.setattr(protectdesk, "cve_rows", fake_cve_rows)
     v, _w = _build(_FakeWin(tmp_path))
     v.refresh({"defense": {}})
     assert called == []                  # the reader is never called here

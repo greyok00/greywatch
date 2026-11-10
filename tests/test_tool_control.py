@@ -30,10 +30,9 @@ gi = pytest.importorskip("gi")
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from ui import guided, toolcontrol  # noqa: E402
-from ui.toolcontrol import (TOOL_CONFIGS, ToolControlPage,  # noqa: E402
-                            ToolCard, ToolConfigEditor, lifecycle_plan,
-                            schedule_entry, schedule_words, validate_config)
+from ui import guided  # noqa: E402
+from ui.toolcontrol import (ToolControlPage,  # noqa: E402
+                            ToolCard, ToolConfigEditor, schedule_words, validate_config)
 
 
 # --------------------------------------------------------------- helpers

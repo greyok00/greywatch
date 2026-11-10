@@ -7,12 +7,10 @@ loader that records the call stack) so they can prove the only road into
 the model goes through the toggle, and that a disable frees the model
 (del + gc) while a stay-resident enable stays resident.
 """
-import gc
 import inspect
 import pathlib
 import sys
 
-import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -293,7 +291,6 @@ def test_digest_lane_answers_from_the_named_digest():
     assert text is not None
     assert "psad digest" in text           # the basis says itself
     assert "danger" in text.lower()
-    loads = []
 
 
 def test_digest_lane_serves_the_app_firewall_and_antivirus_words():

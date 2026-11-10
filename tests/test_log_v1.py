@@ -345,7 +345,6 @@ class TestResolutionWording:
     def test_runner_fails_when_the_helper_lane_is_missing(self, store, monkeypatch):
         """The page's runner goes through the same cli seam the whole
         suite reroutes in tests: an exit code means the truth is shown."""
-        from ui import auditlog as A
         page, _win = _page(store)
         page._after_run("x", -1, "helper gone")
         assert "did not finish" in page._status.get_text().lower()
@@ -362,7 +361,6 @@ class TestBlockStrip:
         buckets = block_buckets(rows, now=NOW)
         assert len(buckets) == 24
         assert [c for _l, c in buckets].count(0) >= 21
-        counts = dict(buckets)
         assert sum(c for _l, c in buckets) == 3
         assert max(c for _l, c in buckets) == 2
 

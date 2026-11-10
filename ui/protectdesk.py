@@ -21,11 +21,10 @@ import threading
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
 from cverules import active_rules  # noqa: E402
-from ptp import cross_join as ptp_cross_join, watch_rows as ptp_watch_rows, \
-    DASH_PROSE  # noqa: E402
+from ptp import cross_join as ptp_cross_join, watch_rows as ptp_watch_rows  # noqa: E402
 from ui import metrics  # noqa: E402
 from ui.plain import escape  # noqa: E402
 from ui.desk import (DeskBand, DeskCoverage, DeskDossier, DeskFeed,

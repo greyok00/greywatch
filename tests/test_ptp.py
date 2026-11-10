@@ -18,7 +18,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import ptp  # noqa: E402
-from ui import defense  # noqa: E402
+from ui import defense, protectdesk  # noqa: E402
 
 # The dashboard embeds its findings as <tr data-project> rows; this
 # fixture carries the real attribute order, two projects, four
@@ -204,7 +204,7 @@ def defense_view(monkeypatch):
     import gi
     gi.require_version("Gtk", "4.0")
     v = defense.DefenseView()
-    monkeypatch.setattr(defense, "cve_rows", lambda _dd: [])
+    monkeypatch.setattr(protectdesk, "cve_rows", lambda _dd: [])
     monkeypatch.setattr(defense, "psad_status", lambda: {})
     monkeypatch.setattr(defense, "arp_status", lambda: {})
     return v

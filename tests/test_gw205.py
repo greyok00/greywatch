@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 import blockledger
 import greywatch_daemon as gd
 from greywatch_daemon import Daemon
-from ui import defense
+from ui import defense, protectdesk
 
 
 def _stub_bin(tmp_path, name, body):
@@ -171,7 +171,7 @@ exit 0
 
 
 def test_cve_rows_reads_active_rules(tmp_path):
-    assert defense.cve_rows(tmp_path) is None    # never fetched: say so
+    assert protectdesk.cve_rows(tmp_path) is None    # never fetched: say so
     cache = tmp_path / "cve-cache.json"
     cache.write_text(json.dumps({"fetched_utc": "t", "queries": ["q"],
                                  "entries": [
@@ -179,7 +179,7 @@ def test_cve_rows_reads_active_rules(tmp_path):
          "score": 9.8, "severity": "CRITICAL", "summary": "bad parse"},
         {"id": "CVE-2026-0002", "modified": "m", "tool": "clamav",
          "score": 5.1, "severity": "MEDIUM", "summary": "minor"}]}))
-    rows = defense.cve_rows(tmp_path)
+    rows = protectdesk.cve_rows(tmp_path)
     assert [r["cve"] for r in rows] == ["CVE-2026-0001"]
     assert rows[0]["tool"] == "clamav"
 

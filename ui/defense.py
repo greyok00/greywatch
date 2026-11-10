@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime as _dt
-import json
 import os
 import pathlib
 import re
@@ -20,7 +19,7 @@ from ptp import load_map as ptp_load_map, DASH_PROSE
 # or monkeypatch through this module. The DefenseView's own watchlist
 # panel resolves them through this module's globals, so a monkeypatch on
 # one name still re-paints the page.
-from ui.protectdesk import (cve_rows, ptp_rows, ptp_probe_failed,
+from ui.protectdesk import (ptp_rows, ptp_probe_failed,
                             ptp_high_count, ptp_watch_stamp)  # noqa: F401
 from ui import metrics
 from ui.plain import escape

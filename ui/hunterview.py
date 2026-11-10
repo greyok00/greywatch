@@ -35,7 +35,7 @@ import time as _time
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gio, GLib, Gtk  # noqa: E402
+from gi.repository import GLib, Gtk  # noqa: E402
 
 from hunter import engine, store, web  # noqa: E402
 from ui import metrics  # noqa: E402

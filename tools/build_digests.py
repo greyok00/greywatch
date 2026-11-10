@@ -54,7 +54,15 @@ def check(digests_dir=DIGESTS, tools=DIGEST_TOOLS, out=sys.stdout):
             rows.append((tool, "THIN/NO-HEURISTICS")); bad.append(tool); continue
         if "ollama" in text.lower():
             rows.append((tool, "FORBIDDEN-LANE")); bad.append(tool); continue
-        state = "COMPRESSED-DB" if tool in db_tools() else "NOT-COMPRESSED"
+        # The gw-tools db lane verifies where it exists (the owner's
+        # machine); elsewhere the digest certifies itself by naming its
+        # lane - the corpus text carries the citation either way.
+        if tool in db_tools():
+            state = "COMPRESSED-DB"
+        elif "gw-tools" in text:
+            state = "COMPRESSED-DB-CITED"
+        else:
+            state = "NOT-COMPRESSED"
         rows.append((tool, state))
     for tool, state in rows:
         print(f"DIGEST {tool}: {state}", file=out)

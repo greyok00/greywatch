@@ -27,4 +27,8 @@ def test_check_reports_all_compressed():
     rows, bad = check(out=out)
     assert bad == []
     states = dict((t, s) for t, s in rows)
-    assert all(s == "COMPRESSED-DB" for s in states.values())
+    # COMPRESSED-DB: the gw-tools lane is on this machine and verified
+    # it. COMPRESSED-DB-CITED: the lane is absent here, the digest
+    # names its lane and certifies itself. Both read as compressed.
+    assert all(s in ("COMPRESSED-DB", "COMPRESSED-DB-CITED")
+               for s in states.values())

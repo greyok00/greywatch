@@ -166,9 +166,12 @@ def _whole_page_scroller(root):
 
 
 # Widgets whose OWN internal ScrolledWindow is GTK machinery, not page
-# content: a combobox's popup rows live under the page tree but are its
-# popup, never a list on the page. The walk does not descend into these.
-_GTK_INTERNAL = (Gtk.ComboBox,)
+# content: a combobox's or dropdown's popup rows live under the page
+# tree but are its popup, never a list on the page (the dropdown's
+# popup list reads differently per GTK minor version, so the walk ends
+# at the widget instead of guessing at its internals). The walk does
+# not descend into these.
+_GTK_INTERNAL = (Gtk.ComboBox, Gtk.DropDown)
 
 
 def _scrollers(root) -> list:
