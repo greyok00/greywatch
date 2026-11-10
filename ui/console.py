@@ -260,10 +260,16 @@ class OverviewPage(Gtk.Box):
     # -- wiring ------------------------------------------------------------
     def _make_assistant(self):
         """The assistant terminal: the same chat brain wired through the
-        window's own callbacks, exactly as on the old anchor desk."""
+        window's own callbacks, exactly as on the old anchor desk. The
+        GPU toggle is part of the panel (task 13); the loader pair comes
+        from the window when it can, guarded for the stub windows."""
         w = self._win
+        pair = (getattr(w, "_assistant_gpu_enable", None),
+                getattr(w, "_assistant_gpu_disable", None))
+        gpu = pair if all(callable(x) for x in pair) else None
         panel = AssistantPanel(w.registry, w._get_status, w._get_recent,
-                               lambda: w.chat_llm, w._assistant_intent)
+                               lambda: w.chat_llm, w._assistant_intent,
+                               get_gpu=gpu)
         panel.add_css_class("gw-chat")
         return panel
 

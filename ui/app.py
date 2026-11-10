@@ -166,13 +166,11 @@ def main() -> int:
             win.present()
             win._show("overview")     # the Security home (never "status")
             win._ensure_default_on()
-            # The assistant model wakes once, here, with the window up; its
-            # loader thread reports into the panel banner on the main loop
-            # and the Retry button covers a failed load.
-            try:
-                win._start_chat_llm()
-            except Exception as e:
-                print("assistant chat unavailable:", e)
+            # The assistant's GPU model never wakes on its own (owner law,
+            # rebuild round 2 task 13): the heuristic tier answers from the
+            # moment the window opens, and a load happens only from the
+            # model toggle on the assistant itself (ui/assistant.py ->
+            # assistant/tiers.py -> MainWindow._assistant_gpu_enable).
             GLib.timeout_add_seconds(60, broker.pump_once)
             try:
                 from ui.minitile import MiniTileWindow, tile_wanted

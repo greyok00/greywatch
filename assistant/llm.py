@@ -1,9 +1,16 @@
 # assistant/llm.py
 """The assistant's brain, loaded inside this process.
 
-No server, no port: llama-cpp-python runs the model on CPU threads in a
-worker thread. The binding import is optional by repo rule — without it
+No server, no port: llama-cpp-python runs the model in a worker thread of
+this process, with whatever layer count the owner's constant allows on
+the local GPU. The binding import is optional by repo rule — without it
 the chat still answers from templates (docs-only mode).
+
+The tier law (rebuild round 2, task 13) lives above this file, in
+assistant/tiers.py + the window's loader: every call to start() comes
+from the assistant's GPU toggle and nothing else. Unload works the same
+way — the toggle's disable step deletes the model and runs a collect
+pass, with no idle unload anywhere.
 
 The model is a Qwen3-1.7B instruct GGUF (assistant/model.py). Qwen3 is a
 hybrid-reasoning model, so every request disables thinking two ways: the
@@ -13,6 +20,7 @@ reasoning instead of replying.
 """
 from __future__ import annotations
 
+import gc
 import os
 import pathlib
 import threading
@@ -23,6 +31,15 @@ try:
     from llama_cpp import Llama
 except ImportError:
     Llama = None
+
+
+def _gpu_offload_ok() -> bool:
+    """True when this build can really move layers onto the local GPU."""
+    try:
+        from llama_cpp import llama_supports_gpu_offload
+        return bool(llama_supports_gpu_offload())
+    except Exception:                          # noqa: BLE001 - probe only
+        return False
 
 ROUTER_SYSTEM = (
     "You route questions for a local security app. Reply with ONLY a JSON "
@@ -135,48 +152,86 @@ class ThinkFilter:
 
 class Llm:
     def __init__(self, model_path: str, binding=None,
-                 n_ctx: int = 4096, n_threads: int | None = None):
+                 n_ctx: int = 4096, n_threads: int | None = None,
+                 n_gpu_layers: int | None = None):
         self.model_path = model_path
         self._binding = binding          # tests inject fakes here
         self._n_ctx = n_ctx
         self._n_threads = default_threads() if n_threads is None else n_threads
+        self._n_gpu_layers = n_gpu_layers
         self._model = None
         self._err = "not started"
         self._started = False
         self._lock = threading.Lock()
 
-    def start(self, on_ready) -> None:
-        if self._started:
+    def start(self, on_ready, on_stage=None) -> None:
+        if self._started and self._model is not None:
             return
         self._started = True
+
+        def stage(name: str, fraction: float) -> None:
+            if on_stage is not None:
+                on_stage(name, fraction)
 
         def work():
             try:
                 if self._binding is not None:
                     self._model = self._binding()
                     self._err = ""
+                    stage("Model weights", 0.6)
                     on_ready(True, "")
                     return
                 if Llama is None:
                     self._err = ("llama-cpp-python not installed - "
                                  "chat runs in docs-only mode")
-                elif not pathlib.Path(self.model_path).exists():
+                    on_ready(False, self._err)
+                    return
+                if not pathlib.Path(self.model_path).exists():
                     self._err = ("model file missing, run the installer - "
                                  "chat runs in docs-only mode")
+                    on_ready(False, self._err)
+                    return
+                use_gpu = (self._n_gpu_layers is not None
+                           and _gpu_offload_ok())
+                kwargs = dict(n_ctx=self._n_ctx, n_threads=self._n_threads,
+                              verbose=False)
+                if use_gpu:
+                    kwargs["n_gpu_layers"] = self._n_gpu_layers
+                self._model = Llama(model_path=self.model_path, **kwargs)
+                self._err = ""
+                # Each stage reports when the work it names really ended;
+                # the fractions are the real stage boundaries, nothing
+                # interpolated between them.
+                stage("Model weights", 0.25)
+                if use_gpu:
+                    stage("GPU layer offload", 0.6)
                 else:
-                    self._model = Llama(model_path=self.model_path,
-                                        n_ctx=self._n_ctx,
-                                        n_threads=self._n_threads,
-                                        verbose=False)
-                    self._err = ""
-                on_ready(self._model is not None, self._err)
+                    stage("GPU layer offload unavailable in this build - "
+                          "the model stays CPU", 0.6)
+                stage("Warmup", 0.9)
+                self._warmup()
+                note = ("The local GPU model is resident; it stays until "
+                        "you click it off.")
+                if not use_gpu:
+                    note = ("The local model is resident on the CPU; it "
+                            "stays until you click it off.")
             except Exception as e:                     # noqa: BLE001
                 self._err = str(e)
                 on_ready(False, self._err)
+                return
+            on_ready(True, note)
         threading.Thread(target=work, daemon=True).start()
 
     def is_ready(self) -> bool:
         return self._model is not None
+
+    def _warmup(self) -> None:
+        """One one-token completion: the first real question does not pay
+        the cold path. A warmup failure is a real load failure - the
+        toggle reports it honestly."""
+        self._model.create_chat_completion(
+            messages=self._messages("warmup"), max_tokens=2,
+            temperature=0.0)
 
     def _messages(self, prompt: str) -> list[dict]:
         return [{"role": "system", "content": ROUTER_SYSTEM},
@@ -228,6 +283,16 @@ class Llm:
                 on_error(e)
         threading.Thread(target=work, daemon=True).start()
 
-    def stop(self) -> None:
+    def unload(self) -> None:
+        """Owner-toggled off: drop the model and hand its memory back
+        (delete the binding object, then a collect pass under the same
+        lock that guards inference, so live streams finish first)."""
         with self._lock:
+            self._started = False
             self._model = None
+            gc.collect()
+            self._err = "not started"
+
+    def stop(self) -> None:
+        """The pinned old name of unload."""
+        self.unload()

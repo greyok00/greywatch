@@ -864,6 +864,19 @@ treeview header button:hover {{ background-color: transparent; color: {ink}; }}
 .gw-banner {{
   font-size: 12.5px; color: {fail}; padding: 0 0 2px 0;
 }}
+/* The owner's GPU tier row (task 13): the toggle stays small so the chat
+   transcript keeps the page's height, and the staged bar repaints the
+   scan bar's thin pill language with the assistant's own accent. */
+progressbar.gw-gpu-bar, progressbar.gw-gpu-bar trough,
+progressbar.gw-gpu-bar progress {{ min-height: 6px; }}
+progressbar.gw-gpu-bar trough {{
+  background-color: {line}; border: none; border-radius: 99px;
+}}
+progressbar.gw-gpu-bar progress {{
+  background-color: {accent}; border-radius: 99px;
+}}
+progressbar.gw-gpu-bar text {{ font-size: 10.5px; color: {mute}; }}
+.gw-gpu-note {{ font-size: 11.5px; color: {mute}; }}
 .gw-composer {{ padding-top: 2px; }}
 .gw-composer entry {{ background-color: {bg}; }}
 button.gw-send {{

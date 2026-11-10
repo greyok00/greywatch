@@ -844,16 +844,18 @@ class SettingsDeskMixin:
         inner.append(self._settings_row("Model", self._assistant_note,
                                         ""))
 
-        # The GPU toggle ships with the assistant rebuild (round 2,
-        # task 13); until it lands the honest row is the note itself.
+        # The GPU toggle (rebuild round 2, task 13) lives on the assistant
+        # itself — one button, owner-held. This row reads the assistant's
+        # real tier state through the win._assistant_state seam, never a
+        # static promise.
         gpu = Gtk.Switch()
         gpu.set_sensitive(False)
         gpu.set_valign(Gtk.Align.CENTER)
-        gpu.set_tooltip_text("The Enable GPU toggle lives on the "
-                             "assistant itself.")
-        self._gpu_note = _muted_label(
-            "GPU model off: the assistant runs its model on the CPU. "
-            "The Enable GPU toggle lives on the assistant itself.")
+        gpu.set_tooltip_text("The Enable GPU model button lives on the "
+                             "assistant (Overview page); this row only "
+                             "reflects its state.")
+        gpu.set_active(self._assistant_gpu_state() == "on")
+        self._gpu_note = _muted_label(self._gpu_row_text())
         self._gpu_note.set_margin_start(4)
         inner.append(self._settings_row("GPU", gpu, ""))
         inner.append(self._gpu_note)
@@ -862,6 +864,38 @@ class SettingsDeskMixin:
             "Heuristics always on: the advice engine answers model or "
             "no model, and every word comes from your own logs."))
         return self._settings_section(card)
+
+    def _assistant_gpu_state(self) -> str:
+        """The toggle's state word; 'off' is the honest default when no
+        seam is reachable."""
+        panel = self._panel()
+        gpu = getattr(panel, "gpu", None)
+        return getattr(gpu, "state", "off") or "off"
+
+    def _gpu_row_text(self) -> str:
+        """The GPU row's sentence, read from the win._assistant_state
+        seam (task 13) - the row reflects the assistant's real tier state,
+        never a static promise."""
+        line = " ".join(str(x) for x in self._assistant_state()
+                        if str(x).strip()) \
+            if callable(getattr(self, "_assistant_state", None)) else ""
+        if not line:
+            return ("GPU model off: the assistant runs its model on the "
+                    "CPU. The Enable GPU model button lives on the "
+                    "assistant (Overview page).")
+        tail = {
+            "off": (" While it stays off the assistant answers heuristically"
+                    " on the CPU - no model, from the data on this "
+                    "machine."),
+            "loading": (" While the model file is being read the "
+                        "heuristic tier keeps answering."),
+            "on": (" While it is resident the local GPU model answers "
+                   "chat questions; the toggle on the assistant releases "
+                   "it."),
+        }.get(self._assistant_gpu_state(), "")
+        return (line + tail
+                + " The Enable GPU model button lives on the assistant "
+                  "(Overview page).")
 
     @staticmethod
     def _assistant_digest_count() -> int:

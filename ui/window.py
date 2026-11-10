@@ -148,7 +148,8 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         self._selected_tool = None
         self._selected_from: str | None = None   # which desk holds it
         self._state_override = {}
-        self.chat_llm = None             # assistant brain, woken on realize
+        self.chat_llm = None             # assistant brain, loaded ONLY by
+                                         # the panel's GPU toggle (task 13)
         self.chat_retry = None
         self._trust = TrustList()
         self.paused = PausedStore()
@@ -728,30 +729,62 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         opage = getattr(self, "overview_page", None)
         return getattr(opage, "_assistant", None) if opage else None
 
-    def _start_chat_llm(self):
-        """Wake the assistant model in-process (the installer drops the
-        gguf under $DATA/models). A retry builds a NEW Llm instance, since
-        start is one-shot per instance (assistant/llm.py contract)."""
+    def _assistant_gpu_enable(self, on_stage, on_ready):
+        """The owner clicked the panel's toggle: bring the local GPU model
+        up on a worker thread and report the real loading stages back.
+
+        This is the ONLY call site in the app that may load the model
+        (assistant/tiers.py is the guard; ui/app.py wakes nothing). The
+        installer drops the gguf under $DATA/models; the layer count comes
+        from the owner's constant."""
         from assistant.llm import Llm
-        from assistant.model import MODEL_FILENAME
+        from assistant.model import GPU_LAYERS, MODEL_FILENAME
         import gwpaths
         model = gwpaths.data_dir() / "models" / MODEL_FILENAME
-        panel = self._panel()
-        if panel is not None:
-            panel.banner.set_text(
-                "Assistant loading…"
-                + ("" if getattr(self, "chat_llm", None) is None
-                   else " retrying"))
-        self.chat_llm = Llm(model_path=str(model))
-        self.chat_llm.start(
-            lambda ok, err: GLib.idle_add(self._on_llm_ready, ok, err))
 
-    def _on_llm_ready(self, ok, err):
-        self._chat_state = (ok, err)
+        def settled(ok, err):
+            self._chat_state = (ok, err or "")
+            self._assistant_paint_seams()
+            on_ready(ok, err)
+
+        self.chat_llm = Llm(model_path=str(model), n_gpu_layers=GPU_LAYERS)
+        self.chat_llm.start(settled, on_stage=on_stage)
+        self._assistant_paint_seams()
+
+    def _assistant_gpu_disable(self):
+        """The owner clicked the toggle off: free the model now (del +
+        collect inside the loader) and fall back to the pure heuristic
+        tier. Residency is the owner's rule, so nothing unloads the model
+        except this handler - no timer, no refresh, no close."""
+        llm = getattr(self, "chat_llm", None)
+        self.chat_llm = None
+        if llm is not None:
+            llm.unload()
+        self._chat_state = (True, "")
+        self._assistant_paint_seams()
+
+    def _assistant_state(self):
+        """The task-13 seam: Settings and the Help About row read the
+        assistant's tier state through here ('heuristics on - GPU model
+        off/loading/on'), never a static promise."""
         panel = self._panel()
-        if panel is not None:
-            panel.note_state(ok, err)
-        return False
+        gpu = getattr(panel, "gpu", None)
+        if gpu is None:
+            return ("heuristics on - GPU model off",)
+        return gpu.state_line()
+
+    def _assistant_paint_seams(self):
+        """Repaint the seams that hold a tier-state row (the Settings GPU
+        row and the Help About brain line); only the toggle calls this."""
+        line = " ".join(str(x) for x in self._assistant_state()
+                        if str(x).strip())
+        for attr in ("_gpu_note", "_help_brain"):
+            lbl = getattr(self, attr, None)
+            if lbl is not None:
+                try:
+                    lbl.set_text(line)
+                except Exception:            # noqa: BLE001 - paint only
+                    pass
 
     def _show_filter(self, switch):
         """One show-all filter for both desks: whichever switch the

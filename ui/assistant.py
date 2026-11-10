@@ -12,12 +12,13 @@ import re
 import threading
 from html import escape
 
-from assistant import advice, audit, events as _events
+from assistant import advice, audit, digests, events as _events
 from assistant.intents import Intent, describe, parse_intent, validate
 from assistant.llm import ROUTER_SYSTEM  # noqa: F401  (router contract)
 from assistant.packer import build_pack
 from assistant.router import route
 from assistant.templates import answer_detail, compose, event_rows
+from assistant.tiers import GpuModelToggle
 from ui import metrics, plain as _plain
 from ui import themes
 from ui.cards import SCAN_MODES
@@ -218,6 +219,11 @@ def plan_turn(question, pack, llm, registry_names: set, friendly: dict,
         tool = str(row.get("tool") or row.get("from_tool") or "")
         return {"kind": "template", "slot": "detail",
                 "tool": tool, "text": answer_detail(row)}
+    digest = _digest_answer(question, friendly)
+    if digest is not None:
+        return {"kind": "template", "slot": "concept",
+                "tool": digests.tool_of(question, friendly) or "",
+                "text": digest}
     tool = _tool_from_question(question, friendly)
     if tool and registry_names and tool not in registry_names:
         tool = None                    # never stage a tool outside the registry
@@ -318,15 +324,40 @@ def plan_turn(question, pack, llm, registry_names: set, friendly: dict,
             # turn — nothing executes, nothing stalls.
             return {"kind": "summary", "prompt": _pack_prompt(pack, question)}
         return {"kind": "summary", "prompt": _pack_prompt(pack, question)}
-    return {"kind": "template", "slot": "overview",
-            "text": compose("overview", pack)
-            or "Docs-only mode: I can describe tool states and recent "
-               "events."}
+    floor = (compose("overview", pack)
+             or "Docs-only mode: I can describe tool states and recent "
+                "events.")
+    if llm is not None and not llm.is_ready():
+        # The heuristic tier answers always; the local GPU model is the
+        # owner's added tier, switched on from the panel itself.
+        floor += (" That is the heuristic tier - it answers from the data "
+                  "on this machine and the tool digests kept on file. For "
+                  "a richer answer, press 'Enable GPU model' to load the "
+                  "local GPU model.")
+    return {"kind": "template", "slot": "overview", "text": floor}
 
 
 def _mentions(question: str) -> bool:
     low = (question or "").lower()
     return any(w in low for w in _EVENT_WORDS)
+
+
+def _digest_answer(question: str, friendly: dict) -> str | None:
+    """The digest lane of the heuristic tier (rebuild round 2, task 13).
+
+    A question that names one tool and asks what/why/how reads that tool's
+    compressed digest from disk — no model load, nothing sent anywhere —
+    and the answer carries its basis on its face ("from the psad digest").
+    A state ask ("is psad red?") keeps the status lane; an event ask
+    ("what did psad find?", "give me the log") keeps the event lane; the
+    digest lane only wants a question about the tool itself."""
+    low = (question or "").lower()
+    if _mentions(question) or not re.search(r"\b(how|why|explain)\b", low):
+        return None
+    try:
+        return digests.answer(question, friendly)
+    except Exception:                        # noqa: BLE001 - the lane is paint
+        return None
 
 
 def _has_any(low: str, words) -> bool:
@@ -1735,11 +1766,15 @@ if GIOMM_OK:
 
     class AssistantPanel(Gtk.Box):
         def __init__(self, registry, get_status, get_recent, get_llm,
-                     on_intent):
+                     on_intent, get_gpu=None):
             super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
             self._names = {t["name"] for t in registry}
             self._get_status, self._get_recent = get_status, get_recent
             self._get_llm, self._on_intent = get_llm, on_intent
+            # The GPU tier (task 13): the toggle button owns the only load
+            # path; the window pair is wired in when a real window builds
+            # the panel, and an honest refusal covers stub panels.
+            self._get_gpu = get_gpu
             from ui.plain import FRIENDLY
             self._friendly = FRIENDLY
             # Rows the last event answer displayed: a follow-up ("what is
@@ -1760,6 +1795,7 @@ if GIOMM_OK:
             self.banner.set_max_width_chars(58)
             self.banner.add_css_class("gw-banner")
             self.append(self.banner)
+            self.append(self._build_gpu_row())
             # Chat transcript takes the vertical space; the suggestion chips
             # sit just above the composer where a chat app puts them, not
             # between the header and the first message.
@@ -1848,6 +1884,115 @@ if GIOMM_OK:
                 "Hi - ask me about a protection, a log line, or anything "
                 "you see here.", intro=True)
             intro.add_css_class("gw-assistant-intro")
+
+        def _build_gpu_row(self):
+            """The owner's GPU tier: one toggle button plus a staged bar.
+
+            Tier law (owner-HARD): this handler is the only road to the
+            local GPU model. Window open, page actions, timers and the chat
+            itself never load anything — the heuristic tier answers from
+            the data on this machine, and the model arrives only through
+            this button (assistant/tiers.py holds the load once, stays
+            resident, unloads on the disable click)."""
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=7)
+            row.add_css_class("gw-gpu-row")
+            self.gpu = GpuModelToggle(loader=self._gpu_loader,
+                                      unloader=self._gpu_unloader,
+                                      on_change=lambda: GLib.idle_add(
+                                          self._gpu_paint))
+            self.gpu_btn = Gtk.Button(label=self.gpu.label())
+            self.gpu_btn.add_css_class("gw-mini")
+            self.gpu_btn.set_tooltip_text(
+                "Load the local GPU model on this machine. The heuristic "
+                "tier keeps answering either way; the model stays "
+                "resident until you click it off.")
+            self.gpu_btn.connect("clicked", self._on_gpu_toggle)
+            row.append(self.gpu_btn)
+            # The staged bar: each stage fills it as the stage REALLY
+            # completes; no spinner, no interpolated time.
+            self.gpu_bar = Gtk.ProgressBar()
+            self.gpu_bar.add_css_class("gw-gpu-bar")
+            self.gpu_bar.set_show_text(True)
+            self.gpu_bar.set_hexpand(True)
+            self.gpu_bar.set_visible(False)
+            row.append(self.gpu_bar)
+            self.gpu_stage = Gtk.Label(xalign=0)
+            self.gpu_stage.set_wrap(True)
+            self.gpu_stage.add_css_class("gw-gpu-note")
+            self.gpu_stage.set_visible(False)
+            row.append(self.gpu_stage)
+            self.gpu_row = row
+            if self.gpu.line_text():
+                self.gpu_stage.set_text(self.gpu.line_text())
+                self.gpu_stage.set_visible(True)
+            return row
+
+        def _show_gpu_row(self):
+            """Test/law hook: the row's idle facts in one read."""
+            return self.gpu_row
+
+        def _gpu_loader(self, stage_cb, ready_cb):
+            """The toggle's loader road: the window pair when wired (a
+            callable or an (enable, disable) tuple); an honest refusal
+            when the panel was built without one."""
+            pair = self._get_gpu
+            if callable(pair):
+                try:
+                    pair = pair()
+                except Exception:      # noqa: BLE001 - never load half-wired
+                    pair = None
+            enable = pair[0] if pair else None
+            if enable is None:
+                ready_cb(False, "the GPU model lane is not wired in this "
+                                "build - the assistant answers from its "
+                                "heuristics")
+                return
+            enable(stage_cb, ready_cb)
+
+        def _gpu_unloader(self):
+            pair = self._get_gpu
+            if callable(pair):
+                try:
+                    pair = pair()
+                except Exception:      # noqa: BLE001
+                    pair = None
+            disable = pair[1] if pair else None
+            if disable is not None:
+                disable()
+
+        def _on_gpu_toggle(self, _btn):
+            gpu = self.gpu
+            if gpu.state == GpuModelToggle.LOADING:
+                return                 # a click during loading changes nothing
+            if gpu.state == GpuModelToggle.ON:
+                gpu.disable()
+            else:
+                gpu.enable()
+            self._gpu_paint()
+
+        def _gpu_paint(self):
+            """Main thread. The button, the staged bar and the seam rows
+            read one toggle; nothing else may drive a load or an unload."""
+            gpu = self.gpu
+            busy = gpu.state == GpuModelToggle.LOADING
+            self.gpu_btn.set_label(gpu.label())
+            self.gpu_btn.set_sensitive(not busy)
+            self.gpu_bar.set_visible(busy)
+            if busy:
+                self.gpu_bar.set_fraction(gpu.fraction)
+                self.gpu_bar.set_text(gpu.line_text() or "Loading…")
+            line = gpu.line_text()
+            self.gpu_stage.set_text(line)
+            self.gpu_stage.set_visible(bool(line))
+            root = self.get_root()
+            if root is not None and getattr(root,
+                                            "_assistant_paint_seams", None):
+                try:
+                    root._assistant_paint_seams()
+                except Exception:      # noqa: BLE001 - the seams are paint
+                    pass
+            self._fit_stream()
+            return False
 
         def _build_header(self):
             """The panel should look like an assistant, not like a text box:
@@ -2357,10 +2502,16 @@ if GIOMM_OK:
                         return False
                 llm = self._get_llm()
                 if llm is None or not llm.is_ready():
-                    holder.set_text("The model is unavailable right now; from "
-                                    "the data:\n"
-                                    + (compose("overview", pack)
-                                       or compose("explain_event", pack) or ""))
+                    # The heuristic tier is not a failure: it answers from
+                    # the data on this machine, and the panel's toggle
+                    # offers the owner's GPU-model tier on top of it.
+                    holder.set_text(
+                        "The local GPU model is off, so I answered from "
+                        "the heuristics tier (your data, no model):\n"
+                        + (compose("overview", pack)
+                           or compose("explain_event", pack) or ""
+                           ) + "\n\nPress 'Enable GPU model' to load the "
+                              "local model.")
                     return False
                 acc = []
 

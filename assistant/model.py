@@ -20,3 +20,9 @@ MODEL_MIN_BYTES = 900 * 1024 * 1024
 # Qwen3 is a hybrid-reasoning model: without this it "thinks" first and
 # burns the whole token budget before answering.
 NO_THINK = "/no_think"
+
+# GPU layer offload, owner's tunable (rebuild round 2, task 13): -1 sends
+# every layer of the local GPU model to the machine's GPU when the loader
+# build supports offload; the toggle says so honestly when it does not and
+# the same load carries on on the CPU.
+GPU_LAYERS = -1
