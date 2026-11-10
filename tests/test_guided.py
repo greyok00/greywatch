@@ -43,6 +43,19 @@ def pump(n=20):
         ctx.iteration(False)
 
 
+def pump_settled(limit=8.0, step=0.002):
+    """Pump with a wall-clock floor: showing a page whose table scrolls
+    inside a ScrolledWindow (the fit law's inner containers) can leave
+    GTK's own sources busy for seconds, and the guided settle idles land
+    after them. Waiting beats flaking - the pins stay exactly as written."""
+    import time as _time
+    ctx = GLib.main_context_default()
+    deadline = _time.time() + limit
+    while _time.time() < deadline:
+        ctx.iteration(False)
+        _time.sleep(step)
+
+
 @pytest.fixture(scope="module")
 def win():
     w = MainWindow()
@@ -188,7 +201,7 @@ def test_point_floats_an_input_transparent_arrow(win, monkeypatch):
     title = win.dock._titles["Filter"]
     # reduced motion: not a single timer, held statically until replaced
     assert guided.point(title) is True
-    pump(10)                              # the geometry settle is an idle
+    pump_settled()                        # the geometry settle is an idle
     arrow = win._guided_point
     assert arrow is not None
     assert "gw-guided-point" in arrow.get_css_classes()
@@ -217,7 +230,7 @@ def test_point_holds_then_fades(win, monkeypatch):
     win._show("auditlog")
     pump(10)
     guided.point(win.dock._titles["Filter"])
-    pump(10)                              # the settle idle runs, hold lands
+    pump_settled()
     arrow = win._guided_point
     assert arrow.get_opacity() == 1.0
     holds = [e for e in sched if e[0] == guided.POINT_MS]

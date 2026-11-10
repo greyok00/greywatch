@@ -283,6 +283,7 @@ class HardenPage(Gtk.Box):
         # the rows scroll; the page never scrolls as a whole).
         self.rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.rows_scroll = Gtk.ScrolledWindow()
+        self.rows_scroll.set_name("harden-rows")
         self.rows_scroll.set_policy(Gtk.PolicyType.NEVER,
                                     Gtk.PolicyType.AUTOMATIC)
         self.rows_scroll.set_vexpand(True)

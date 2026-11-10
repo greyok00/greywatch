@@ -75,10 +75,20 @@ def _page(win=None):
 
 
 def _page_of(content):
-    """The builder's content is the scroller; unwrap the viewport it
-    wraps the page in."""
-    page = content.get_child()
-    return page.get_child() if isinstance(page, Gtk.Viewport) else page
+    """The builder returns the page whole since the fit law (2026-11-10)
+    removed the whole-page scroller; the unwrap only survives for an
+    aperture-clamped content."""
+    if isinstance(content, Gtk.Viewport):
+        return content.get_child()
+    try:
+        import gi
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw
+        if isinstance(content, Adw.Clamp):
+            return content.get_child()
+    except (ImportError, ValueError):
+        pass
+    return content
 
 
 def _snap(**over):

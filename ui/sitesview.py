@@ -57,6 +57,7 @@ class SitesView(Gtk.Box):
             f"here as programs connect and as you browse.</span>")
         self.listbox.set_placeholder(self.empty)
         scroll = Gtk.ScrolledWindow()
+        scroll.set_name("sites-table")
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroll.set_size_request(-1, 220)
         scroll.set_child(self.listbox)

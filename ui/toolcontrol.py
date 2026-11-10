@@ -458,6 +458,7 @@ class ToolConfigEditor(Gtk.Box):
         # the fit law: the editor's own scroller - the card grows, the
         # page list never does
         self._scroll = Gtk.ScrolledWindow()
+        self._scroll.set_name("tool-config")
         self._scroll.set_policy(Gtk.PolicyType.NEVER,
                                 Gtk.PolicyType.AUTOMATIC)
         self._scroll.set_min_content_height(280)
@@ -990,6 +991,7 @@ class ToolControlPage(Gtk.Box):
         self.cards_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                                  spacing=10)
         self._scroll = Gtk.ScrolledWindow()
+        self._scroll.set_name("tools-list")
         self._scroll.set_policy(Gtk.PolicyType.NEVER,
                                 Gtk.PolicyType.AUTOMATIC)
         self._scroll.set_vexpand(True)

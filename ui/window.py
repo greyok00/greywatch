@@ -400,27 +400,23 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         """Overview (round 2, variant 3): the verdict strip over the
         published digest, one health card per rail group, the trend
         chart and the Needs-you rows. The builder returns the dock
-        groups (Snapshot / Trend / Ask about) with the page."""
+        groups (Snapshot / Trend / Ask about) with the page; the fit law
+        (2026-11-10) keeps the page whole and its lists inner-scrolled."""
         from ui.console import build_overview
-        scroller, groups = build_overview(self)
-        page = scroller.get_child()
-        if isinstance(page, Gtk.Viewport):   # the scroller's own wrapper
-            page = page.get_child()
+        page, groups = build_overview(self)
         self.overview_page = page
-        return scroller, groups
+        return page, groups
 
     def _services_view(self):
         """Services (rebuild Phase 3): lane two - the tool grid and the
         Service Healer rows. Lifecycle only; the scan actions and the
-        console moved back to the Scans page (rebuild round 2, task 10)."""
+        console moved back to the Scans page (rebuild round 2, task 10).
+        The fit law (2026-11-10): the page lays out to the window; its
+        tool grid scrolls inside the desk, not here."""
         from ui.toolhealth import ServicesPage
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_vexpand(True)
         page = ServicesPage(win=self)
-        scroller.set_child(page)
         self.services_page = page
-        return scroller, []
+        return page, []
 
     def _scans_view(self):
         """The Scans page (rebuild round 2, task 10, owner s2): the three
@@ -468,13 +464,9 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         long history never scrolls its own levers away."""
         from ui.auditlog import ActivityLogPage
         page = ActivityLogPage(win=self)
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_vexpand(True)
-        scroller.set_child(page)
         self.auditlog_page = page
-        return scroller, [("Filter", [page._search, page._sev_pick,
-                                      page._tool_pick, page._range_pick]),
+        return page, [("Filter", [page._search, page._sev_pick,
+                                  page._tool_pick, page._range_pick]),
                           ("Sources", [page._sources]),
                           ("Actions", [page._follow, page._export,
                                        page._clear])]

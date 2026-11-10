@@ -734,6 +734,7 @@ class HunterPanel(Gtk.Box):
         # where their group is.
         # The rows scroll on their own so the dossier keeps its height.
         self._scroll = scroll = Gtk.ScrolledWindow()
+        scroll.set_name("hunter-feed")
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroll.set_vexpand(True)
         self._list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)

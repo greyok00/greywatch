@@ -192,7 +192,14 @@ class DefenseView(Gtk.Box):
         self._win = win
         self._answering = set()
         self._probe_thread = None
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        self._floors = {"asks": 132, "blocked": 150, "watch": 132}
+        # The fit law (2026-11-10): the page lays out to the window. The
+        # three lists that can grow (asks, blocked, watch) each scroll
+        # inside their own band - fixed-height title bands around an
+        # inner-scrolled list that flexes - instead of the page growing
+        # past the 1080p window (it measured 4910px against a 947px
+        # budget when the digest was long).
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_top(metrics.PAGE_TOP)
         box.set_margin_bottom(metrics.PAGE_BOTTOM)
         box.set_margin_start(metrics.PAGE_X)
@@ -201,18 +208,52 @@ class DefenseView(Gtk.Box):
         strip = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.append(strip)
         self._strip = strip
-        for title, host in (
-                ("Decisions waiting", "asks"),
-                ("Blocked addresses", "blocked"),
-                ("Network armor", "armor"),
-                ("Browser Watch", "watch")):
+        for title, host, ident, floor in (
+                ("Decisions waiting", "asks", "defense-asks", 132),
+                ("Blocked addresses", "blocked", "defense-blocked", 150),
+                ("Network armor", "armor", None, 0),
+                ("Browser Watch", "watch", "defense-watch", 132)):
             lbl = Gtk.Label(label=title, xalign=0)
             lbl.add_css_class("gw-page-title")
             box.append(lbl)
             body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
             box.append(body)
-            setattr(self, f"_{host}", body)
+            if ident:
+                # the band's one inner-scrolled container (the fit law);
+                # the paint code keeps appending rows to the list box
+                list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                                   spacing=8)
+                scroll = Gtk.ScrolledWindow()
+                scroll.set_name(ident)
+                scroll.set_policy(Gtk.PolicyType.NEVER,
+                                  Gtk.PolicyType.AUTOMATIC)
+                scroll.set_vexpand(True)
+                scroll.set_min_content_height(floor)
+                scroll.set_child(list_box)
+                body.append(scroll)
+                setattr(self, ident, scroll)
+                setattr(self, f"_{host}", list_box)
+            else:
+                setattr(self, f"_{host}", body)
         self._build_dock()
+
+    def _band_floor_paint(self):
+        """A band reserves its scrolling floor only while it holds rows -
+        an empty band is its one muted sentence (the bug-9 empty-section
+        law), never a tall empty hole."""
+        for host in ("asks", "blocked", "watch"):
+            scroll = getattr(self, f"defense-{host}", None)
+            if scroll is None:
+                continue
+            list_box = getattr(self, f"_{host}")
+            n = 0
+            ch = list_box.get_first_child()
+            while ch is not None:
+                n += 1
+                ch = ch.get_next_sibling()
+            # the quiet sentence is one label; rows are the band's work
+            scroll.set_min_content_height(self._floors.get(host, 0)
+                                          if n > 1 else 0)
 
     def _build_dock(self):
         """The dock's controls (fw-A), built once and handed over by
@@ -328,6 +369,7 @@ class DefenseView(Gtk.Box):
         self._paint_blocked(rows)
         self._paint_armor()
         self._paint_watch(snap.get("browser_watch"))
+        self._band_floor_paint()
         self._ensure_probe()
 
     def _pending_specs(self, snap):

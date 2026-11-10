@@ -372,6 +372,7 @@ class ScanConsole(Gtk.Box):
         # The findings list keeps its shipped pane inside the feed:
         # shrink-to-content with the 260px cap (test contract.
         self.findings_scroll = Gtk.ScrolledWindow()
+        self.findings_scroll.set_name("scan-findings")
         self.findings_scroll.set_policy(Gtk.PolicyType.NEVER,
                                         Gtk.PolicyType.AUTOMATIC)
         self.findings_scroll.set_propagate_natural_height(True)

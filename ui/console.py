@@ -222,7 +222,13 @@ class OverviewPage(Gtk.Box):
             row.append(btn)
         self.append(row)
 
-        # 3. the trend chart
+        # 3+4. The feed band: the trend chart and the Needs-you card lay
+        # out side by side (the fit law, 2026-11-10 - sections share the
+        # window; stacked, the two bands alone measured 430px and pushed
+        # the page past the 1080p budget).
+        feed_band = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        feed_band.set_hexpand(True)
+        self.append(feed_band)
         trend_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         trend_card.add_css_class("gw-card")
         t_title = Gtk.Label(label="Last 7 days", xalign=0)
@@ -232,23 +238,38 @@ class OverviewPage(Gtk.Box):
         self._trend = _TrendCard(self)
         self._trend.set_vexpand(True)
         trend_card.append(self._trend)
+        trend_card.set_hexpand(True)
         self._trend_empty = self._trend._empty
-        self.append(trend_card)
+        feed_band.append(trend_card)
+        self.trend_card = trend_card
         self._trend_range = "7d"
         self._trend_evs = None
         self._trend_card = trend_card
 
-        # 4. Needs you: only the published decisions that carry buttons
+        # 4. Needs you: only the published decisions that carry buttons.
+        # The fit law (2026-11-10): the rows scroll inside their card
+        # (six-row cap, the same shape the advisory wall and the scans
+        # findings list run), the page never grows past the window.
         self.needs_you_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                                      spacing=6)
         self.needs_you_title = Gtk.Label(label="Needs you", xalign=0)
         self.needs_you_title.add_css_class("gw-page-title")
         self.needs_you_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                                       spacing=8)
+        self.needs_you_scroll = Gtk.ScrolledWindow()
+        self.needs_you_scroll.set_name("overview-needs")
+        self.needs_you_scroll.set_policy(Gtk.PolicyType.NEVER,
+                                         Gtk.PolicyType.AUTOMATIC)
+        self.needs_you_scroll.set_propagate_natural_height(True)
+        self.needs_you_scroll.set_max_content_height(190)
+        self.needs_you_scroll.set_child(self.needs_you_card)
         self.needs_you_box.append(self.needs_you_title)
-        self.needs_you_box.append(self.needs_you_card)
+        self.needs_you_box.append(self.needs_you_scroll)
+        # the needs card takes the wider half of the feed band; when no
+        # decision waits, the band still holds the trend chart whole
+        self.needs_you_box.set_hexpand(True)
         self.needs_you_box.set_visible(False)   # bug-9 law: quiet by default
-        self.append(self.needs_you_box)
+        feed_band.append(self.needs_you_box)
 
         # The assistant terminal rides this page (phase 4 kept it; the
         # window resolves the panel here and the dock's ask button
@@ -580,10 +601,9 @@ class OverviewPage(Gtk.Box):
 
 def build_overview(win):
     """The overview builder: (content, dock_groups) - the page plus the
-    Snapshot / Trend / Ask-about groups for the fixed right dock."""
-    scroller = Gtk.ScrolledWindow()
-    scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-    scroller.set_vexpand(True)
+    Snapshot / Trend / Ask-about groups for the fixed right dock. The
+    fit law (2026-11-10): the page is returned whole; only the chat
+    transcript and the decision rows scroll inside their own
+    containers."""
     page = OverviewPage(win=win)
-    scroller.set_child(page)
-    return scroller, page.dock_groups()
+    return page, page.dock_groups()

@@ -381,7 +381,21 @@ class ActivityLogPage(Gtk.Box):
             head.append(lbl)
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         body.append(head)
-        body.append(view)
+        # The fit law (2026-11-10): the chronology is the one inner
+        # scrolled container on this page - the table grows inside its
+        # card, the page never scrolls whole. The wrap is the raw-logs
+        # desk's shape (a box child inside the scroller); the height
+        # request bounds the page's minimum so the window never lays out
+        # a scrolled table taller than itself, and the card above keeps
+        # the flex.
+        wrap = Gtk.ScrolledWindow()
+        wrap.set_name("audit-table")
+        wrap.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        wrap.set_size_request(-1, 220)
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        inner.append(view)
+        wrap.set_child(inner)
+        body.append(wrap)
         card = Gtk.Frame()
         card.add_css_class("gw-card")
         card.set_child(body)

@@ -804,6 +804,7 @@ class ProtectionsPage(Gtk.Box):
         self._wall_rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                                   spacing=4)
         wall_scroll = Gtk.ScrolledWindow()
+        wall_scroll.set_name("protect-wall")
         wall_scroll.set_policy(Gtk.PolicyType.NEVER,
                                Gtk.PolicyType.AUTOMATIC)
         wall_scroll.set_propagate_natural_height(True)

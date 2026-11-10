@@ -118,6 +118,7 @@ class LogsDeskMixin:
         lbody = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         lbody.append(head)
         wrap = self._wrap(view)
+        wrap.set_name("logs-table")
         wrap.set_hexpand(True)
         lbody.append(wrap)
         lcard = Gtk.Frame()

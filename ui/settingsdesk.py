@@ -1115,6 +1115,7 @@ class SettingsDeskMixin:
         learn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         learn_box.append(learn_head)
         learn_scroll = self._wrap(self.learn_view)
+        learn_scroll.set_name("learn-table")
         learn_scroll.set_size_request(-1, 210)
         learn_box.append(learn_scroll)
         # An empty table is a header over nothing; swap the whole table for
@@ -1261,6 +1262,7 @@ class SettingsDeskMixin:
         app_view.connect("cursor-changed", self._app_selected)
         app_view.set_size_request(-1, 120)
         app_scroll = self._wrap(app_view)
+        app_scroll.set_name("programs-table")
         app_scroll.set_size_request(-1, 120)
         app_scroll.set_vexpand(True)
         app_scroll.set_overlay_scrolling(False)
