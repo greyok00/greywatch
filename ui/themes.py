@@ -547,6 +547,22 @@ switch:checked slider {{ background-color: #ffffff; }}
   background-color: {accent_soft}; color: {accent};
 }}
 
+/* --- guided attention (rebuild round 2, task 4) ---------------------- */
+/* The pulse dresses the target itself (a dock title today, any widget
+   with the accent-soft wash the dock flash uses); the pointer arrow
+   floats above the page on the window's overlay and never takes input;
+   a hand-off row keeps the same wash until it is answered. */
+.gw-guided-pulse {{
+  background-color: {accent_soft}; color: {accent};
+  border-radius: 4px; padding: 2px 6px;
+}}
+.gw-guided-point {{
+  color: {accent}; background-color: {panel};
+  border: 1px solid {accent}; border-radius: 10px;
+  padding: 0 7px; font-weight: 700; font-size: 12px;
+}}
+.gw-handoff-row {{ background-color: {accent_soft}; }}
+
 /* --- wizard step rail ----------------------------------------------- */
 /* Gtk.Assistant's rail is its own surface (a Box carrying Adwaita's
    .sidebar class), so it painted Adwaita's grey while the page content

@@ -20,6 +20,7 @@ from ui.scanview import read_live, read_history
 from ui.desk import aperture
 from ui.eventclock import attach as clock_attach, present_now
 from ui.dock import DockHost
+from ui import guided
 from ui.homepage import STALE_S, unread_notes as home_unread
 from ui.toolicons import icon_name as tool_icon
 from ui.settings import (TrustList, PausedStore, LearningStore,
@@ -154,9 +155,22 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         self._learn_sel = None
         self._learn_guard = False
         self._fw_mode_guard = False
+        # Guided attention (rebuild round 2, task 4): the auto_jump
+        # toggle is read ONCE here through the settings seam (guided
+        # .load_toggle; the Settings desk writes through guided
+        # .persist_toggle), and the router's seen-set counts it.
+        self._toggles = {"auto_jump": guided.load_toggle()}
+        self._handoff_seen: set = set()
 
+        # The float layer (rebuild round 2, task 4): the pointer arrow of
+        # the guided-attention layer rides this overlay above every page,
+        # never taking input. The pages themselves are inner children.
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.set_child(outer)
+        self._float = Gtk.Overlay()
+        self._float.set_child(outer)
+        self.set_child(self._float)
+        self._guided_overlay = self._float
+        self._guided_point = None
         self._header(outer)
         body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         body.set_hexpand(True)
@@ -336,6 +350,11 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         else:
             self.stack.set_visible_child_name(key)
         self.dock.set_page(key, self._dock_groups.get(key, []))
+        # The greeting (rebuild round 2, task 4): the page's declared
+        # entry target pulses its dock group title. While stale the stack
+        # still shows the waiting panel, so the entry lookup is quiet by
+        # itself (no entry declared for the waiting page).
+        guided.entry(self)
         for k, b in self._tabs.items():
             # The ten-page menu routes several rows onto one page (the
             # Care rows all serve Services), so a row is active when the
@@ -351,6 +370,13 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         # saw empty cards right after switching. Paint the real snapshot the
         # moment the page is shown.
         self.refresh()
+
+    def handoff(self, page_key, dock_group=None, row=None) -> bool:
+        """The guided-attention router (rebuild round 2, task 4), bound
+        to this window: open the page with the right dock open, greet its
+        dock group and highlight the row - routed once per item."""
+        return guided.handoff(self, page_key,
+                              dock_group=dock_group, row=row)
 
     def _overview_view(self):
         """Overview (rebuild Phase 3): the anchor desk - ribbon, advisory
