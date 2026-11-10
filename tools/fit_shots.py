@@ -82,11 +82,11 @@ def _seed(data_dir: pathlib.Path) -> None:
 
 
 def _xvfb(display: str) -> subprocess.Popen:
+    if not shutil.which("Xvfb"):
+        raise SystemExit("tools/fit_shots needs Xvfb (no X server driver)")
     proc = subprocess.Popen(
         ["Xvfb", display, "-screen", "0", XVFB_SIZE, "-nolisten", "tcp"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if not shutil.which("Xvfb"):
-        raise SystemExit("tools/fit_shots needs Xvfb (no X server driver)")
     sock = pathlib.Path(f"/tmp/.X11-unix/X{display.lstrip(':')}")
     for _ in range(50):
         if sock.exists():

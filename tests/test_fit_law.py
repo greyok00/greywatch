@@ -332,6 +332,17 @@ def test_rail_and_dock_are_budgeted_in_the_law(fit_win):
     assert win_h == FIT_H - 60, "the window chrome allowance is real"
 
 
+def test_every_builder_key_is_covered_by_the_law(fit_win):
+    """The sweep reads the law's own key list, so the crosscheck holds it
+    to the window's real `_builders` dict: a page added without a
+    PAGE_INNER entry (or retired without removing one) fails here, never
+    silently escapes the fit law."""
+    assert _pages_for(fit_win) == sorted(PAGE_INNER.keys()), (
+        "the window's _builders and the fit law's PAGE_INNER have "
+        "drifted apart - a page the law does not name, or a page named "
+        "that the window cannot build")
+
+
 # ------------------------------------------------------------------ 3. wizard
 WIZARD_KEYS = ("site", "ufw", "appfw", "fail2ban", "tetragon", "yara",
                "arpwatch")
@@ -349,10 +360,6 @@ def test_rule_wizard_pages_fit_the_1080p_window():
         assert nat <= FIT_H - 60, (
             f"RuleWizard '{tool}' lays out {nat}px tall - over the "
             f"1080p window budget")
-        wz.destroy()
-        assert nat <= FIT_H - 60, (
-            f"RuleWizard '{tool}' lays out {nat}px tall - over the 1080p "
-            f"window budget")
 
 
 def test_wizard_hub_fits_and_scrolls_inner_only():
