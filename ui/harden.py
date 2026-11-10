@@ -653,7 +653,13 @@ class HardenPage(Gtk.Box):
                 f"color='{pc_soft()}'>"
                 f"current: {escape(fnd.current[:200])}</span>")
             box.append(cur)
-        if not advisory:
+        # The row's own apply button follows the BATCH lane's law, not the
+        # resolver's: a fix ships only on a GAP row, the one state the
+        # batch Apply would actually plan. A FAIL or CANT-CHECK row says
+        # its state honestly and ships NO button (the page's own tooltip
+        # promises "an unknown state is never applied", so a row reading
+        # COULD NOT BE CHECKED must never be able to write the sysctl).
+        if not advisory and fnd.state == detector.GAP:
             fix_btn = self._row_fix_button(control)
             if fix_btn is not None:
                 box.append(fix_btn)

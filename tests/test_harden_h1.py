@@ -307,6 +307,57 @@ def _walk(w):
     return out
 
 
+def test_non_gap_rows_ship_no_fix_button():
+    """Review round 1: the row lane follows the batch lane's law - Batch
+    Apply only plans GAP findings, so a FAIL or CANT-CHECK row states its
+    state honestly and ships NO apply button (it can never write the
+    sysctl behind a "could not be checked" reading)."""
+    CANT_CTRL = Control("cant-fix", "kernel",
+                        "A check that cannot run on this box",
+                        probe="EXPLODE", severity="HIGH",
+                        fix=[["sysctl-set", "kernel.knob", "0"]])
+    FAIL_CTRL = Control("fail-fix", "kernel",
+                        "A check whose probe itself failed",
+                        probe="fail-line", severity="HIGH",
+                        fix=[["sysctl-set", "kernel.knob", "0"]])
+
+    def runner(line):
+        if line == "EXPLODE":
+            raise RuntimeError("no probe here")
+        if line == "fail-line":
+            return (2, "probe failed")     # rc >= 2 = FAIL in the detector
+        return (0 if state.get("pass") else 1), "stubbed"
+
+    state: dict = {"pass": False}
+    page = HardenPage(controls=[GAPFIX, CANT_CTRL, FAIL_CTRL],
+                      runner=runner,
+                      journal_path=pathlib.Path("/tmp/h1-unused-journal"))
+    page._on_scan(None)
+    pump()
+    joined = "\n".join(_row_texts(page))
+    assert "COULD NOT BE CHECKED" in joined
+    assert "failed the check" in joined
+    frames = []
+    f = page.rows.get_first_child()
+    while f is not None:
+        frames.append(f)
+        f = f.get_next_sibling()
+    opened = [fr for fr in frames
+              if any(word in (w.get_text() or "")
+                     for word in ("● COULD NOT BE CHECKED",
+                                  "● failed the check")
+                     for w in _deep(fr.get_child())
+                     if isinstance(w, Gtk.Label))]
+    assert len(opened) == 2
+    for fr in opened:
+        assert not [w for w in _deep(fr.get_child())
+                    if isinstance(w, Gtk.Button)], \
+            "a FAIL/CANT row must never carry an apply button"
+    # ... while the GAP row next to them still ships its own
+    btn = _deep_button(page, "Tighten the setting")
+    assert btn is not None
+
+
 def test_manual_gap_holds_no_fake_button():
     page = make_page({"pass": False})
     page._scan_done(
