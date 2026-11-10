@@ -204,7 +204,8 @@ PAGE_INNER = {
     "scans": {"scan-findings", "ScanConsole", "DeskFeed", "DeskDossier"},
     "defense": {"defense-asks", "defense-blocked", "defense-watch"},
     "harden": {"harden-rows", "DeskFeed", "DeskDossier"},
-    "thunter": {"hunter-feed", "HunterPanel", "DeskFeed", "DeskDossier"},
+    "thunter": {"hunter-feed", "hunter-dossier", "HunterPanel",
+                "DeskFeed", "DeskDossier"},
     "tools": {"tool-config", "tools-list", "DeskFeed", "DeskDossier"},
     "settings": {"sites-table", "learn-table", "programs-table"},
 }

@@ -782,6 +782,7 @@ out · suppressed repeats stay recorded in the hunter's seen map""".replace(
         self._dhead.append(self._dpills)
         dscroll = Gtk.ScrolledWindow()
         self._dscroll = dscroll
+        dscroll.set_name("hunter-dossier")
         dscroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         dscroll.set_vexpand(True)
         self._detail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
