@@ -3,9 +3,9 @@
 - [psad](./psad.md)
 - [rkhunter](./rkhunter.md)
 - [aide](./aide.md)
-- [clamav](./clamav.md) - NOT-COMPRESSED
+- [clamav](./clamav.md)
 - [arpwatch](./arpwatch.md)
 - [lynis](./lynis.md)
 - [nftables](./nftables.md)
 - [appfw](./appfw.md)
-- [greywatch](./greywatch.md) - NOT-COMPRESSED
+- [greywatch](./greywatch.md)

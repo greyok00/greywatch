@@ -37,7 +37,7 @@ def db_tools():
             # the man page and the digest name the virus tool differently
             head = "clamav" if head == "clamd" else head
             for tool in DIGEST_TOOLS:
-                if head == tool or head.split(" - ")[0] == tool:
+                if head == tool or head.startswith(tool + " "):
                     tools.add(tool)
     return tools
 
