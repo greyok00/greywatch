@@ -133,11 +133,11 @@ def test_launch_opens_overview_with_ai(win):
 def test_care_group_row_routes_resolve(win):
     """Every menu row opens its page through the one legacy map: scans
     and protect are their own pages again (rebuild round 2, task 10),
-    harden still lands on Services and logs joins the Activity Log -
-    thunter (task 8) and tools (task 9) are already their own pages."""
+    harden is its own page again (task 11) and logs joins the Activity
+    Log - thunter (task 8) and tools (task 9) are already their own."""
     from ui.window import _LEGACY_PAGE as routes
     for key, page in (("scans", "scans"), ("protect", "protect"),
-                      ("harden", "services"),
+                      ("harden", "harden"),
                       ("tools", "tools"),
                       ("thunter", "thunter"),
                       ("logs", "auditlog")):

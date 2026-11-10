@@ -1085,14 +1085,14 @@ def test_baseline_keeps_its_own_page(win):
     # Owner 2026-10-30: the baseline pass is its own page, named
     # Endpoint Hardening — not a card at the bottom of the tool list.
     # Task 2 re-root: "harden" is a Rail ROW again (the owner's ten-page
-    # menu), still with no page of its own — the legacy map routes it to
-    # Services, the page that absorbed the suite.
+    # menu). Task 11 gave the row its OWN page again, so the legacy map
+    # routes it to itself like scans and protect before it.
     from ui import shell
-    assert "harden" not in win._builders
+    assert "harden" in win._builders
     assert "harden" in shell.RAIL_KEYS
     win._show("harden")
     pump(5)
-    assert win.stack.get_visible_child_name() == "services"
+    assert win.stack.get_visible_child_name() == "harden"
 
 
 def test_tool_card_shows_plain_name_and_real_tool_name(win):

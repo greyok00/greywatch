@@ -90,11 +90,11 @@ TIME_W = 104     # "18:35:39" plus breathing room
 # names for the same Protections page). The round-2 rebuild gives pages
 # back from the fold-in as their variants land: task 8 un-retired the
 # Threat Hunter ("thunter"), task 9 gave the Tools page its cards back,
-# and task 10 gives Scans and Protections their own pages again (the
-# old "security"/"deep" aliases now land on Protections, p1). Harden
-# stays folded into Services until its own variant lands.
-_LEGACY_PAGE = {"home": "overview",
-                "harden": "services", "logs": "auditlog",
+# task 10 gave Scans and Protections their own pages (the old
+# "security"/"deep" aliases now land on Protections, p1), and task 11
+# gave Harden its own page again (h1: score band + flat checklist), so
+# the only remaining folds are the real absorbers (Home, logs, aliases).
+_LEGACY_PAGE = {"home": "overview", "logs": "auditlog",
                 "security": "protect", "deep": "protect"}
 
 # The settings panes' related-in-suite footers (approved mockup):
@@ -373,9 +373,9 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         # itself (no entry declared for the waiting page).
         guided.entry(self)
         for k, b in self._tabs.items():
-            # The ten-page menu routes several rows onto one page (the
-            # Care rows all serve Services), so a row is active when the
-            # page it opens is the page now shown.
+            # The ten-page menu: after the round-2 variants every Care row
+            # opens its OWN page again (task 11 re-rooted Harden last), so
+            # a row is active when the page it opens is the page now shown.
             on = _LEGACY_PAGE.get(k, k) == key
             if on:
                 b.add_css_class("gw-active")
@@ -442,6 +442,19 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         from ui.protectdesk import ProtectionsPage
         page = ProtectionsPage(win=self)
         self.protect_page = page
+        return page, page.dock_groups()
+
+    def _harden_view(self):
+        """The Harden page (rebuild round 2, task 11, owner h1): the
+        hardening-score band over ONE flat checklist whose open rows
+        apply themselves in place through the existing harden changeset
+        lane (verby planfile -> polkit harden.sh), resolved rows
+        collapsed to one line, and the dock's Profile / Recheck groups.
+        The page never scrolls as a whole: the checklist is its one
+        inner-scrolled container."""
+        from ui.harden import HardenPage
+        page = HardenPage(win=self)
+        self.harden_page = page
         return page, page.dock_groups()
 
     def _auditlog_view(self):
@@ -526,6 +539,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
                           "services": self._services_view,
                           "scans": self._scans_view,
                           "protect": self._protect_view,
+                          "harden": self._harden_view,
                           "auditlog": self._auditlog_view,
                           "defense": self._defense_view,
                           "thunter": self._thunter_view,

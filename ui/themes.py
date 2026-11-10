@@ -642,6 +642,7 @@ progressbar.gw-scanbar progress {{
   background-color: {accent}; border-radius: 99px;
 }}
 progressbar.gw-scanbar.ok progress {{ background-color: {ok}; }}
+progressbar.gw-scanbar.warn progress {{ background-color: {warn}; }}
 progressbar.gw-scanbar.fail progress {{ background-color: {fail}; }}
 progressbar.gw-scanbar.idle progress {{ background-color: {line_strong}; }}
 /* A finding is a button: clicking it opens the meaning and the actions. */

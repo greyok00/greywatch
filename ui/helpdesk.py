@@ -20,7 +20,7 @@ TOUR_TEST_ENVS = ("GREYWATCH_XVFB", "GREYWATCH_TEST_DISPLAY")
 
 # The walkthrough's page order: the home row, then every rail row in the
 # rail's own RAIL order (ui.shell). A rail key that folded into a page
-# (harden -> services) still routes through the window's legacy map, and
+# (logs -> auditlog) still routes through the window's legacy map, and
 # each walked page pulses its declared entry dock group (guided.PAGE_ENTRY)
 # through the route's own greeting - the walk never invents a target.
 

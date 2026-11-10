@@ -207,7 +207,7 @@ def test_rail_groups_follow_the_two_system_design():
     for k in keys:
         assert _LEGACY_PAGE.get(k, k) in ("overview", "defense",
                                           "thunter", "tools", "services",
-                                          "scans", "protect",
+                                          "scans", "protect", "harden",
                                           "auditlog",
                                           "settings", "help")
 

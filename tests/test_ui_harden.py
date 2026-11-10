@@ -13,7 +13,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GLib    # noqa: E402
 
 from hardening.controls import Control    # noqa: E402
-from ui.harden import (HardenView, verby_args, planfile_entries,
+from ui.harden import (HardenPage, verby_args, planfile_entries,
                        parse_apply_output)    # noqa: E402
 
 
@@ -36,15 +36,23 @@ if not _gtk_ready():
     pytest.skip("no display available", allow_module_level=True)
 
 
-def pump(n=60):
+import time as _time
+
+
+def pump(n=400, ms=900):
+    """Drain the main context for up to `ms` wall milliseconds: when a
+    source storm is pending, iteration(False) dispatches one event per
+    call and sleeps only when the context is quiet, so the scan/apply
+    worker threads still get their idle callbacks landed before the
+    helper returns."""
     ctx = GLib.main_context_default()
-    end = GLib.get_monotonic_time() + 5_000_000
+    end = GLib.get_monotonic_time() + int(ms * 1000)
     for _ in range(n):
-        for _ in range(500):          # bounded: a pending storm
-            if not ctx.iteration(False):
-                break
-            if GLib.get_monotonic_time() > end:
-                return                # one dispatch may itself run long
+        if GLib.get_monotonic_time() > end:
+            return
+        if not ctx.iteration(False):
+            _time.sleep(0.005)
+
 
 
 def make_no_tray_window(**kw):
@@ -102,14 +110,16 @@ def no_greywatch_ghosts():
     assert not leftover, f"leaked greywatch windows: {leftover}"
 
 
-def _find_card_texts(view):
+def _row_texts(view):
+    """One entry per checklist row: its direct labels (the flat page
+    holds ONE row frame per check in a plain box - no flowbox wrapper).
+    """
     out = []
-    child = view.cards.get_first_child()
-    while child is not None:
-        frame = child.get_child()
+    frame = view.rows.get_first_child()
+    while frame is not None:
         try:
             box = frame.get_child()
-            b = box.get_first_child()          # head label
+            b = box.get_first_child()
             texts = []
             while b is not None:
                 t = b.get_text() if hasattr(b, "get_text") else ""
@@ -121,7 +131,7 @@ def _find_card_texts(view):
             out.append(" | ".join(texts))
         except Exception:
             pass
-        child = child.get_next_sibling()
+        frame = frame.get_next_sibling()
     return out
 
 
@@ -147,20 +157,22 @@ def fake_runner(line):
 def make_view(cant=True):
     controls = CONTROLS if cant else [
         c for c in CONTROLS if c.id != "unsure-control"]
-    return HardenView(controls=controls, runner=fake_runner)
+    return HardenPage(controls=controls, runner=fake_runner)
 
 
-def test_scan_renders_one_card_per_finding():
+def test_scan_renders_one_row_per_finding():
     view = make_view()
     view._on_scan(None)
     pump()
-    texts = _find_card_texts(view)
-    assert texts, "expected finding cards after scan"
+    texts = _row_texts(view)
+    assert texts, "expected finding rows after scan"
     joined = "\n".join(texts)
     for want in ("Good control", "A gap the helper can fix",
                  "COULD NOT BE CHECKED", "Advisory"):
         assert want in joined, want
-    assert "NIST CM-7" in joined and "CIS 1.1" in joined
+    # task 11: a RESOLVED row collapses to one line, so the NIST/CIS tag
+    # line lives on the OPEN rows only (gap-control's tags)
+    assert "NIST SC-2" in joined
 
 
 def test_apply_disabled_while_a_cant_check_exists():
@@ -236,7 +248,7 @@ def test_parse_apply_output_maps_the_verify_strip():
 
 def test_undo_wired_to_latest_journal_entry(tmp_path):
     journal = tmp_path / "j.jsonl"
-    view = HardenView(controls=CONTROLS, runner=fake_runner,
+    view = HardenPage(controls=CONTROLS, runner=fake_runner,
                       journal_path=journal)
     assert not view.undo_btn.get_sensitive()    # no journal yet
     from hardening.journal import write_entry
@@ -285,7 +297,7 @@ def test_failed_scan_never_reenables_apply():
         raise RuntimeError("kernel went away")
     controls = [Control("boom", "misc", "Boom", probe="boom",
                         severity="LOW")]
-    view = HardenView(controls=controls, runner=exploding_runner)
+    view = HardenPage(controls=controls, runner=exploding_runner)
     view._scan_done(None, list(controls))
     pump()
     assert not view.apply_btn.get_sensitive()
@@ -294,15 +306,15 @@ def test_failed_scan_never_reenables_apply():
     assert not view._scanned
 
 
-def test_unresolvable_fix_shown_on_the_card_at_review_time():
+def test_unresolvable_fix_shown_on_the_row_at_review_time():
     controls = [Control("template-control", "systemd-unit",
                         "Hardened unit template", probe="false",
                         severity="CRITICAL",
                         fix=[["unit-install", "{{unit}}", "TRANCHE"]])]
-    view = HardenView(controls=controls, runner=fake_runner)
+    view = HardenPage(controls=controls, runner=fake_runner)
     view._on_scan(None)
     pump()
-    joined = "\n".join(_find_card_texts(view))
+    joined = "\n".join(_row_texts(view))
     assert "NEEDS A MANUAL CHANGE" in joined
     assert "Apply cannot fix this one" in joined
 
@@ -321,18 +333,18 @@ FAKE_CVE_CACHE = {
 }
 
 
-def test_card_shows_the_display_only_cve_note():
-    view = HardenView(controls=CONTROLS, runner=fake_runner,
+def test_row_shows_the_display_only_cve_note():
+    view = HardenPage(controls=CONTROLS, runner=fake_runner,
                       cve_cache=FAKE_CVE_CACHE)
     view._on_scan(None)
     pump()
-    joined = "\n".join(_find_card_texts(view))
+    joined = "\n".join(_row_texts(view))
     assert "Relevant CVEs on record: CVE-2999-0417" in joined
-    bare = HardenView(controls=CONTROLS, runner=fake_runner,
+    bare = HardenPage(controls=CONTROLS, runner=fake_runner,
                       cve_cache={})
     bare._on_scan(None)
     pump()
-    assert "Relevant CVEs" not in "\n".join(_find_card_texts(bare))
+    assert "Relevant CVEs" not in "\n".join(_row_texts(bare))
 
 
 def test_apply_stays_enabled_when_only_advisory_checks_cant():
@@ -342,7 +354,7 @@ def test_apply_stays_enabled_when_only_advisory_checks_cant():
         probe="EXPLODE", severity="INFO", advisory=True)
     # A fixable gap plus an uncheckable advisory: the advisory must not
     # hold Apply hostage, so it stays live.
-    view = HardenView(controls=[CONTROLS[1], broken_advisory],
+    view = HardenPage(controls=[CONTROLS[1], broken_advisory],
                       runner=fake_runner)
     view._on_scan(None)
     pump()
@@ -350,14 +362,14 @@ def test_apply_stays_enabled_when_only_advisory_checks_cant():
     assert "advisory-only" in view.status.get_text()
     # With nothing changeable the button is off (that is not a failure,
     # it means there is nothing to apply):
-    idle = HardenView(controls=[CONTROLS[0], broken_advisory],
+    idle = HardenPage(controls=[CONTROLS[0], broken_advisory],
                       runner=fake_runner)
     idle._on_scan(None)
     pump()
     assert not idle.apply_btn.get_sensitive()
     assert "nothing the app can change" in idle.apply_btn.get_tooltip_text()
     # a regular (non-advisory) unknown still gates even when a gap exists:
-    gated = HardenView(controls=[CONTROLS[1], CONTROLS[2]],
+    gated = HardenPage(controls=[CONTROLS[1], CONTROLS[2]],
                        runner=fake_runner)
     gated._on_scan(None)
     pump()
@@ -372,7 +384,7 @@ def test_advisory_gaps_are_never_counted_as_applicable():
     advisory_gap = Control(
         "advisory-gap", "docs", "Advisory: update when you choose",
         probe="false", severity="INFO", advisory=True)
-    view = HardenView(controls=[CONTROLS[0], advisory_gap],
+    view = HardenPage(controls=[CONTROLS[0], advisory_gap],
                       runner=fake_runner)
     view._on_scan(None)
     pump()
@@ -387,35 +399,36 @@ def test_advisory_gaps_are_never_counted_as_applicable():
 
 
 def _card_dot_inks(view):
-    """The head dot's ink colour for each card."""
+    """The head dot's ink colour for each row (plain box rows carry the
+    dot attr on the frame itself - no flowbox wrapper to unwrap)."""
     out = []
-    child = view.cards.get_first_child()
-    while child is not None:
-        out.append(getattr(child.get_child(), "dot_ink", ""))
-        child = child.get_next_sibling()
+    frame = view.rows.get_first_child()
+    while frame is not None:
+        out.append(getattr(frame, "dot_ink", ""))
+        frame = frame.get_next_sibling()
     return out
 
 
-def test_card_marks_follow_the_result_not_severity():
+def test_row_marks_follow_the_result_not_severity():
     # A check that already passed is good news and must read green; the
     # severity badge stays in the tag line, red is reserved for failures.
     view = make_view(cant=False)   # PASS control, fixable gap, advisory
     view._on_scan(None)
     pump()
-    joined = "\n".join(_find_card_texts(view))
+    joined = "\n".join(_row_texts(view))
     # Drawn dots in the theme's ink, never emoji: emoji ignore the theme
     # and render differently on every machine (design pass 2026-10-30).
     assert "● already at baseline" in joined, joined
     assert "● NOT at baseline" in joined, joined
     assert "● ADVISORY (never applied)" in joined, joined
     assert "🟢" not in joined and "🟡" not in joined and "📄" not in joined
-    assert not any(t.startswith("● failed") for t in _find_card_texts(view)), \
+    assert not any(t.startswith("● failed") for t in _row_texts(view)), \
         joined
     inks = _card_dot_inks(view)
     assert len(set(inks)) >= 2, inks            # pass and gap differ in ink
 
 
-def test_apply_success_rescans_the_cards():
+def test_apply_success_rescans_the_rows():
     # After a successful apply the checks re-run, so a fixed gap turns
     # green on the cards without the user re-running anything.
     seen = []
@@ -424,7 +437,7 @@ def test_apply_success_rescans_the_cards():
         seen.append(line)
         return fake_runner(line)
 
-    view = HardenView(controls=[CONTROLS[0], CONTROLS[1]],
+    view = HardenPage(controls=[CONTROLS[0], CONTROLS[1]],
                       runner=counting,
                       helper=lambda a: (0, "VERBIFY gap-control 0\n", ""))
     view._on_scan(None)
@@ -436,22 +449,22 @@ def test_apply_success_rescans_the_cards():
     assert "gap-control GREEN" in view.verify_label.get_text()
 
 
-def _card_texts_after(view):
+def _row_texts_after(view):
     view._on_scan(None)
     pump()
-    return "\n".join(_find_card_texts(view))
+    return "\n".join(_row_texts(view))
 
 
-def test_advisory_card_gets_a_button_that_confirms_once():
+def test_advisory_row_gets_a_button_that_confirms_once():
     from hardening.controls import Control
     ctrl = Control("advisory-install", "malware", "ClamAV is not installed",
                    probe="false", severity="INFO", advisory=True,
                    advisory_action={"kind": "install", "package": "clamav"})
-    view = HardenView(controls=[ctrl], runner=fake_runner,
+    view = HardenPage(controls=[ctrl], runner=fake_runner,
                       helper=lambda a: (0, "APPLY advisory-install 0\n", ""))
     view._on_scan(None)
     pump()
-    assert "Install ClamAV" in _card_texts_after(view)
+    assert "Install ClamAV" in _row_texts_after(view)
     confirms, plans = [], []
 
     def helper(args):
@@ -477,7 +490,7 @@ def test_batch_apply_never_runs_advisory_actions():
     ctrl = Control("advisory-updates", "updates", "Updates pending",
                    probe="false", severity="INFO", advisory=True,
                    advisory_action={"kind": "updates"})
-    view = HardenView(controls=[ctrl], runner=fake_runner,
+    view = HardenPage(controls=[ctrl], runner=fake_runner,
                       helper=lambda a: pytest.fail("batch must not run it"))
     view._on_scan(None)
     pump()
@@ -487,7 +500,7 @@ def test_batch_apply_never_runs_advisory_actions():
 
 
 def test_restart_banner_lists_only_validated_units():
-    view = HardenView(controls=[CONTROLS[0]], runner=fake_runner)
+    view = HardenPage(controls=[CONTROLS[0]], runner=fake_runner)
     view._show_restart_banner(
         {"reboot_required": True, "packages": ["linux-image-1"],
          "services": ["ssh", "bad;unit"]})

@@ -198,7 +198,7 @@ def test_page_is_its_own_page_again():
     assert "protect" not in _LEGACY_PAGE      # own page again (task 10)
     assert _LEGACY_PAGE.get("security") == "protect"
     assert _LEGACY_PAGE.get("deep") == "protect"
-    assert _LEGACY_PAGE.get("harden") == "services"
+    assert _LEGACY_PAGE.get("harden", "harden") == "harden"   # own page (task 11)
 
 
 def test_builder_returns_the_page_no_whole_page_scroller():

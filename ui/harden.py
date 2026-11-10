@@ -1,3 +1,24 @@
+"""The Harden page (rebuild round 2, task 11, owner h1): the endpoint
+baseline as a flat, self-applying checklist over one hardening-score
+band.
+
+What the owner verified for this variant:
+  - ONE score band at the page top: the percent of the checks this page
+    can change that already sit at baseline (an unreadable check counts
+    as not earned, advisory rows never score), banded ok / warn / fail.
+  - ONE flat checklist: every open row carries its own real fix button
+    through the EXISTING harden changeset lane (the same verby_args ->
+    planfile -> harden.sh apply contract the batch Apply always used),
+    the row states what happened ("applied changeset ..."), and a
+    resolved row collapses to one line. Manual changes say so instead of
+    shipping a button that cannot work.
+  - The dock: Profile (recommended / strict / paranoid - honest radios:
+    the control set ships as ONE baseline and no profile lane exists,
+    so they stay disabled with their reason) and Recheck (the recheck-
+    after-apply the apply lane already runs, toggled off only by choice).
+Nothing new can act on the machine: the polkit helper, the verby
+allowlist and the journal are the same code as before this rebuild.
+"""
 from __future__ import annotations
 
 import json
@@ -89,11 +110,60 @@ def parse_apply_output(stdout: str) -> dict[str, str]:
     return colors
 
 
-class HardenView(Gtk.Box):
+def hardening_score(findings, controls) -> tuple[int, str]:
+    """The hardening percent and its band tone, from the checklist's own
+    counts: the share of countable checks that already sit at baseline.
+
+    Advisory rows never score (the suite never applies them); a check
+    that could not be read counts as not earned, never as earned. Bands
+    are the owner's law: >= 80 ok, 40-79 warn, < 40 fail; no countable
+    check at all is "idle" instead of a lying 0%."""
+    advisory_ids = {getattr(c, "id", "") for c in (controls or [])
+                    if bool(getattr(c, "advisory", False))}
+    counted = [f for f in (findings or [])
+               if f.control_id not in advisory_ids]
+    total = len(counted)
+    if not total:
+        return 0, "idle"
+    at = sum(1 for f in counted if f.state == detector.PASS)
+    pct = round(100.0 * at / total)
+    tone = "ok" if pct >= 80 else ("warn" if pct >= 40 else "fail")
+    return pct, tone
+
+
+_VERB_LABEL = {
+    "pkg-upgrade": "Apply package updates",
+    "pkg-install": "Install the package",
+    "sysctl-set": "Tighten the setting",
+    "service-off": "Stop the service and turn it off at boot",
+    "restart-units": "Restart the services",
+    "sh": "Run this change",
+}
+
+_PROFILE_TIP = ("no profile lane yet: the control set ships as ONE "
+                "recommended baseline, so these stay off until a "
+                "reshape-the-checklist-by-profile lane exists")
+
+_RECHECK_TIP = ("After a row's own fix the checks re-run, so the fixed "
+                "row collapses to resolved and the score recomputes; "
+                "turn off to keep the row's result line in place "
+                "instead. The batch Apply always re-verifies.")
+
+_RECHECK_NOTE = ("the score updates only on a recheck")
+
+_APPLY_WORDS = {
+    "GREEN": "fixed and verified",
+    "RED": "the change did not hold (it rolled back)",
+    "AMBER": "applied, not re-verified yet",
+}
+
+
+class HardenPage(Gtk.Box):
 
     def __init__(self, win=None, controls=None, runner=None, helper=None,
                  journal_path=None, cve_cache=None):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL,
+                         spacing=12)
         self.set_margin_top(26); self.set_margin_start(34)
         self.set_margin_end(34); self.set_margin_bottom(20)
         self._win = win              # reuse the window's heading helpers
@@ -106,6 +176,12 @@ class HardenView(Gtk.Box):
         self._scanned = False
         self._scanned_controls = []
         self._dead = False
+        self._score_stale = False
+        self._row_results: dict[str, Gtk.Label] = {}
+        # The wording of the last apply per control — it survives the
+        # recheck's row rebuild, so a fixed row keeps saying what its
+        # apply did even after collapsing to one line.
+        self._row_last_result: dict[str, str] = {}
         self.connect("destroy", self._on_dead)
 
         self.append(self._h1("Endpoint Hardening"))
@@ -116,12 +192,34 @@ class HardenView(Gtk.Box):
         # Inter at 13px, which ignored whichever theme was active (design
         # pass.
         intro.set_text("Baseline checks test this computer's security "
-                       "settings. Nothing is applied until you press Apply.")
+                       "settings. Each open row can apply its own fix in "
+                       "place; nothing runs until you press it.")
         intro.add_css_class("gw-page-meta")
         intro.set_tooltip_text(
-            "Each check shows where it stands and what applying it "
-            "would change.")
+            "Each row shows where one check stands; its button runs the "
+            "one change through the root lane and says what happened.")
         self.append(intro)
+
+        # 1. the score band: one progress bar, the number beside it
+        band = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.score_label = Gtk.Label(xalign=0)
+        self.score_label.set_xalign(0)
+        self.score_label.set_valign(Gtk.Align.CENTER)
+        _score_tip = ("Percent of the checks this page can change that "
+                      "already sit at baseline; a check that could not be "
+                      "read counts as not earned and advisory rows never "
+                      "score. Bands: 80+ good, 40-79 mid, under 40 low.")
+        self.score_label.set_tooltip_text(_score_tip)
+        self.score_label.add_css_class("gw-page-meta")
+        band.append(self.score_label)
+        self.score_bar = Gtk.ProgressBar()
+        self.score_bar.add_css_class("gw-scanbar")
+        self.score_bar.set_hexpand(True)
+        self.score_bar.set_valign(Gtk.Align.CENTER)
+        self.score_bar.set_tooltip_text(_score_tip)
+        band.append(self.score_bar)
+        self.append(band)
+        self._paint_score()
 
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.status = Gtk.Label(xalign=0)
@@ -135,7 +233,7 @@ class HardenView(Gtk.Box):
         self.scan_btn.add_css_class("gw-primary")
         self.scan_btn.connect("clicked", self._on_scan)
         row.append(self.scan_btn)
-        self.apply_btn = Gtk.Button(label="Apply baseline")
+        self.apply_btn = Gtk.Button(label="Apply all open")
         self.apply_btn.set_sensitive(False)
         self.apply_btn.connect("clicked", self._on_apply)
         row.append(self.apply_btn)
@@ -166,27 +264,31 @@ class HardenView(Gtk.Box):
         self.restart_units: list[str] = []
         self.append(self.restart_box)
 
-        # Until a scan runs, the card area is empty; a blank half-screen
-        # read as a broken page. One sentence says what
-        # will appear here.
+        # Until a scan runs, the checklist area is empty; a blank
+        # half-screen read as a broken page. One sentence says what will
+        # appear here.
         self.empty = Gtk.Label(xalign=0)
         self.empty.set_xalign(0)
         self.empty.set_wrap(True)
         self.empty.set_valign(Gtk.Align.START)
         self.empty.add_css_class("gw-meta")
         self.empty.set_text(
-            "Each setting this computer is checked against gets a card "
-            "here: what it is, where it stands now, and what applying it "
-            "would change. Press Run baseline checks to fill them in.")
+            "Every setting this computer is checked against gets one row "
+            "here, in order: where it stands and, when it is open, its "
+            "own fix button. Press Run baseline checks to fill them in.")
         self.append(self.empty)
 
-        self.cards = Gtk.FlowBox()
-        self.cards.set_max_children_per_line(3)
-        self.cards.set_min_children_per_line(2)
-        self.cards.set_selection_mode(Gtk.SelectionMode.NONE)
-        self.cards.set_hexpand(True)
-        self.cards.set_vexpand(False)
-        self.append(self.cards)
+        # 2. THE flat checklist: one row per check, and the page's ONE
+        # inner-scrolled container (window-fit law: the chrome fits and
+        # the rows scroll; the page never scrolls as a whole).
+        self.rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.rows_scroll = Gtk.ScrolledWindow()
+        self.rows_scroll.set_policy(Gtk.PolicyType.NEVER,
+                                    Gtk.PolicyType.AUTOMATIC)
+        self.rows_scroll.set_vexpand(True)
+        self.rows_scroll.set_child(self.rows)
+        self.append(self.rows_scroll)
+
         self.append(self._h2("Verification"))
         self.verify_label = Gtk.Label(xalign=0)
         self.verify_label.set_xalign(0)
@@ -194,16 +296,48 @@ class HardenView(Gtk.Box):
         self.verify_label.set_text("Nothing applied in this session yet.")
         self.append(self.verify_label)
         self._refresh_undo()
+        self._build_dock()
 
+    # ------------------------------------------------------------- dock
+    def _build_dock(self) -> None:
+        """The dock controls (built once; DockHost claims them). Profile
+        is honest exactly because the machinery has no profile lane; the
+        recheck toggle gates the one rescan the apply lane already runs."""
+        self._profile_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                                    spacing=4)
+        pick = None
+        for word in ("recommended", "strict", "paranoid"):
+            rb = Gtk.CheckButton(group=pick, label=word)
+            rb.set_sensitive(False)
+            rb.set_tooltip_text(_PROFILE_TIP)
+            self._profile_box.append(rb)
+            pick = pick or rb
+        self._profile_note = Gtk.Label(xalign=0)
+        self._profile_note.set_xalign(0)
+        self._profile_note.set_wrap(True)
+        self._profile_note.add_css_class("gw-meta")
+        self._profile_note.set_text(
+            "the shipped set is one recommended baseline")
+        self._recheck = Gtk.CheckButton(label="Recheck after apply")
+        self._recheck.set_active(True)     # the apply lane rechecks by law
+        self._recheck.set_tooltip_text(_RECHECK_TIP)
+
+    def dock_groups(self):
+        """("Title", [widgets]) groups for the fixed right dock."""
+        return [("Profile", [self._profile_box, self._profile_note]),
+                ("Recheck", [self._recheck,
+                             Gtk.Label(label=_RECHECK_NOTE, xalign=0)])]
+
+    # -------------------------------------------------------- headings
     def _h1(self, text):
         if self._win is not None:
             return self._win._h1(text)
-        return HardenView._static_h1(text)
+        return HardenPage._static_h1(text)
 
     def _h2(self, text):
         if self._win is not None:
             return self._win._h2(text)
-        return HardenView._static_h2(text)
+        return HardenPage._static_h2(text)
 
     @staticmethod
     def _static_h1(text):
@@ -223,6 +357,27 @@ class HardenView(Gtk.Box):
                      f"weight='600'>{escape(text)}</span>")
         return l
 
+    # ---------------------------------------------------------- the bar
+    def _set_score_tone(self, tone):
+        for cls in ("ok", "warn", "fail", "idle"):
+            self.score_bar.remove_css_class(cls)
+        self.score_bar.add_css_class(tone)
+
+    def _paint_score(self):
+        if not self._scanned:
+            self._set_score_tone("idle")
+            self.score_bar.set_fraction(0.0)
+            self.score_label.set_text("Hardening score: not scored yet")
+            return
+        pct, tone = hardening_score(self._findings, self._scanned_controls)
+        self._set_score_tone(tone)
+        self.score_bar.set_fraction(pct / 100.0)
+        text = f"Hardening score: {pct}%"
+        if self._score_stale:
+            text += " - changes applied, recheck to rescore"
+        self.score_label.set_text(text)
+
+    # ---------------------------------------------------------- the scan
     def _on_scan(self, _btn):
         self.status.set_text("Running baseline checks (a few seconds)…")
         self.apply_btn.set_sensitive(False)
@@ -285,6 +440,7 @@ class HardenView(Gtk.Box):
         if self._dead:
             return False
         self.scan_btn.set_sensitive(True)
+        self._score_stale = False
         if findings is None:                 # failed scan: never look empty
             self._scanned = False
             self._findings = []
@@ -292,20 +448,22 @@ class HardenView(Gtk.Box):
             self.verify_label.set_text(
                 "The scan failed. Nothing was checked. Run the checks "
                 "again.")
+            self._paint_score()
             self._focus_primary()
             return False
         self._findings = findings
         self._scanned = True
         self.empty.set_visible(not bool(findings))
         self._scanned_controls = list(controls)
+        self._row_results = {}
         by_id = {getattr(c, "id", ""): c for c in controls}
         while True:
-            child = self.cards.get_first_child()
+            child = self.rows.get_first_child()
             if child is None:
                 break
-            self.cards.remove(child)
+            self.rows.remove(child)
         cant = [f for f in findings if f.state == detector.CANT]
-        # Advisory cards are information only. build_plan never applies
+        # Advisory rows are information only. build_plan never applies
         # them, so they must not count as gaps or hold Apply open:
         # counting them made Apply look broken on a machine whose only
         # "gaps" were advisory. An unknown state is
@@ -322,7 +480,7 @@ class HardenView(Gtk.Box):
             if not got or got.get("unresolvable"):
                 manual_ids.add(f.control_id)
         for fnd in findings:
-            self.cards.append(self._card(
+            self.rows.append(self._row(
                 fnd, by_id.get(fnd.control_id),
                 manual=fnd.control_id in manual_ids))
         n = len(findings)
@@ -342,14 +500,15 @@ class HardenView(Gtk.Box):
                         f"tightened, {n_manual} need(s) a change the helper "
                         "cannot make.")
             elif auto:
-                text = f"{n} checks done: {auto} gap(s) would be tightened."
+                text = (f"{n} checks done: {auto} gap(s) each row can "
+                        "tighten in place.")
             else:
                 text = (f"{n} checks done: {n_manual} gap(s) each need a "
                         "change the helper cannot make.")
             if advisory_ids:
                 adv_n = len(advisory_ids)
-                adv_words = ("card reports" if adv_n == 1
-                             else "cards report")
+                adv_words = ("row reports" if adv_n == 1
+                             else "rows report")
                 text += (f" {adv_n} advisory-only {adv_words} "
                          "information and are never applied")
                 if cant:
@@ -357,7 +516,7 @@ class HardenView(Gtk.Box):
                              "on this computer")
                 text += "."
             if auto:
-                text += " Review the cards, then Apply if you agree."
+                text += " Press a row's own button, or Apply all open."
         self.status.set_text(text)
         if gating:
             self.apply_btn.set_tooltip_text(
@@ -374,9 +533,11 @@ class HardenView(Gtk.Box):
         else:
             self.apply_btn.set_tooltip_text("")
         self.apply_btn.set_sensitive(not gating and auto > 0)
+        self._paint_score()
         self._focus_primary()
         return False
 
+    # ------------------------------------------------------- the rows
     def _load_cve_cache(self) -> dict:
         try:
             raw = json.loads(
@@ -392,13 +553,19 @@ class HardenView(Gtk.Box):
         notes = [cve_note(x, cache) for x in ids]
         return "; ".join(dict.fromkeys(n for n in notes if n))
 
-    def _card(self, fnd, control, manual=False):
-        # The head badge follows the CHECK RESULT, not the severity: a
-        # check that already passes is good news and reads green; red is
-        # reserved for a check that actually failed. Severity lives in the
-        # tag line at the bottom of the card.
-        # A drawn dot in the theme's status ink, not an emoji: emoji
-        # ignore the theme and render differently on every machine.
+    def _row(self, fnd, control, manual=False):
+        """One flat checklist row.
+
+        A resolved row (already at baseline) collapses to ONE line - dot,
+        state and subject - with no button and no body, so a healthy
+        checklist reads in seconds. An open row carries its state, the
+        subject's real wording and, when the allowlisted verbs can make
+        the change, its own fix button whose result line lives on the
+        row."""
+        # The dot follows the CHECK RESULT, not the severity: a check
+        # that already passes is good news and reads green; red is
+        # reserved for a check that actually failed. A drawn dot in the
+        # theme's status ink, not an emoji: emoji ignore the theme.
         advisory_flag = bool(getattr(control, "advisory", False))
         dot_ink = (pc_muted() if advisory_flag else
                    {detector.PASS: pc_ok(), detector.GAP: pc_warn(),
@@ -408,28 +575,45 @@ class HardenView(Gtk.Box):
         words = {detector.PASS: "already at baseline",
                  detector.GAP: "NOT at baseline (would be tightened)",
                  detector.FAIL: "failed the check",
-                 detector.CANT: "COULD NOT BE CHECKED"}
-        advisory = bool(getattr(control, "advisory", False))
+                 detector.CANT: "COULD NOT BE CHECKED"}.get(
+                     fnd.state, fnd.state)
+        advisory = advisory_flag
         if advisory:
-            words = {fnd.state: "ADVISORY (never applied)"}
+            words = "ADVISORY (never applied)"
         elif manual:
-            words = {fnd.state: "NEEDS A MANUAL CHANGE (Apply cannot "
-                                 "fix this one)"}
+            words = "NEEDS A MANUAL CHANGE (Apply cannot fix this one)"
+        subject = (control.what if control is not None else fnd.control_id)
         frame = Gtk.Frame()
         frame.add_css_class("gw-card")
         frame.dot_ink = dot_ink           # read by the UI tests
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         box.set_margin_top(12); box.set_margin_bottom(12)
         box.set_margin_start(12); box.set_margin_end(12)
+        collapsed = (fnd.state == detector.PASS
+                     or (advisory and not getattr(control, "advisory_action",
+                                                  None)))
+        prior = self._row_last_result.get(fnd.control_id, "")
+        if collapsed:
+            head = Gtk.Label(xalign=0)
+            head.set_xalign(0)
+            head.set_wrap(True)
+            line = f"{words} - {subject}"
+            if prior:
+                line += f" ({prior.rstrip('.')})"
+            head.set_markup(
+                f"<span size='13000' font_family='Inter'>{mark} "
+                f"{escape(line)}</span>")
+            box.append(head)
+            frame.set_child(box)
+            return frame
         head = Gtk.Label(xalign=0)
         head.set_xalign(0)
         head.set_wrap(True)
         head.set_markup(
             f"<span size='15000' font_family='Inter'>{mark} "
-            f"{escape(words.get(fnd.state, fnd.state))}</span>")
+            f"{escape(words)}</span>")
         box.append(head)
-        body_text = fnd.note or (control.what if control is not None
-                                 else fnd.control_id)
+        body_text = fnd.note or subject
         body = Gtk.Label(xalign=0)
         body.set_xalign(0)
         body.set_wrap(True)
@@ -444,7 +628,8 @@ class HardenView(Gtk.Box):
             note.set_xalign(0)
             note.set_wrap(True)
             note.set_markup(
-                f"<span size='11000' font_family='Inter' color='{pc_warn()}'>"
+                f"<span size='11000' font_family='Inter' "
+                f"color='{pc_warn()}'>"
                 + escape(cve_txt) + "</span>")
             box.append(note)
         tag_bits = [control.severity if control is not None else ""] \
@@ -464,15 +649,115 @@ class HardenView(Gtk.Box):
             cur.set_xalign(0)
             cur.set_wrap(True)
             cur.set_markup(
-                f"<span size='11000' font_family='Inter' color='{pc_soft()}'>"
+                f"<span size='11000' font_family='Inter' "
+                f"color='{pc_soft()}'>"
                 f"current: {escape(fnd.current[:200])}</span>")
             box.append(cur)
+        if not advisory:
+            fix_btn = self._row_fix_button(control)
+            if fix_btn is not None:
+                box.append(fix_btn)
+                result = Gtk.Label(xalign=0)
+                result.set_xalign(0)
+                result.set_wrap(True)
+                result.add_css_class("gw-meta")
+                if prior:
+                    result.set_text(prior)
+                    result.set_visible(True)
+                else:
+                    result.set_visible(False)
+                box.append(result)
+                self._row_results[fnd.control_id] = result
         action_btn = self._action_button(control)
         if action_btn is not None:
             box.append(action_btn)
         frame.set_child(box)
         return frame
 
+    _VERB_TIP = {
+        "pkg-upgrade": "Upgrades every package with the safe flags - "
+                       "nothing is removed and local config wins.",
+        "pkg-install": "Installs the package the check is tested for.",
+        "sysctl-set": "Writes one kernel setting through the root lane "
+                      "and keeps the change in the journal.",
+        "service-off": "Stops the service and turns it off at boot.",
+        "sh": "Runs this one allowlisted command through the root lane.",
+        "restart-units": "Restarts the units the check names.",
+    }
+
+    def _row_fix_button(self, control):
+        """The row's own apply button, through the SAME changeset lane
+        the batch Apply runs (verby_args + planfile + harden.sh apply).
+        Controls whose fix is unresolvable (templates) or allowlist-empty
+        never get a fake button - the row says a person is needed."""
+        got = verby_args(getattr(control, "fix", []))
+        if not got or got.get("unresolvable"):
+            return None
+        label = _VERB_LABEL.get(got["verb"], "Apply this fix")
+        btn = Gtk.Button(label=label)
+        btn.add_css_class("gw-cta")
+        btn.set_halign(Gtk.Align.START)
+        btn.set_tooltip_text(self._VERB_TIP.get(
+            got["verb"], "Runs this one change through the root lane."))
+        btn.connect("clicked", self._on_row_apply, control)
+        return btn
+
+    # -------------------------------------------------- row apply (h1)
+    def _on_row_apply(self, _btn, control):
+        self.status.set_text(
+            f"Applying this row. One password prompt, then the checks "
+            f"re-run…")
+        _btn.set_sensitive(False)
+
+        def worker():
+            rc, out, err = -1, "helper failed", ""
+            try:
+                rc, out, err = self._run_steps(
+                    control.id, getattr(control, "fix", []))
+            except Exception as exc:              # never kill the UI
+                err = f"helper failed: {exc}"
+            GLib.idle_add(self._row_apply_done, control, rc, out, err)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _row_apply_done(self, control, rc, out, err):
+        if self._dead:
+            return False
+        colors = parse_apply_output((out or "") + "\n" + (err or ""))
+        color = colors.get(control.id, "")
+        if rc == 0:
+            meaning = _APPLY_WORDS.get(
+                color, "the helper reported no results")
+            line = f"applied changeset {control.id}: {color} - {meaning}."
+            self.status.set_text(
+                "Done. The row above says what happened"
+                + (". Checks re-run now."
+                   if self._recheck.get_active() else "."))
+        else:
+            line = (f"the changeset {control.id} did not hold: the "
+                    f"helper exited with code {rc}. Nothing else was "
+                    f"changed.")
+            self.status.set_text(
+                "The apply did not fully succeed - the row above says "
+                "what happened.")
+        lbl = self._row_results.get(control.id)
+        if lbl is not None:
+            lbl.set_text(line)
+            lbl.set_visible(True)
+        self._row_last_result[control.id] = line
+        self.verify_label.set_text(
+            "applied in this session: "
+            + (f"{control.id} {color}" if color else line)
+            + "\n" + line)
+        if rc == 0 and self._recheck.get_active():
+            self._on_scan(None)              # the same recheck, rescored
+        else:
+            self._score_stale = True
+            self._paint_score()
+        self._refresh_undo()
+        return False
+
+    # ------------------------------------------------- advisory actions
     _ACTION_LABEL = {
         "updates": "Apply updates",
         "install": "Install ClamAV",
@@ -553,7 +838,7 @@ class HardenView(Gtk.Box):
 
         def worker():
             rc, out, err = self._run_steps(control.id, fix)
-            GLib.idle_add(self._action_done, rc, out, err, kind)
+            GLib.idle_add(self._action_done, rc, out, err, kind, control)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -571,7 +856,7 @@ class HardenView(Gtk.Box):
         finally:
             path.unlink(missing_ok=True)
 
-    def _action_done(self, rc, out, err, kind):
+    def _action_done(self, rc, out, err, kind, control=None):
         if self._dead:
             return False
         colors = parse_apply_output((out or "") + "\n" + (err or ""))
@@ -580,6 +865,16 @@ class HardenView(Gtk.Box):
                 "The action did not complete. Nothing else was changed.")
         else:
             self.status.set_text("Done. The checks run again now.")
+            if control is not None:
+                cid = control.id
+                color = colors.get(cid, "")
+                word = _APPLY_WORDS.get(color, color or "done")
+                line = f"applied changeset {cid}: {color} - {word}."
+                self._row_last_result[cid] = line
+                lbl = self._row_results.get(cid)
+                if lbl is not None:
+                    lbl.set_text(line)
+                    lbl.set_visible(True)
             self._on_scan(None)
             if kind == "updates":
                 self._check_restarts()
@@ -588,6 +883,7 @@ class HardenView(Gtk.Box):
                 "\n".join(f"{cid} {color}" for cid, color in colors.items()))
         return False
 
+    # pending restarts ---------------------------------------------------
     def _check_restarts(self):
         def worker():
             rc, out, err = self._run_steps("pending-restarts-read",
@@ -653,6 +949,7 @@ class HardenView(Gtk.Box):
             else "Some services could not be restarted. See the logs.")
         return False
 
+    # ------------------------------------------------------ batch / undo
     def _on_apply(self, _btn):
         self.apply_btn.set_sensitive(False)
         self.status.set_text("Applying the baseline. One password prompt, "
@@ -679,7 +976,7 @@ class HardenView(Gtk.Box):
                     self.status.set_text(
                         "Nothing to apply: every changeable check already "
                         "passes. "
-                        + (f"The {len(advisories)} ADVISORY cards are "
+                        + (f"The {len(advisories)} ADVISORY rows are "
                            "information only and are never changed "
                            "automatically. " if advisories else "")
                         + "Run the checks again after a system update.")
@@ -690,7 +987,7 @@ class HardenView(Gtk.Box):
                     self.status.set_text(
                         f"Nothing the app can apply: {len(gaps)} gap(s) "
                         "each need a manual change, so none was "
-                        "attempted. The cards name the change for each "
+                        "attempted. The rows name the change for each "
                         "one.")
                 self._focus_primary()
                 return False
@@ -746,11 +1043,14 @@ class HardenView(Gtk.Box):
         if rc != 0:
             lines.append(f"Helper exited with code {rc}. See the logs.")
             self.status.set_text(
-                "The apply did not fully succeed - the cards below show "
+                "The apply did not fully succeed - the rows below show "
                 "the current state.")
         else:
-            # The checks run again at once: gaps the apply just closed turn
-            # green on the cards without the user re-running anything.
+            # The checks run again at once: gaps the apply just closed
+            # collapse to resolved rows without the user re-running
+            # anything (the recheck toggle only mutes the ROW lane's
+            # own recheck, never this batch one's — the batch lane's
+            # whole contract is fix-and-verify in one pass).
             self._on_scan(None)
         self.verify_label.set_text("\n".join(lines))
         self._refresh_undo()
