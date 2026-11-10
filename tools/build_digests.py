@@ -34,6 +34,8 @@ def db_tools():
             title = (rec.get("t") or rec.get("title") or "")
             title = title.replace("MAN PAGE: ", "").replace(" - part", "|part")
             head = title.split("|")[0].strip().lower()
+            # the man page and the digest name the virus tool differently
+            head = "clamav" if head == "clamd" else head
             for tool in DIGEST_TOOLS:
                 if head == tool or head.split(" - ")[0] == tool:
                     tools.add(tool)
