@@ -703,10 +703,12 @@ class ProtectDesk(Gtk.Box):
 # ----------------------------------------------------------- the p1 page
 
 _RUN_HISTORY_LIMIT = 5
-_PATCH_TIP = ("no patch lane exists yet on this machine - packages move "
-              "through your system's own update manager; the advisory "
-              "list itself refreshes from the update lane beside the "
-              "card title")
+_PATCH_TIP = ("advisory rules never patch anything by the suite's own "
+              "law (cverules: 'nothing here patches anything') - package "
+              "work lives in the Harden lane (apply/harden.sh "
+              "pkg-upgrade) and your system's own update manager; the "
+              "advisory list itself refreshes from the update lane "
+              "beside this card's title")
 _RUNS_NOTE = ("Runs arrive when the keeper starts them; the suite runs "
               "one scanner per slot. The timers the tools already keep: "
               "yara-tmp-scan.timer, aide-check.timer, "
@@ -945,8 +947,9 @@ class ProtectionsPage(Gtk.Box):
 
     def _advisory_row(self, rule: dict) -> Gtk.Box:
         """One wall row: severity tone, the affected tool in its own
-        words, the flaw, and the Patch control. Disabled, because no
-        apt lane exists - the tooltip says so instead of pretending."""
+        words, the flaw, and the Patch control. Disabled, because the
+        rules lane never patches (the pinned cverules law) - the tooltip
+        names where package work really lives instead of pretending."""
         sev = _sev_words(rule)
         ink = severity_colour(_rule_tone(float(rule.get("score") or 0)))
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)

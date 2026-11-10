@@ -115,8 +115,10 @@ def test_the_wall_renders_severity_and_tool_per_row(page):
 
 
 def test_patch_buttons_are_disabled_with_the_honest_reason(page):
-    """No apt lane exists on this box: a row's Patch sits disabled and
-    says so - never a button that pretends to patch."""
+    """The rules lane never patches (the pinned cverules law - package
+    work lives in the Harden lane and the update manager): a row's
+    Patch sits disabled and says that truth, never a button that
+    pretends to patch."""
     p, _win = page
     p.refresh()
     patches = [b for b in _buttons(p)
@@ -124,7 +126,8 @@ def test_patch_buttons_are_disabled_with_the_honest_reason(page):
     assert len(patches) == 2
     assert all(not b.get_sensitive() for b in patches)
     tip = str(patches[0].get_tooltip_text() or "").lower()
-    assert "no patch lane" in tip
+    assert "never patch" in tip
+    assert "harden" in tip                   # where package work lives
 
 
 def test_refresh_advisories_uses_the_update_lane(page):

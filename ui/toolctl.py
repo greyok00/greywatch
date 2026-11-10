@@ -240,14 +240,27 @@ class ToolCtlMixin:
                "green when the log speaks." if rc == 0 else
                f"Could not start the {friendly_name(name)} scan "
                f"({helper_detail(rc, err)}).")
-        print(f"scan {name}: {msg}", flush=True)
         if rc != 0:
-            console = getattr(getattr(self, "services_page", None),
-                              "scanconsole", None)
-            if console is not None and hasattr(console, "show_scan_note"):
-                console.show_scan_note(f"the scan could not start: "
-                                       f"{friendly_name(name)} - "
-                                       f"{helper_detail(rc, err)}.")
+            # A failed click is never silent: whichever page carries the
+            # scan console shows the note (the Scans page since task 10,
+            # the Services page if the app is an older build), and with
+            # no console anywhere the honest print path carries it.
+            placed = False
+            for owner in ("scan_page", "services_page"):
+                console = getattr(getattr(self, owner, None),
+                                  "scanconsole", None)
+                if console is not None and \
+                        hasattr(console, "show_scan_note"):
+                    console.show_scan_note(
+                        f"the scan could not start: "
+                        f"{friendly_name(name)} - "
+                        f"{helper_detail(rc, err)}.")
+                    placed = True
+                    break
+            if not placed:
+                print(f"greywatch: scan {name}: {msg}", flush=True)
+        else:
+            print(f"scan {name}: {msg}", flush=True)
         self.refresh()
 
     def _toggle_tool(self, name, pause: bool):

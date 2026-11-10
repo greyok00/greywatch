@@ -1156,9 +1156,11 @@ class ScanConsole(Gtk.Box):
 #   quick sweep  = the lightweight tool only: the temp-folder check,
 #                  done in seconds (mode "yara-tmp-scan")
 #   full suite   = every scanner in turn, one per slot, throttled (mode
-#                  "full" - the five scanners the session staggers)
-#   deep audit   = adds the lynis system audit - the whole-box score
-#                  and its warnings (mode "lynis", the audit-system run)
+#                  "full" - the five scanners the session staggers; the
+#                  run already includes the lynis audit)
+#   deep audit   = runs the lynis system audit on its own - the
+#                  whole-box score and its warnings (mode "lynis"; the
+#                  machinery keeps no separate deep profile)
 SCAN_MODE_CARDS = (
     {"key": "yara-tmp-scan", "title": "Quick sweep",
      "words": "the lightweight tool only - the temp-folder check, done "
@@ -1167,8 +1169,8 @@ SCAN_MODE_CARDS = (
      "words": "every scanner in turn, one per slot, throttled so the "
               "desktop keeps working"},
     {"key": "lynis", "title": "Deep audit",
-     "words": "adds the lynis system audit - the whole-box score and "
-              "its warnings"},
+     "words": "runs the lynis system audit on its own - the whole-box "
+              "score and its warnings"},
 )
 
 
