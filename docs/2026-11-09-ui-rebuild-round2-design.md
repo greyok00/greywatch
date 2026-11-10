@@ -118,6 +118,16 @@ assistant reads, human-readable); dock carries About (version/build/
 suite-green) and the assistant's current brain state (heuristics on /
 GPU model on-off).
 
+### Window-fit law (owner addition 2026-11-10)
+
+NO page in the window ever scrolls whole-page - not on 1080p, not ever.
+Pages lay out to FIT the window (sections compress, columns share
+width); only INNER containers scroll inside their boxes (the event
+table, the console, a card's config editor). The wizard and every
+dialog behave the same: they fit their window. Every rebuilt page is
+verified at 1080p height with the rail + dock present and no outer
+scrollbar before install (Task 16's screenshot gate includes this).
+
 ## 2. One subject per page (carried, VISUAL-PLAN-UI §5)
 
 Overview = "am I OK right now" (SuiteCard verdict + 4 stat tiles + recent
