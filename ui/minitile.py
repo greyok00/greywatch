@@ -123,7 +123,8 @@ def build_rows(status) -> list:
         return [f'<span color="{_GREY}">●</span> status not readable']
 
     rows = []
-    pending = status.get("pending_decisions") or 0
+    from decisions_factory import snapshot_pending
+    pending = snapshot_pending(status)   # gw215: the ONE published list
     if pending:
         rows.append(f'<span color="{_AMBER}">●</span> {pending} '
                     f'decision(s) waiting')

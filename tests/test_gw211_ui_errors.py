@@ -291,6 +291,58 @@ def test_settings_doctor_rows_absent_key_renders_nothing(
     assert not probe._doctor_label.get_visible()
 
 
+def _needs_you_publish(tmp_path, items):
+    """Publish the daemon's pending_list on disk (what the needs-you
+    section reads through _status_path_rows)."""
+    (tmp_path / "status.json").write_text(json.dumps(
+        {"updated": "2026-11-06T09:00:00+00:00", "pending_list": items}))
+
+
+_NEEDS_YOU_ITEM = {
+    "id": "responderd:q1", "source": "responderd", "kind": "question",
+    "title": "'evil.bin' was quarantined", "detail": "", "ts": "",
+    "options": [{"id": "keep", "label": "Keep quarantined",
+                 "helper": "keep-quarantine"}],
+    "spec": {"id": "responderd:q1",
+             "subject": "'evil.bin' was quarantined",
+             "question": "Keep it locked away?",
+             "options": [{"id": "keep", "label": "Keep quarantined",
+                          "helper": "keep-quarantine"}]}}
+
+
+def test_needs_you_reappears_when_a_row_arrives(monkeypatch, tmp_path):
+    """The bug-9 law, the return trip: hidden while empty, back with its
+    title and real, working buttons when a decision that asks something
+    is published - not an empty-looking card."""
+    page = _overview(monkeypatch, tmp_path)
+    page.refresh({"updated": "2026-11-06T09:00:00+00:00", "recent": []})
+    assert not page.needs_you_box.get_visible()
+    _needs_you_publish(tmp_path, [_NEEDS_YOU_ITEM])
+    page.refresh({"updated": "2026-11-06T09:00:00+00:00", "recent": []})
+    assert page.needs_you_box.get_visible()
+    assert any("needs" in (w.get_text() or "").lower() or
+               "Needs you" in (w.get_text() or "")
+               for w in _labels(page.needs_you_box)
+               if isinstance(w, Gtk.Label))
+    buttons = page.action_buttons()
+    assert len(buttons) == 1
+    assert str(buttons[0].get_label() or "") == "Keep quarantined"
+
+
+def test_needs_you_hides_again_when_the_rows_leave(monkeypatch, tmp_path):
+    """And the reverse trip: once the list is answered away, the section
+    and its title are gone again, twice in a row."""
+    page = _overview(monkeypatch, tmp_path)
+    _needs_you_publish(tmp_path, [_NEEDS_YOU_ITEM])
+    page.refresh({"updated": "2026-11-06T09:00:00+00:00", "recent": []})
+    assert page.needs_you_box.get_visible()
+    _needs_you_publish(tmp_path, [])
+    page.refresh({"updated": "2026-11-06T09:00:00+00:00", "recent": []})
+    assert not page.needs_you_box.get_visible()
+    page.refresh({"updated": "2026-11-06T09:00:00+00:00", "recent": []})
+    assert not page.needs_you_box.get_visible()
+
+
 def test_settings_doctor_rows_paint_when_present(monkeypatch, tmp_path):
     (tmp_path / "status.json").write_text(json.dumps({
         "doctor": [{"lane": "tools", "verdict": "READY", "text": "all up",

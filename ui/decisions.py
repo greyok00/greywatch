@@ -556,10 +556,11 @@ class DecisionBroker:
 
     def badge(self) -> int:
         try:
-            answered = pending_ids(dm.DATA_DIR / "decisions.jsonl")
-            from cli import _gather_specs
-            specs, _ = _gather_specs()
-            return sum(1 for s in specs if s["id"] not in answered)
+            # gw215: the badge counts the ONE published pending list,
+            # not a replayed cli walk of the event lines; the whole-file
+            # dedupe scan answers only when nothing was published.
+            from decisions_factory import pending_count
+            return pending_count(dm.DATA_DIR)
         except Exception:
             return 0
 

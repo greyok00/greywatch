@@ -71,11 +71,11 @@ def _age_s(snap):
 
 
 def _pending_of(snap):
-    """The ONE published pending list, as a count."""
-    asks = snap.get("pending_list")
-    if asks is None:
-        asks = snap.get("pending_decisions") or 0
-    return len(asks) if isinstance(asks, list) else asks
+    """The ONE published pending list, as a count (gw215: the shared
+    rule in decisions_factory, the same one the pill and the count
+    surfaces run, so a chip and a row can never disagree)."""
+    from decisions_factory import snapshot_pending
+    return snapshot_pending(snap)
 
 
 def _chip(label, tone="quiet"):

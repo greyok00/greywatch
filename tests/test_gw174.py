@@ -111,9 +111,11 @@ def test_no_window_ships_a_fixed_pixel_size_anymore():
         for line in py.read_text().splitlines():
             if re.search(r"set_default_size\(\s*\d", line):
                 offenders.append(line.strip())
-    assert offenders == sorted([
+    # sorted both sides: glob hands the files back in directory order,
+    # so which literal is found first used to flip between runs
+    assert sorted(offenders) == [
         "self.set_default_size(150, 150)",
-        "self.set_default_size(700, 480)"]), offenders
+        "self.set_default_size(700, 480)"], offenders
 
 
 def test_popup_and_dialog_helpers_stay_within_their_bands():

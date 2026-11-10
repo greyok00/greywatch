@@ -295,3 +295,49 @@ def enrich_pending(index, answered) -> list:
         spec = spec if isinstance(spec, dict) else {"id": sid}
         out.append(enrich_decision(spec, ts or ""))
     return out
+
+
+# ---- the ONE count (gw215, fix-wave bug 8, rebuilt UI) ----------------------
+# Every surface that displays a pending count reads the published list's
+# length - never its own walk of the event lines, which is how a repeated
+# ask inflated the pill one row per repeat (the "93 vs 44" class).
+
+def snapshot_pending(snap) -> int:
+    """The count out of a snapshot the surface already holds: the
+    published list's length first; the scalar only as the fallback for a
+    daemon that has not published a list."""
+    if not isinstance(snap, dict):
+        return 0
+    rows = snap.get("pending_list")
+    if isinstance(rows, list):
+        return len(rows)
+    try:
+        return int(snap.get("pending_decisions") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def published_pending(data_dir) -> int | None:
+    """The published list's length, or None when nothing was published
+    (older daemon, first cycle, unreadable file)."""
+    try:
+        snap = json.loads(
+            (pathlib.Path(data_dir) / "status.json").read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(snap, dict):
+        return None
+    rows = snap.get("pending_list")
+    return len(rows) if isinstance(rows, list) else None
+
+
+def pending_count(data_dir) -> int:
+    """The count for surfaces that hold no snapshot: the published list,
+    else the whole-file dedupe scan behind the unpublished state."""
+    published = published_pending(data_dir)
+    if published is not None:
+        return published
+    try:
+        return len(pending_spec_pairs(data_dir))
+    except Exception:
+        return 0

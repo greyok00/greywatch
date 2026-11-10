@@ -10,6 +10,7 @@ gi.require_version("Pango", "1.0")
 from gi.repository import Gtk, GLib, Gio    # noqa: E402
 
 from assistant import audit
+from decisions_factory import snapshot_pending
 from registry import load_registry
 from ui.models import local_clock, recent_alerts, verdict_words
 from ui.plain import (sentence as plain_sentence, friendly_name, severity_colour as pc_severity_colour)
@@ -1329,7 +1330,7 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
         known = sum(1 for t in self.registry
                     if (tools.get(t["name"]) or {}).get("state")
                     in ("GREEN", "RED", "YELLOW"))
-        pending = int(snap.get("pending_decisions") or 0)
+        pending = snapshot_pending(snap)   # gw215: the ONE published list
         alerts = recent_alerts(events)
         pill_state = "ok"
         if known == 0 and not self._state_override:

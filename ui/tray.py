@@ -123,19 +123,16 @@ class Tray:
         try:
             from datetime import datetime, timezone, timedelta
             from greywatch_daemon import read_events, DATA_DIR
-            answered = set()
-            try:
-                from decisions_factory import pending_ids
-                answered = pending_ids(DATA_DIR / "decisions.jsonl")
-            except (ImportError, OSError):
-                pass
+            # gw215: the pill counts the ONE published pending list (the
+            # same list the drawer renders), falling back to the
+            # whole-file dedupe scan only when nothing was published; a
+            # walk of the newest ask lines is what inflated repeats.
+            from decisions_factory import pending_count
+            pending = pending_count(DATA_DIR)
             from ui.models import feed_worthy
             evs = read_events(DATA_DIR / "events.jsonl", 500)
             hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
             for e in reversed(evs):
-                spec = e.get("interaction")
-                if spec and spec.get("id") not in answered:
-                    pending += 1
                 if not feed_worthy(e):
                     continue
                 try:

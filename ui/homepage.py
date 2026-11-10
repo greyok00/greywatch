@@ -19,6 +19,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
 from hunter import explain, store  # noqa: E402
+from decisions_factory import snapshot_pending  # noqa: E402
 from ui.plain import muted as theme_muted  # noqa: E402
 from ui.plain import severity_colour  # noqa: E402
 
@@ -77,7 +78,7 @@ def suite_summary(data_dir) -> tuple[str, str]:
     else:
         verdict = (f"All {len(checked)} protections are green"
                    if checked else "The suite is starting")
-    waiting = int(raw.get("pending_decisions") or 0)
+    waiting = snapshot_pending(raw)   # gw215: the ONE published list
     updated = str(raw.get("updated") or "")
     # Name what wants attention: "1 protection needs attention"
     # is a riddle without the name — the same sentence carries the

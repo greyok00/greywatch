@@ -31,7 +31,7 @@ import rules
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import greywatch_daemon as daemon_mod
-from decisions_factory import pending_ids
+from decisions_factory import pending_ids, snapshot_pending
 from registry import load_registry
 from status import load_status
 
@@ -58,7 +58,7 @@ def cmd_status(_args) -> int:
         print("greywatch: daemon has not written status yet - "
               "start `greywatch` (the unit) or wait one cycle.")
         return EXIT_OK
-    pending = snap.get("pending_decisions", 0)
+    pending = snapshot_pending(snap)   # gw215: the ONE published list
     badge = f"  ·  {pending} pending decision(s)" if pending else ""
     # : the UI prints local words ("today 14:20"), the CLI printed
     # the raw UTC ISO stamp - one clock across both surfaces.
