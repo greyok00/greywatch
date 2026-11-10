@@ -562,6 +562,13 @@ switch:checked slider {{ background-color: #ffffff; }}
   padding: 0 7px; font-weight: 700; font-size: 12px;
 }}
 .gw-handoff-row {{ background-color: {accent_soft}; }}
+/* The hand-off breadcrumb sits at the top of the dock: a small muted
+   "came from <page>" line, same size as the dock titles but lowercase
+   text, never a banner. */
+.gw-breadcrumb {{
+  font-size: 10.5px; letter-spacing: 0.4px; color: {mute};
+  padding: 2px 0 6px;
+}}
 
 /* --- wizard step rail ----------------------------------------------- */
 /* Gtk.Assistant's rail is its own surface (a Box carrying Adwaita's

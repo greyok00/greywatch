@@ -97,6 +97,7 @@ class _TrendCard(Gtk.Box):
     def __init__(self, page):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self._page = page
+        self._table_mode = False
         self._area = Gtk.DrawingArea()
         self._area.set_vexpand(True)
         self._area.set_size_request(-1, 72)
@@ -107,12 +108,49 @@ class _TrendCard(Gtk.Box):
                                       "reports")
         self._empty.add_css_class("gw-meta")
         self._empty.set_visible(False)
+        # the table view (dataviz law: every chart carries one): one
+        # bucket per row, date/count, inner-scrolled when the rows run
+        # long - it lives in this card, it swaps, not an extra surface.
+        self._table_scroll = Gtk.ScrolledWindow()
+        self._table_scroll.set_policy(Gtk.PolicyType.NEVER,
+                                      Gtk.PolicyType.AUTOMATIC)
+        self._table_scroll.set_propagate_natural_height(True)
+        self._table_scroll.set_max_content_height(150)
+        self._table_scroll.set_vexpand(True)
+        self._table = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                              spacing=2)
+        self._table_scroll.set_child(self._table)
+        self._table_scroll.set_visible(False)
         self.append(self._empty)
         self.append(self._area)
+        self.append(self._table_scroll)
         self._area.set_draw_func(self._draw)
+
+    def set_table_mode(self, on) -> None:
+        """Swap the chart for its table (and back). A repaint rebuilds
+        the table's rows, so the swap only ever decides which view shows."""
+        self._table_mode = bool(on)
+        self._area.set_visible(not self._table_mode)
+        self._table_scroll.set_visible(self._table_mode)
+        self.repaint()
+
+    def _paint_table(self, buckets):
+        for child in list(self._table):
+            self._table.remove(child)
+        for label, count in buckets:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            name = Gtk.Label(label=str(label), xalign=0)
+            name.add_css_class("gw-meta")
+            name.set_hexpand(True)
+            num = Gtk.Label(label=str(int(count)), xalign=1)
+            num.add_css_class("gw-meta")
+            row.append(name)
+            row.append(num)
+            self._table.append(row)
 
     def repaint(self):
         buckets = self._page.trend_buckets()
+        self._paint_table(buckets)
         self._empty.set_visible(not buckets)
         tip = self._tooltip(buckets)
         self.set_tooltip_text(tip)      # the card hover: the whole chart
@@ -231,9 +269,19 @@ class OverviewPage(Gtk.Box):
         self.append(feed_band)
         trend_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         trend_card.add_css_class("gw-card")
+        # the card's header: the range title plus the chart/table toggle
+        # (dataviz law: every chart carries a table view in its own card)
+        t_head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         t_title = Gtk.Label(label="Last 7 days", xalign=0)
         t_title.add_css_class("gw-headline")
-        trend_card.append(t_title)
+        t_title.set_hexpand(True)
+        t_head.append(t_title)
+        self._trend_toggle = Gtk.ToggleButton(label="Table")
+        self._trend_toggle.set_tooltip_text(
+            "Swap the bars for a date/count table of the same buckets.")
+        self._trend_toggle.connect("toggled", self._on_table_toggle)
+        t_head.append(self._trend_toggle)
+        trend_card.append(t_head)
         self._trend_head = t_title
         self._trend = _TrendCard(self)
         self._trend.set_vexpand(True)
@@ -368,6 +416,11 @@ class OverviewPage(Gtk.Box):
         self._trend_head.set_text(
             "Last 7 days" if key == "7d" else "Last 24 hours")
         self._trend.repaint()
+
+    def _on_table_toggle(self, btn):
+        """The trend card's table view: the same buckets the bars draw,
+        one row each, in this card (the dataviz table law)."""
+        self._trend.set_table_mode(btn.get_active())
 
     def _on_ask(self, _btn):
         self.focus_assistant()

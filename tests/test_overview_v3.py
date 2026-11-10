@@ -343,3 +343,45 @@ def test_dock_ask_button_focuses_the_assistant(store, monkeypatch):
     monkeypatch.setattr(page, "focus_assistant", lambda: focused.append(1))
     btn.emit("clicked")
     assert focused == [1]
+
+
+# --------------------------------------------- the trend card's table
+
+def test_trend_table_toggle_swaps_chart_for_table(store):
+    """The dataviz table law, on the Overview trend card: the toggle in
+    the card swaps the bars for a date/count table of the same buckets,
+    in the same card."""
+    page, _ = _page()
+    page.refresh({"recent": [{"ts": _iso(2)}, {"ts": _iso(26)}]})
+    buckets = page.trend_buckets()
+    assert buckets
+    card = page._trend
+    assert card._area.get_visible()
+    assert not card._table_scroll.get_visible()
+    page._trend_toggle.set_active(True)
+    assert not card._area.get_visible()
+    assert card._table_scroll.get_visible()
+    rows = list(card._table)
+    assert len(rows) == len(buckets)
+    # the rows carry the buckets' own label and count
+    labels = [row.get_first_child().get_text() for row in rows]
+    counts = [row.get_first_child().get_next_sibling().get_text()
+              for row in rows]
+    assert labels == [b[0] for b in buckets]
+    assert counts == [str(b[1]) for b in buckets]
+    # and back: the bars return
+    page._trend_toggle.set_active(False)
+    assert card._area.get_visible()
+    assert not card._table_scroll.get_visible()
+
+
+def test_trend_table_empty_state_is_honest(store):
+    """No events = no fake table rows, in either view: the empty copy
+    the chart already shows is the same one the table view shows."""
+    page, _ = _page()
+    page._trend_evs = []
+    page.refresh({})
+    page._trend_toggle.set_active(True)
+    card = page._trend
+    assert not list(card._table)
+    assert card._empty.get_visible()

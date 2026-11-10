@@ -343,6 +343,14 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
             shell.rail_size(width, self._rail_pref()), -1)
 
     def _tab_pick(self, _b, key):
+        # A click arrival clears the hand-off breadcrumb: the "came from"
+        # line belongs to the auto-route that set it, not to the page.
+        dock = getattr(self, "dock", None)
+        if dock is not None:
+            try:
+                dock.clear_note()
+            except (RuntimeError, TypeError, AttributeError):
+                pass
         self._show(key)
 
     def set_badge(self, key: str, count: int) -> None:
@@ -1157,7 +1165,6 @@ class MainWindow(LogsDeskMixin, HelpDeskMixin, SettingsDeskMixin,
             self._stale_prior = prev
         if self._waiting is None:
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-            box.add_css_class("gw-waiting")
             big = Gtk.Label(label="Waiting for the daemon")
             big.add_css_class("gw-headline")
             meta = Gtk.Label(

@@ -60,8 +60,26 @@ _PULSE = "gw-guided-pulse"
 _POINT = "gw-guided-point"
 _ROW = "gw-handoff-row"
 
-# The one active pulse, window-wide (module law: the newest wins).
+# The one active pulse, window-wide (module law: the newest wins). The
+# rail heading keeps its OWN lane (_rail_active): the hand-off pulses the
+# dock group title AND the target's rail group heading together, so the
+# two must never drain each other.
 _active: dict = {}
+_rail_active: dict = {}
+
+# Page key -> the human rail label, for the "came from" breadcrumb and
+# the rail heading lookup. ui.shell owns the rail rows' own labels; the
+# pages that build on demand but never sit on a rail get their names here
+# so a hand-off history still reads in words.
+from ui.shell import HEADINGS, RAIL, RAIL_LABELS  # noqa: E402
+
+_PAGE_LABELS = {**RAIL_LABELS, "auditlog": "Activity Log",
+                "services": "Services", "diagnostics": "Diagnostics"}
+
+# Rail group heading per page key (shell's RAIL group table, flattened).
+_RAIL_HEADING = {key: heading
+                 for heading, keys in zip(HEADINGS[1:], RAIL)
+                 for key in keys}
 
 
 # -- the auto_jump toggle (read once by the window; Settings writes it) --
@@ -171,6 +189,81 @@ def pulse(target, win=None) -> bool:
         for step in (1, 2, 3):
             _active["ids"].append(
                 GLib.timeout_add(PULSE_MS, _beat, target, step))
+    return True
+
+
+# -- the rail group heading (the hand-off's arrival beat on the rail) ----
+def _rail_end() -> None:
+    """Retire the active rail pulse: drain its pending beats and take the
+    css class off the heading if it still exists."""
+    act = dict(_rail_active)            # copy first: clear() before read
+    _rail_active.clear()
+    for sid in act.get("ids") or ():
+        try:
+            GLib.source_remove(sid)
+        except (RuntimeError, TypeError):
+            pass
+    target = act.get("target")
+    if target is None:
+        return
+    try:
+        target.remove_css_class(_PULSE)
+    except (RuntimeError, TypeError):
+        pass
+
+
+def _rail_beat(target, step) -> bool:
+    """One rail beat: same shape as the dock-title beat, its own lane."""
+    if _rail_active.get("target") is not target:
+        return False
+    ids = _rail_active.get("ids") or []
+    if ids:
+        del ids[0]
+    try:
+        if target.has_css_class(_PULSE):
+            target.remove_css_class(_PULSE)
+        else:
+            target.add_css_class(_PULSE)
+    except (RuntimeError, TypeError):
+        _rail_active.clear()
+        return False
+    if step >= 3:
+        if _rail_active.get("target") is target:
+            _rail_active.clear()
+    return False
+
+
+def rail_heading_of(page_key) -> str | None:
+    """The rail group heading a page lives under, or None for the pages
+    outside the three groups (Overview is its own home row)."""
+    return _RAIL_HEADING.get(str(page_key))
+
+
+def rail_pulse(win, page_key) -> bool:
+    """One accent pulse on the target page's RAIL GROUP heading row
+    (win._rail_rows["@Heading"], spec trigger 2's pulse half): the
+    hand-off answers "where on the rail did this page come from?" without
+    moving anything. One rail pulse at a time (newest replaces); the
+    dock-title pulse keeps its own lane, so the two coexist. False =
+    quiet (no such heading, dead widget)."""
+    head = _RAIL_HEADING.get(str(page_key))
+    rows = getattr(win, "_rail_rows", None) or {}
+    target = rows.get(f"@{head}") if head else None
+    if target is None:
+        return False
+    if _rail_active.get("target") is target:
+        return False
+    _rail_end()
+    try:
+        target.add_css_class(_PULSE)
+    except (RuntimeError, TypeError):
+        return False
+    _rail_active["target"] = target
+    _rail_active["ids"] = []
+    if not reduced_motion():
+        for step in (1, 2, 3):
+            _rail_active["ids"].append(
+                GLib.timeout_add(PULSE_MS, _rail_beat, target, step))
     return True
 
 
@@ -344,11 +437,13 @@ def navigate(win, page_key) -> None:
 
 def handoff(win, page_key, dock_group=None, row=None) -> bool:
     """Send the owner to the right place: open the page, greet the
-    declared dock group (pulse + arrow) and wash the row with the
-    hand-off class. auto_jump off = nothing happens at all (and nothing
-    is marked seen, so a later toggle-on still routes). The same
-    (page, item) routes once - the seen-set lives on the window, so
-    later callers can clear it and route again."""
+    declared dock group (pulse + arrow), pulse the target page's rail
+    group heading and leave a "came from <page>" breadcrumb at the top of
+    the dock (auto-routing only: a rail click arrives without a note).
+    auto_jump off = nothing happens at all (and nothing is marked seen,
+    so a later toggle-on still routes). The same (page, item) routes
+    once - the seen-set lives on the window, so later callers can clear
+    it and route again."""
     if not dict(getattr(win, "_toggles", None) or {}).get("auto_jump", True):
         return False
     item = (str(page_key), str(dock_group or ""), str(row or ""))
@@ -359,6 +454,7 @@ def handoff(win, page_key, dock_group=None, row=None) -> bool:
     if item in seen:
         return False
     seen.add(item)
+    source = _source_label(win)          # read before the page moves
     navigate(win, page_key)
     target = None
     if dock_group:
@@ -369,9 +465,37 @@ def handoff(win, page_key, dock_group=None, row=None) -> bool:
             point(target, win)
         except (RuntimeError, TypeError):   # the arrow is best-effort
             pass
+    _set_breadcrumb(win, str(page_key), source)
+    rail_pulse(win, page_key)
     try:
         if isinstance(row, Gtk.Widget):
             row.add_css_class(_ROW)
     except (RuntimeError, TypeError):
         pass
     return True
+
+
+def _source_label(win):
+    """The page shown right now, in the rail's own words - the "came
+    from" half of the breadcrumb. None when the current child has no
+    honest name (the waiting panel, a bare stub), so the note is never a
+    wrong guess."""
+    try:
+        name = win.stack.get_visible_child_name()
+    except (RuntimeError, TypeError, AttributeError):
+        return None
+    return _PAGE_LABELS.get(str(name)) if name else None
+
+
+def _set_breadcrumb(win, page_key, source) -> None:
+    """Leave 'came from <page>' at the top of the target's dock. A source
+    that cannot be named in words leaves the dock quiet."""
+    if not source:
+        return
+    dock = getattr(win, "dock", None)
+    if dock is None:
+        return
+    try:
+        dock.set_note(page_key, f"came from {source}")
+    except (RuntimeError, TypeError, AttributeError):
+        pass

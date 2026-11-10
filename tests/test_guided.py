@@ -357,3 +357,58 @@ def test_toggles_read_once_at_boot(win):
     desk will write through) - _toggles carries the resolved value."""
     assert set(win._toggles) == {"auto_jump"}
     assert win._toggles["auto_jump"] is guided.load_toggle()
+
+
+# ------------------------------------------- breadcrumb + rail heading
+
+def test_handoff_leaves_came_from_breadcrumb_in_the_dock(win):
+    """The final-review breadcrumb: an auto-route names where the owner
+    was sent FROM - one small line at the top of the target's dock."""
+    win._show("overview")
+    pump(5)
+    assert guided.handoff(win, "tools")
+    assert win.dock.current == "tools"
+    assert win.dock._crumb.get_visible()
+    assert win.dock._crumb.get_text() == "came from Overview"
+
+
+def test_rail_click_clears_the_breadcrumb(win):
+    """Nav by click does not SET the note, and it clears a stale one: the
+    line belongs to the auto-route that earned it."""
+    assert guided.handoff(win, "tools")
+    assert win.dock._crumb.get_visible()
+    win._tab_pick(None, "defense")
+    pump(5)
+    assert not win.dock._crumb.get_visible()
+
+
+def test_handoff_pulses_the_rail_group_heading(win):
+    """Spec trigger 2's pulse half: the hand-off also beats the target
+    page's rail group heading (its own lane, so it never drains the dock
+    title's pulse)."""
+    head = win._rail_rows["@Care"]
+    guided.rail_pulse(win, "tools")
+    assert head.has_css_class("gw-guided-pulse")
+    # newest rail pulse replaces: the Care heading is drained at once
+    new = guided.handoff(win, "thunter")
+    assert new is True                      # a different item, not deduped
+    assert not head.has_css_class("gw-guided-pulse")
+    assert win._rail_rows["@Defense"].has_css_class("gw-guided-pulse")
+    guided._rail_end()
+    assert not win._rail_rows["@Defense"].has_css_class("gw-guided-pulse")
+
+
+def test_pages_off_the_rail_pulse_no_heading(win):
+    """A page with no rail group (Overview is its own home row) greets
+    quiet: a hand-off never invents a rail heading."""
+    assert guided.rail_heading_of("overview") is None
+    assert guided.rail_pulse(win, "overview") is False
+
+
+def test_breadcrumb_never_names_an_unnameable_source(win):
+    """A source the words cannot name (the waiting panel) is no guess:
+    the dock stays quiet."""
+    win._show("overview")
+    pump(5)
+    guided._set_breadcrumb(win, "tools", None)
+    assert not win.dock._crumb.get_visible()

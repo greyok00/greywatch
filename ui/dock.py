@@ -28,6 +28,10 @@ class DockHost(Gtk.Box):
         self.current = None
         self._titles: dict = {}
         self._pulses: list = []
+        self._note: tuple | None = None   # (page key, "came from …")
+        self._crumb = Gtk.Label(xalign=0)
+        self._crumb.add_css_class("gw-breadcrumb")
+        self._crumb.set_visible(False)
         self._scroller = Gtk.ScrolledWindow()
         self._scroller.set_policy(Gtk.PolicyType.NEVER,
                                   Gtk.PolicyType.AUTOMATIC)
@@ -35,12 +39,36 @@ class DockHost(Gtk.Box):
         self._page_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                                  spacing=10)
         self._scroller.set_child(self._page_box)
+        self.append(self._crumb)
         self.append(self._scroller)
         self.connect("destroy", self._on_destroy)
 
     def _on_destroy(self, *_a):
         self._stop_pulses()
         return False
+
+    # -- the arrival breadcrumb -------------------------------------------
+    def set_note(self, key, text):
+        """One "came from <page>" line at the top of the dock, set by the
+        guided hand-off (auto-routing only). It shows while the noted page
+        is the one mounted."""
+        self._note = (str(key), str(text))
+        self._crumb.set_text(str(text))
+        self._crumb.set_visible(str(key) == (self.current or ""))
+
+    def clear_note(self):
+        """A click arrival: the note belongs to the auto-route that just
+        happened, not to the page forever."""
+        self._note = None
+        self._crumb.set_text("")
+        self._crumb.set_visible(False)
+
+    def _apply_crumb(self, key):
+        if self._note is None or self._note[0] != str(key):
+            self._crumb.set_visible(False)
+            return
+        self._crumb.set_text(self._note[1])
+        self._crumb.set_visible(True)
 
     # -- page groups -------------------------------------------------------
     def set_page(self, key, groups):
@@ -52,6 +80,7 @@ class DockHost(Gtk.Box):
             self._page_box.remove(child)
         self._titles = {}
         self.current = key
+        self._apply_crumb(key)
         for title, widgets in (groups or []):
             section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                               spacing=8)
