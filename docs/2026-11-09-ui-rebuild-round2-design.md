@@ -72,6 +72,18 @@ collapse to one honest line with the resolution stated. Dock = Filter
 (severity/rule/state), Suppressions (rule+subject), Watcher (interval,
 pause). The 72 h refire dies by construction (§6/§7).
 
+### Tools = t2 (owner pick, round 2)
+
+Full-width tool cards, one card per tool, self-contained: lifecycle
+(start/stop/restart/run now), schedule shown AND editable on the card,
+real settings fields editable on the card, and "Open config" — the raw
+config expands INSIDE the card (the card grows; nothing leaves its
+tool). Editor opens the tool's actual config file in an editable pane
+with Validate + Apply; after apply the card offers the matching
+baseline refresh (rkhunter --propupd / aide --update) — the permafix
+loop closes on the same card. Dock = show-all/live filter + scanner
+schedule stagger. Resolved/last-run state lives on the card.
+
 ## 2. One subject per page (carried, VISUAL-PLAN-UI §5)
 
 Overview = "am I OK right now" (SuiteCard verdict + 4 stat tiles + recent
