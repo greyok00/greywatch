@@ -1,31 +1,25 @@
+import base64
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 OUT = ROOT / "assets" / "logo"
-BG, PANEL, ACCENT = "#0e1117", "#161b22", "#58a6ff"
-INK = "#c9d1d9"
+BG, ACCENT = "#0e1117", "#58a6ff"
+
+# The mark is the wolf icon, not the shield-clock: the running wolf in its
+# light circle comes straight from the tracked icon PNG (the same asset the
+# system icons are cut from), embedded as a data URI so the SVG stays one
+# self-contained file.
+ICON_SRC = OUT / "greywatch-icon-256.png"
+ICON_URI = "data:image/png;base64," + base64.b64encode(
+    ICON_SRC.read_bytes()).decode("ascii")
 
 BANNER_SVG = f"""<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="{ACCENT}"/>
-      <stop offset="1" stop-color="{ACCENT}" stop-opacity="0.55"/>
-    </linearGradient>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="340" viewBox="0 0 1200 340">
   <rect width="1200" height="340" rx="26" fill="{BG}"/>
   <rect x="1.5" y="1.5" width="1197" height="337" rx="24.5"
         fill="none" stroke="#2a3140" stroke-width="2"/>
-  <!-- shield, slightly left-of-center at half scale of the icon -->
-  <g transform="translate(52,34) scale(1.06)">
-    <path d="M128 18 L226 52 V132 C226 190 182 224 128 240
-             C74 224 30 190 30 132 V52 Z"
-          fill="{PANEL}" stroke="url(#g)" stroke-width="10"/>
-    <circle cx="128" cy="126" r="64" fill="{BG}" stroke="{ACCENT}" stroke-width="8"/>
-    <path d="M128 88 V126 L158 142" stroke="{INK}" stroke-width="8"
-          stroke-linecap="round" fill="none"/>
-    <circle cx="128" cy="126" r="6" fill="{ACCENT}"/>
-  </g>
+  <!-- the wolf mark (the icon's running wolf in its light circle) -->
+  <image x="56" y="42" width="256" height="256" href="{ICON_URI}"/>
   <!-- wordmark: grey in ink, watch in the accent; tagline in soft ink -->
   <text x="360" y="172" font-family="Inter" font-size="92" font-weight="700"
         fill="#dde5f2">grey<tspan fill="{ACCENT}">watch</tspan></text>

@@ -116,7 +116,12 @@ def shoot_xid(widget, path: pathlib.Path, label: str) -> bool:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     xvfb = _xvfb(":92")   # outside the pytest conftest lane (:95-:130)
-    os.environ.update(DISPLAY=":92", GDK_DISABLE="gl:vulkan")
+    # GREYWATCH_XVFB=1: a first-launch data dir would otherwise auto-run
+    # the walkthrough (a step every 1.2 s), and the walk keeps routing the
+    # pages under the loop's feet - every page shot would race it. The
+    # lane is a driver of windows, not a user reading them.
+    os.environ.update(DISPLAY=":92", GDK_DISABLE="gl:vulkan",
+                      GREYWATCH_XVFB="1")
 
     # the private digest exists before any UI module imports: every
     # file-bound read in the tree then resolves to it
@@ -140,6 +145,11 @@ def main() -> None:
     win.set_title("greywatch: fit-law shots")
     win.set_default_size(FIT_W, FIT_H)
     win.present()
+    ctx = GLib.main_context_default()
+    deadline = time.time() + 8.0
+    while time.time() < deadline:
+        ctx.iteration(False)
+        time.sleep(0.05)
     ctx = GLib.main_context_default()
     deadline = time.time() + 8.0
     while time.time() < deadline:

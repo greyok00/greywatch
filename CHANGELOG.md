@@ -3,6 +3,45 @@
 Every line of GreyWatch, newest first. Dates are the day the line was
 finished (public posts happened only where a release line says so).
 
+
+## 0.4.0 - 2026-11-10
+
+The UI rebuild round 2, built task by task against owner-picked designs:
+every page of the window was laid out again around actionability.
+
+- The window is three panes: the thin fixed rail (the owner's ten-page
+  menu: Overview; Care - Scans, Protections, Tools, Harden; Defense -
+  Firewall, Browser Watch; System - Activity Log, Settings, Help), the
+  page, and a per-page control dock that owns that page's filters,
+  feeds and actions.
+- Guided attention: the row that needs the person pulses its dock group
+  title, and hand-off navigation opens the page with the right dock
+  open, highlights the row and leaves a "came from" breadcrumb (with a
+  way back) on the page it opened.
+- Full tool control: the Tools page is full-width cards with
+  run/stop/restart, the truthful schedule and throttle line, and a
+  validated in-card config editor (backup before first write, the
+  target's own file mode preserved) plus the permafix loop that
+  re-asserts the baseline after the tool rewrites it. Scans became mode
+  cards with truthful patch/deep copy wording; Protections gained the
+  patch-advisory wall; Harden gained a score band and a flat
+  self-applying checklist; the threat hunter report found cards with
+  permafix actions and rule+subject suppression.
+- Assistant two tiers: the deterministic heuristic tier answers first,
+  and the resident local GPU model is one owner toggle (staged load and
+  unload bars, off by default; no ollama, no cloud). The tool digest
+  corpus (nine protections, RAG-compressed from man pages through the
+  local gw-tools ingestor db) sits behind the same answers.
+- The window-fit law: no whole-page scrolling anywhere - every page
+  lays out to the window and only its inner containers scroll.
+- One-list badge law and the empty-section law re-pinned across pages.
+- Open readable Python everywhere: the compiled modules and the build
+  script are gone (no .so ships, no cython step in CI or the container),
+  and the NFQUEUE verdict worker is the tracked C source
+  (`appfw/nfq_worker.c`), compiled at first arm by `appfw/engine.py`;
+  the deb Depends carries gcc and libnetfilter-queue and never ships a
+  machine-built worker binary.
+
 ## 0.3.0 - 2026-11-08 (released)
 
 - Phase 4 of the rebuild is closed for good: the tool lifecycle block
