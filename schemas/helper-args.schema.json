@@ -1,0 +1,19 @@
+{
+ "title": "pkexec helper argv (allowlisted scripts; token-validated)",
+ "type": "object",
+ "required": ["helper", "argv"],
+ "properties": {
+  "helper": {"type": "string",
+             "enum": ["ufw-apply", "ufw-rollback", "ufw-status-numbered",
+                      "f2b-write", "keep-quarantine", "restore-quarantine",
+                      "widen-scan-ban", "keep-scan-ban", "scan-now",
+                      "unban-ip", "drop-listener", "tool-control",
+                      "tetra-write", "yara-write", "arpwrite"]},
+  "argv": {
+   "type": "array",
+   "maxItems": 10,
+   "items": {"type": "string", "maxLength": 200,
+             "pattern": "^[^\\x00;|&$\\n\\\\'\\\"]+$"}
+  }
+ }
+}

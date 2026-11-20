@@ -1,0 +1,12 @@
+# greywatch-boot-sweep.timer — replaces the ExecStartPre=/bin/sleep 180
+# hack: the sweep fires once, AFTER the settle window (design §6.3).
+[Unit]
+Description=greywatch boot sweep timer
+
+[Timer]
+OnBootSec=45min
+AccuracySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

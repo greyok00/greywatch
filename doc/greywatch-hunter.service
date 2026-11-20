@@ -1,0 +1,30 @@
+[Unit]
+Description=greywatch threat hunter — unprivileged web/download/persistence hunter
+Documentation=file:__GW_LIB__/README.md
+After=systemd-user-sessions.service
+
+[Service]
+Type=simple
+User=__GW_UI_USER__
+ExecStart=/usr/bin/python3 __GW_LIB__/hunter/main.py --data-dir __GW_DATA__ --interval 300
+Environment=PYTHONDONTWRITEBYTECODE=1
+Restart=on-failure
+RestartSec=15
+# The hunter reads shared state read-only and writes only under
+# <data>/hunter/, so it gets its own light sandbox: no root, no realtime,
+# quiet CPU. ProtectHome is deliberately absent — the user's Downloads,
+# browser profile, and startup dirs are exactly its evidence sources.
+CPUQuota=20%
+CPUWeight=40
+MemoryHigh=400M
+MemoryMax=512M
+Nice=15
+IOSchedulingClass=idle
+PrivateTmp=true
+NoNewPrivileges=true
+UMask=0077
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

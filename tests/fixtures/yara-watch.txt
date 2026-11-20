@@ -1,0 +1,4 @@
+# REAL — sampled from ~/security-hardening/yara-scan.log 2026-10-22
+eicar /tmp/eicar-rt2.txt (realtime sha256:275a021bbfb6489e)
+vmdetect /tmp/r160010.pdf (realtime sha256:022194c52c2c51ff)
+without_attachments /tmp/owa-audit.txt (realtime sha256:2699b521ea72ad95)

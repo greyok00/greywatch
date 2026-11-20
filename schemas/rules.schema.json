@@ -1,0 +1,24 @@
+{
+ "title": "appfw rule files (consolidated; one JSON object or a rules array)",
+ "type": ["object", "array"],
+ "items": {
+  "type": "object",
+  "required": ["name", "action", "duration", "op_kind", "op_value"],
+  "properties": {
+   "name":     {"type": "string", "minLength": 1, "maxLength": 80},
+   "action":   {"type": "string", "enum": ["allow", "deny", "reject"]},
+   "duration": {"type": "string", "enum": ["once", "until restart", "always"]},
+   "op_kind":  {"type": "string",
+                "enum": ["process.path", "dst.host", "dst.ip", "dst.port",
+                         "protocol", "process.args_prefix"]},
+   "op_value": {"type": "string", "minLength": 1, "maxLength": 200},
+   "created":  {"type": "integer", "min": 0}
+  }
+ },
+ "properties": {
+  "rules": {
+   "type": "array",
+   "items": {"$ref": "#"}
+  }
+ }
+}

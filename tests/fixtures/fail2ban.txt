@@ -1,0 +1,4 @@
+# CANONICAL fail2ban.actions — plan table; re-validated at G2.4 (file is 640 root:adm)
+2026-10-22 18:00:32,110 fail2ban.actions [4247]: NOTICE [sshd] Ban 203.0.113.9
+2026-10-22 19:00:33,110 fail2ban.actions [4247]: NOTICE [sshd] Unban 203.0.113.9
+2026-10-22 19:01:00,000 fail2ban.actions [4247]: WARNING [sshd] Found 203.0.113.77

@@ -1,0 +1,6 @@
+# Hagezi multi normal (snippet)
+# Title: Hagezi DNS Blocklist MULTI Normal
+doubleclick.net
+googleadservices.com
+adservice.google.com
+criteo.com

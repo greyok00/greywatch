@@ -1,0 +1,46 @@
+{
+  "levels": {
+    "1": {
+      "what": "core arming: every detector unit enabled and running, with the retired engine and the automatic scan timers left off",
+      "units": [
+        ["sys", "clamav-freshclam.service"],
+        ["sys", "fail2ban.service"],
+        ["sys", "ufw.service"],
+        ["sys", "auditd.service"],
+        ["sys", "apparmor.service"],
+        ["sys", "tetragon.service"],
+        ["sys", "responderd.service"],
+        ["sys", "arpwatch@{iface}.service"],
+        ["sys", "aide-check.timer"],
+        ["sys", "greywatch-cve.timer"],
+        ["sys", "greywatch-feeds.timer"],
+        ["sys", "greywatch-watchdog.timer"],
+        ["user", "yara-watch.service"],
+        ["user", "yara-tmp-scan.timer"]
+      ],
+      "configs": []
+    },
+    "2": {
+      "what": "config arming: psad auto-block, arpwatch args, fail2ban sshd jail",
+      "units": [],
+      "configs": [
+        {"tool": "psad", "helper": "psad-tune", "args": [],
+         "what": "arm auto-block at danger 5 with LAN whitelisted first"},
+        {"tool": "arpwatch", "helper": "arpwrite",
+         "args": ["{iface}", "grey", "-a -p", ""],
+         "what": "ARGS=-a -p in the arpwatch config for the live iface"},
+        {"tool": "fail2ban", "helper": "f2b-write",
+         "args": ["sshd", "journal:sshd", "5", "600", "3600", "sshd"],
+         "what": "sshd jail armed (backend systemd, maxretry 5, ban 1h)"}
+      ]
+    },
+    "3": {
+      "what": "hardening catalog: every control marked default",
+      "catalog_default_only": true
+    },
+    "4": {
+      "what": "full catalog: every control including non-default and break-risk items",
+      "catalog_default_only": false
+    }
+  }
+}

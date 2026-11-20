@@ -1,0 +1,313 @@
+# assistant/llm.py
+"""The assistant's brain, loaded inside this process.
+
+No server, no port: llama-cpp-python runs the model in a worker thread of
+this process, with whatever layer count the owner's constant allows on
+the local GPU. The binding import is optional by repo rule — without it
+the chat still answers from templates (docs-only mode).
+
+The tier law (rebuild round 2, task 13) lives above this file, in
+assistant/tiers.py + the window's loader: every call to start() comes
+from the assistant's GPU toggle and nothing else. Unload works the same
+way — the toggle's disable step deletes the model and runs a collect
+pass, with no idle unload anywhere.
+
+The model is a Qwen3-1.7B instruct GGUF (assistant/model.py). Qwen3 is a
+hybrid-reasoning model, so every request disables thinking two ways: the
+prompt carries "/no_think" and the stream drops any `` thinking...</think>``
+block that still appears — otherwise a short answer budget is spent
+reasoning instead of replying.
+"""
+from __future__ import annotations
+
+import gc
+import os
+import pathlib
+import threading
+
+from assistant.model import NO_THINK
+
+# The binding does not load with the module (owner 2026-11-16, the
+# launch delay): importing llama_cpp pulled numpy's whole chain into
+# every app start, on the order of half a second, in an app whose model
+# loads only from the owner's toggle. It loads inside the toggle path.
+Llama = None
+
+
+def _load_binding() -> bool:
+    """The one road to llama_cpp; False keeps every path honest about a
+    build without the binding."""
+    global Llama
+    if Llama is not None:
+        return True
+    try:
+        from llama_cpp import Llama as _Llama
+    except ImportError:
+        return False
+    Llama = _Llama
+    return True
+
+
+def _gpu_offload_ok() -> bool:
+    """True when this build can really move layers onto the local GPU."""
+    try:
+        from llama_cpp import llama_supports_gpu_offload
+        return bool(llama_supports_gpu_offload())
+    except Exception:                          # noqa: BLE001 - probe only
+        return False
+
+ROUTER_SYSTEM = (
+    "You route questions for a local security app. Reply with ONLY a JSON "
+    'object, nothing else: {"task": "<slot>", "tool": "<tool or empty>"}. '
+    "Slots: overview (state of all protections) | explain_event (explain a "
+    "recent alert) | tool_status (about one named tool) | "
+    "intent (the user asks to change or act) - for the intent slot the "
+    'JSON must include "action":"pause|resume|show|status|scan" | summary '
+    "(anything else). "
+    "For pause, resume and show, tool must be one of the listed tool "
+    "names. For a scan, reply with "
+    '{"task":"intent","action":"scan","tool":"<scan name>"}; tool must be '
+    'one of the listed scan names, and "scan-all" when none is named.')
+
+ANSWER_SYSTEM = (
+    "You are the greywatch assistant. Obey three rules: (1) answer only "
+    "from the supplied context pack and say when it lacks the answer; "
+    "(2) propose state changes or scans only as a JSON intent like "
+    '{"task":"intent","action":"<pause|resume|show|status|scan>",'
+    '"tool":"<name>"}'
+    " - never as shell or instructions; "
+    "(3) be brief and plain.")
+
+
+def default_threads() -> int:
+    """CPU-only inference on a shared box: leave the other work breathing."""
+    cores = os.cpu_count() or 4
+    return max(2, min(8, cores - 2))
+
+
+THINK_OPEN = "<" + "think" + ">"
+THINK_CLOSE = "<" + "/think" + ">"
+
+
+def strip_think(text: str) -> str:
+    """Remove a complete or unterminated thinking block."""
+    out, i = [], 0
+    while True:
+        start = text.find(THINK_OPEN, i)
+        if start < 0:
+            out.append(text[i:])
+            break
+        out.append(text[i:start])
+        end = text.find(THINK_CLOSE, start)
+        if end < 0:
+            break                      # never closed: drop the rest
+        i = end + len(THINK_CLOSE)
+    return "".join(out)
+
+
+class ThinkFilter:
+    """Stream-side equivalent of strip_think.
+
+    Tokens arrive in pieces, so the filter holds text only while it could
+    still be the start of (or inside) a thinking block and passes
+    everything else straight through.
+    """
+
+    def __init__(self):
+        self._state = "start"          # start | inside | pass
+        self._buf = ""
+        self._started = False          # first visible character seen
+
+    def _lead(self, text: str) -> str:
+        """Drop blank lines before the answer starts.
+
+        Qwen opens with whitespace — both before and after a thinking
+        block — and those blank lines read as a gap at the top of the
+        bubble.
+        """
+        if self._started:
+            return text
+        text = text.lstrip()
+        if text:
+            self._started = True
+        return text
+
+    def feed(self, tok: str) -> str:
+        if self._state == "pass":
+            return self._lead(tok)
+        self._buf += tok
+        if self._state == "start":
+            lead = self._buf.lstrip()
+            if THINK_OPEN.startswith(lead):
+                return ""              # could still become the open tag
+            if lead.startswith(THINK_OPEN):
+                self._state = "inside"
+                self._buf = lead[len(THINK_OPEN):]
+                return self.feed("")
+            self._state, out = "pass", self._buf
+            self._buf = ""
+            return self._lead(out)
+        # inside
+        end = self._buf.find(THINK_CLOSE)
+        if end < 0:
+            return ""
+        rest = self._buf[end + len(THINK_CLOSE):]
+        self._state, self._buf = "pass", ""
+        return self._lead(rest)
+
+    def flush(self) -> str:
+        """End of stream: a bare '<think' prefix that never resolved is
+        model noise, not an answer."""
+        if self._state == "start":
+            out, self._buf = self._buf.lstrip(), ""
+            return "" if not out or out.startswith("<") else out
+        self._buf = ""
+        return ""
+
+
+class Llm:
+    def __init__(self, model_path: str, binding=None,
+                 n_ctx: int = 4096, n_threads: int | None = None,
+                 n_gpu_layers: int | None = None):
+        self.model_path = model_path
+        self._binding = binding          # tests inject fakes here
+        self._n_ctx = n_ctx
+        self._n_threads = default_threads() if n_threads is None else n_threads
+        self._n_gpu_layers = n_gpu_layers
+        self._model = None
+        self._err = "not started"
+        self._started = False
+        self._lock = threading.Lock()
+
+    def start(self, on_ready, on_stage=None) -> None:
+        if self._started and self._model is not None:
+            return
+        self._started = True
+
+        def stage(name: str, fraction: float) -> None:
+            if on_stage is not None:
+                on_stage(name, fraction)
+
+        def work():
+            try:
+                if self._binding is not None:
+                    self._model = self._binding()
+                    self._err = ""
+                    stage("Model weights", 0.6)
+                    on_ready(True, "")
+                    return
+                if not _load_binding():
+                    self._err = ("llama-cpp-python not installed - "
+                                 "chat runs in docs-only mode")
+                    on_ready(False, self._err)
+                    return
+                if not pathlib.Path(self.model_path).exists():
+                    self._err = ("model file missing, run the installer - "
+                                 "chat runs in docs-only mode")
+                    on_ready(False, self._err)
+                    return
+                use_gpu = (self._n_gpu_layers is not None
+                           and _gpu_offload_ok())
+                kwargs = dict(n_ctx=self._n_ctx, n_threads=self._n_threads,
+                              verbose=False)
+                if use_gpu:
+                    kwargs["n_gpu_layers"] = self._n_gpu_layers
+                self._model = Llama(model_path=self.model_path, **kwargs)
+                self._err = ""
+                # Each stage reports when the work it names really ended;
+                # the fractions are the real stage boundaries, nothing
+                # interpolated between them.
+                stage("Model weights", 0.25)
+                if use_gpu:
+                    stage("GPU layer offload", 0.6)
+                else:
+                    stage("GPU layer offload unavailable in this build - "
+                          "the model stays CPU", 0.6)
+                stage("Warmup", 0.9)
+                self._warmup()
+                note = ("The local GPU model is resident; it stays until "
+                        "you click it off.")
+                if not use_gpu:
+                    note = ("The local model is resident on the CPU; it "
+                            "stays until you click it off.")
+            except Exception as e:                     # noqa: BLE001
+                self._err = str(e)
+                on_ready(False, self._err)
+                return
+            on_ready(True, note)
+        threading.Thread(target=work, daemon=True).start()
+
+    def is_ready(self) -> bool:
+        return self._model is not None
+
+    def _warmup(self) -> None:
+        """One one-token completion: the first real question does not pay
+        the cold path. A warmup failure is a real load failure - the
+        toggle reports it honestly."""
+        self._model.create_chat_completion(
+            messages=self._messages("warmup"), max_tokens=2,
+            temperature=0.0)
+
+    def _messages(self, prompt: str) -> list[dict]:
+        return [{"role": "system", "content": ROUTER_SYSTEM},
+                {"role": "user", "content": f"{prompt}\n\n{NO_THINK}"}]
+
+    def _answer_messages(self, prompt: str) -> list[dict]:
+        return [{"role": "system", "content": ANSWER_SYSTEM},
+                {"role": "user", "content": f"{prompt}\n\n{NO_THINK}"}]
+
+    def ask_sync(self, prompt: str, max_tokens: int = 48) -> str:
+        with self._lock:
+            if self._model is None:
+                raise RuntimeError("assistant model not ready")
+            out = self._model.create_chat_completion(
+                messages=self._messages(prompt), max_tokens=max_tokens,
+                temperature=0.2, repeat_penalty=1.05)
+        return strip_think(
+            out["choices"][0]["message"]["content"]).strip()
+
+    def ask_stream(self, prompt: str, on_token, on_done, on_error,
+                   max_tokens: int = 160) -> None:
+        if self._model is None:
+            on_error(RuntimeError("assistant model not ready"))
+            return
+
+        def work():
+            try:
+                acc, think = [], ThinkFilter()
+                with self._lock:
+                    stream = self._model.create_chat_completion(
+                        messages=self._answer_messages(prompt),
+                        max_tokens=max_tokens, stream=True,
+                        temperature=0.2, repeat_penalty=1.15)
+                    for part in stream:
+                        tok = (part["choices"][0]["delta"].get("content")
+                               or "")
+                        if not tok:
+                            continue
+                        tok = think.feed(tok)
+                        if tok:
+                            acc.append(tok)
+                            on_token(tok)
+                tail = think.flush()
+                if tail:
+                    acc.append(tail)
+                    on_token(tail)
+                on_done("".join(acc))
+            except Exception as e:                     # noqa: BLE001
+                on_error(e)
+        threading.Thread(target=work, daemon=True).start()
+
+    def unload(self) -> None:
+        """Owner-toggled off: drop the model and hand its memory back
+        (delete the binding object, then a collect pass under the same
+        lock that guards inference, so live streams finish first)."""
+        with self._lock:
+            self._started = False
+            self._model = None
+            gc.collect()
+            self._err = "not started"
+
+    def stop(self) -> None:
+        """The pinned old name of unload."""
+        self.unload()

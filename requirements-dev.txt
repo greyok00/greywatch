@@ -1,0 +1,4 @@
+# Dev/test toolchain (pins match the versions the suite is validated
+# against; see pyproject.toml [project.optional-dependencies]).
+pytest==9.1.1
+ruff==0.17.2

@@ -1,0 +1,82 @@
+{
+ "attack-fear": {
+  "intent": null,
+  "kind": "template",
+  "slottool": "advice"
+ },
+ "block-site": {
+  "intent": {
+   "action": "block_site",
+   "tool": "",
+   "value": "eviltracker.example"
+  },
+  "kind": "intent",
+  "slottool": null
+ },
+ "digest-question": {
+  "intent": null,
+  "kind": "template",
+  "slottool": "concept"
+ },
+ "no-target-action": {
+  "intent": null,
+  "kind": "template",
+  "slottool": "concept"
+ },
+ "noise-explained": {
+  "intent": null,
+  "kind": "template",
+  "slottool": "concept"
+ },
+ "overview-floor": {
+  "intent": null,
+  "kind": "template",
+  "slottool": "overview"
+ },
+ "pause-intent": {
+  "intent": {
+   "action": "pause",
+   "tool": "appfw",
+   "value": ""
+  },
+  "kind": "intent",
+  "slottool": null
+ },
+ "quarantine-explain": {
+  "intent": null,
+  "kind": "template",
+  "slottool": "detail"
+ },
+ "resume-followup": {
+  "intent": {
+   "action": "resume",
+   "tool": "appfw",
+   "value": ""
+  },
+  "kind": "intent",
+  "slottool": null
+ },
+ "scan-intent": {
+  "intent": {
+   "action": "scan",
+   "tool": "rkhunter",
+   "value": ""
+  },
+  "kind": "intent",
+  "slottool": null
+ },
+ "settings-pointer": {
+  "intent": {
+   "action": "open_page",
+   "tool": "",
+   "value": "settings"
+  },
+  "kind": "intent",
+  "slottool": null
+ },
+ "tool-red": {
+  "intent": null,
+  "kind": "template",
+  "slottool": "concept"
+ }
+}

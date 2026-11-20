@@ -1,0 +1,10 @@
+[Unit]
+Description=greywatch CVE refresh (capped)
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 __GW_LIB__/cve-refresh.py
+CPUQuota=50%
+# The Debian tracker JSON is about 90 MB; parsing it peaks well above
+# the old 150 MB cap and the unit was silently killed. One gigabyte is
+# a bounded ceiling on a 62 GB machine.
+MemoryMax=1G

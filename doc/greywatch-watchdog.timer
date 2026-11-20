@@ -1,0 +1,12 @@
+# greywatch-watchdog.timer (P0-b) — 15 s cadence; daemon touched every 5 s,
+# stale >30 s ⇒ restart (master prompt spec, implemented literally).
+[Unit]
+Description=greywatch watchdog timer
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=15
+AccuracySec=5
+
+[Install]
+WantedBy=timers.target

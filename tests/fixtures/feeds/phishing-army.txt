@@ -1,0 +1,3 @@
+# phishing.army blocklist (snippet)
+phish-armed.example
+bait-site.example

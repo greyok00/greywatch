@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily throttled ClamAV scan session (greywatch)
+# This unit files one request. The resident service owns the scan slot,
+# the throttle and the live progress, so the daily timer can never run
+# beside an existing scan.
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/lib/greywatch/apply/clam-session.sh

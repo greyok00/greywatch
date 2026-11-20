@@ -1,0 +1,52 @@
+/* GreyWatch theme sheet. Two theme voices only: graphite (dark, the
+   default) and paper (light). One frozen cream/plate value set shared
+   by the app; the older designer kit names migrate in ui/themes.py.
+   GTK cannot parse color-mix() or var(), so the colour-mixed values
+   below are pre-mixed rgba equivalents:
+     graphite  accent-soft = accent 13% (accent #b5b3ab)
+     graphite  focus-ring  = accent 62%
+     paper     accent-soft = ink 7% over transparent (ink #171715)
+     paper     focus-ring  = ink 50%
+   graphite: the dark voice. A warm-grey charcoal field, soft-white
+   ink, the ink tone as the accent, and lane accents red/teal. paper:
+   a cream field, near-black ink, the ink tone as the accent. */
+[data-theme="graphite"] {
+  --el-bg: #14161a; --el-panel: #1c1f25; --el-panel-2: #21252c; --el-panel-3: #2e323b;
+  --el-line: #2e323b; --el-line-2: #3a3f49; --el-line-strong: #4a5160;
+  --el-ink: #e9e7e2; --el-ink-soft: #b5b3ab; --el-mute: #8b8a84;
+  --el-on-accent: #14161a;
+  --el-accent: #b5b3ab; --el-accent-hover: #d6d4cd; --el-accent-soft: rgba(181,179,171,.14);
+  --el-ok: #5fae7e; --el-warn: #d9a34a; --el-fail: #d05f5f;
+  --el-info: #b5b3ab; --el-live: #b5b3ab; --el-teal: #6aa39c;
+  --el-overlay: rgba(9,10,12,0.70);
+  --el-focus-ring: rgba(181,179,171,0.62);
+  --el-lane-threat: #d05f5f; --el-lane-tool: #6aa39c;
+  --el-s-2: 4px; --el-s-3: 8px; --el-s-4: 12px; --el-s-5: 18px; --el-s-6: 26px;
+  --el-radius: 4px;
+  --el-r-sm: 2px; --el-r-md: 3px; --el-r-lg: 4px; --el-r-xl: 6px;
+  --el-font-body: 'Inter', system-ui, sans-serif;
+  --el-font-display: 'Unbounded', 'Inter', system-ui, sans-serif;
+  --el-font-mono: 'Inter Tight', 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* paper: the light voice. A cream field, near-black ink, the ink tone
+   as the accent. Values carried from the proven sheet unchanged. */
+[data-theme="paper"] {
+  --el-bg: #f4f4f2; --el-panel: #fbfbf9; --el-panel-2: #ececea; --el-panel-3: #e1e1dc;
+  --el-line: #d9d9d4; --el-line-2: #c3c3bc; --el-line-strong: #171715;
+  --el-ink: #171715; --el-ink-soft: #4c4c46; --el-mute: #63625a;
+  --el-on-accent: #f4f4f2;
+  --el-accent: #171715; --el-accent-hover: #000000; --el-accent-soft: rgba(23,23,21,0.07);
+  --el-ok: #41684b; --el-warn: #8a5d14; --el-fail: #a83a2a;
+  --el-info: #4e5d68; --el-live: #9c4018; --el-teal: #2f6b62;
+  --el-overlay: rgba(23,23,21,0.50);
+  --el-focus-ring: rgba(23,23,21,0.50);
+  --el-lane-threat: #a83a2a; --el-lane-tool: #2f6b62;
+  --el-s-2: 4px; --el-s-3: 8px; --el-s-4: 12px; --el-s-5: 18px; --el-s-6: 26px;
+  --el-radius: 4px;
+  --el-r-sm: 2px; --el-r-md: 2px; --el-r-lg: 4px; --el-r-xl: 6px;
+  --el-font-body: 'Inter', system-ui, sans-serif;
+  --el-font-display: 'General Sans', 'Inter', system-ui, sans-serif;
+  --el-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --el-font-serif: 'Instrument Serif', 'Georgia', serif;
+}

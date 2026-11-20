@@ -1,0 +1,7 @@
+# Default maintainer.
+* @greyok00
+
+# Privilege boundary and firewall engine should always route to the maintainer,
+# no matter who else joins:
+#   apply/     @greyok00
+#   appfw/     @greyok00

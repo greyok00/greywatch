@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  
+  <action id="com.greywatch.apply.unban-ip">
+    <description>greywatch unban-ip helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/unban-ip.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.drop-listener">
+    <description>greywatch drop-listener helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/drop-listener.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.restore-quarantine">
+    <description>greywatch restore-quarantine helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/restore-quarantine.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.keep-quarantine">
+    <description>greywatch keep-quarantine helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/keep-quarantine.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.keep-scan-ban">
+    <description>greywatch keep-scan-ban helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/keep-scan-ban.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.widen-scan-ban">
+    <description>greywatch widen-scan-ban helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/widen-scan-ban.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.scan-now">
+    <description>greywatch manual-scan helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/scan-now.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.harden">
+    <description>greywatch harden helper</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/harden.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.file-action">
+    <description>greywatch quarantine or delete a file named by a scan finding</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/file-action.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.tool-control">
+    <description>greywatch tool on/off helper (start-all, stop-all, scan-all)</description>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/tool-control.sh</annotate>
+  </action>
+  <action id="com.greywatch.read.posture">
+    <description>greywatch root re-read of the security posture inputs</description>
+    <message>The Security Center needs to rebuild its posture report with the root-only inputs (Lynis hardening, AppArmor enforcement, the CVE announced ledger).</message>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/posture-as-root.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.batch">
+    <description>greywatch apply a batch of decision answers with one prompt</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/batch.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.psad-tune">
+    <description>greywatch feed psad from the live firewall and arm its conservative auto-block (danger level 5 only, own LAN whitelisted)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/psad-tune.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.hardening-arp">
+    <description>greywatch pin the real router in the ARP table and set ARP-spoof resistant kernel settings</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/hardening-arp.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.block-ip">
+    <description>greywatch hold one address out of the firewall for good (keeper decision, recorded in the blocked-IP ledger)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/block-ip.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.lift-block">
+    <description>greywatch release one blocked address (keeper decision; the only path that un-blocks)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/lift-block.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.block-review">
+    <description>greywatch record the keeper's verdict on a block reviewer question (ledger note only, never acts on the firewall)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/block-review.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.baseline-update">
+    <description>greywatch refresh a checker baseline the keeper has reviewed (rkhunter propupd, or AIDE through its daily config; the previous baseline is kept)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/baseline-update.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.config-write">
+    <description>greywrite stage one allowlisted tool config back to its real path (the previous file is kept beside it as an .old copy, so the write can be undone by hand)</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/config-write.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.arpwrite">
+    <description>greywatch arpwrite helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/arpwrite.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.clear-events">
+    <description>greywatch clear-events helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/clear-events.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.delete-quarantine">
+    <description>greywatch delete-quarantine helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/delete-quarantine.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.f2b-write">
+    <description>greywatch f2b-write helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/f2b-write.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.purge-quarantine">
+    <description>greywatch purge-quarantine helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/purge-quarantine.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.tetra-write">
+    <description>greywatch tetra-write helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/tetra-write.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.ufw-apply">
+    <description>greywatch ufw-apply helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/ufw-apply.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.ufw-rollback">
+    <description>greywatch ufw-rollback helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/ufw-rollback.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.ufw-status-numbered">
+    <description>greywatch ufw-status-numbered helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/ufw-status-numbered.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.yara-tmp-scan">
+    <description>greywatch yara-tmp-scan helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/yara-tmp-scan.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.yara-write">
+    <description>greywatch yara-write helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/yara-write.sh</annotate>
+  </action>
+  <action id="com.greywatch.apply.patch-packages">
+    <description>greywatch patch-packages helper</description>
+    <vendor>greywatch</vendor>
+    <defaults><allow_any>auth_admin</allow_any><allow_active>auth_admin_keep</allow_active><allow_inactive>no</allow_inactive></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">__GW_LIB__/apply/patch-packages.sh</annotate>
+  </action>
+</policyconfig>

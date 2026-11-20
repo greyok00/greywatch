@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily greywatch ClamAV scan schedule (24/7 guard)
+
+[Timer]
+OnCalendar=*-*-* 03:10:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,3 @@
+# CANONICAL dailyaidecheck journal — re-validated at G2.4
+aide-run --check: differences found!
+aide-run --check: no differences found!

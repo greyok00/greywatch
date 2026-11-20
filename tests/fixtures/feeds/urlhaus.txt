@@ -1,0 +1,3 @@
+# URLhaus text feed (snippet)
+127.0.0.1 malware-domain.test
+127.0.0.1 c2.badhost.example

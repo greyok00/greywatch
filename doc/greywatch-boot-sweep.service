@@ -1,0 +1,14 @@
+[Unit]
+Description=greywatch boot sweep (spaced post-boot settle, scanner-free)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/greywatch-boot-sweep
+# LAW-6 caps (design §6.4). The sweep only nudges units + runs rkhunter/
+# lynis (both capped via nice/ionice inside the script); heavy scanners
+# (clamav) run from their own capped timers, never from here.
+CPUQuota=20%
+MemoryMax=512M
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=1800

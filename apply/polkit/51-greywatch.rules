@@ -1,0 +1,31 @@
+// One standing privilege grant for the machine's administrator.
+//
+// Before this file, every greywatch helper climbed through polkit on its
+// own action (com.greywatch.apply.*), so the owning user saw a password
+// prompt for every decision they approved in the desktop app. This rule
+// lets the local, active, sudo/wheel member answer those prompts without
+// a password.
+//
+// The app keeps its own confirmations: an in-app Continue/Cancel popup
+// still precedes every helper call, and the policy defaults still apply
+// to every other subject (other users, remote sessions, anything not in
+// sudo/wheel). Nothing outside the com.greywatch prefix is granted.
+//
+// Tradeoff, stated plainly: any other process of the same admin user
+// could now call these helpers without a password too, so the grant is
+// bound to the com.greywatch prefix and only that. Each helper keeps its
+// own argv allowlist; the files it may touch stay inside the greywatch
+// state and helper scripts.
+
+polkit.addRule(function (action, subject) {
+    if (action.id.indexOf("com.greywatch.") !== 0) {
+        return;
+    }
+    if (!subject.local || !subject.active) {
+        return;
+    }
+    if (!subject.isInGroup("sudo") && !subject.isInGroup("wheel")) {
+        return;
+    }
+    return polkit.Result.YES;
+});

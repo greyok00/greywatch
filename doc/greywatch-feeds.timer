@@ -1,0 +1,15 @@
+# greywatch-feeds.timer — the feed lane's schedule authority.
+# Design §6.3: NO heavy work before t+10min. The first pull fires at
+# t+10min; steady state every 6h (urlhaus cadence 1h is honored inside
+# the manifest by pulling only stale feeds).
+[Unit]
+Description=greywatch feed refresh timer
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=6h
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

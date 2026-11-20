@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+import os
+import pathlib
+import shutil
+import subprocess
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+from gwpaths import data_dir as _gw_data
+BACKUP_DIR = _gw_data() / "backups"
+HELPER_CMD = os.environ.get("GREYWATCH_HELPER_CMD")  # test-only override
+
+
+def run_helper(helper: str, args: list, timeout=30) -> int:
+    return run_helper_out(helper, args, timeout)[0]
+
+
+def run_helper_out(helper: str, args: list, timeout=30) -> tuple[int, str]:
+    # (rc, stderr tail): the same run, but the helper's own words ride
+    # along for failure text. The env read is at call time: the compiled
+    # module's reload is a no-op, so an import-time snapshot would
+    # freeze the test-only override.
+    override = os.environ.get("GREYWATCH_HELPER_CMD") or HELPER_CMD
+    # The polkit policy pins the INSTALLED path; a checkout-path pkexec
+    # matches no action and the helper never runs (owner 2026-11-13).
+    from cli import helper_script
+    script = helper_script(helper)
+    runner = [override, helper] if override else ["pkexec", str(script)]
+    argv = runner + [str(a) for a in args]
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return -1, type(exc).__name__
+    return proc.returncode, (proc.stderr or "").strip()
+
+
+def helper_detail(rc, err="", limit=200) -> str:
+    # One failure shape reused everywhere a helper rc is shown: the exit
+    # code alone is a riddle; the helper's last stderr line says why.
+    # Control bytes are stripped and the tail is truncated so it can
+    # always be dropped into a UI label.
+    head = f"exit code {rc}" if isinstance(rc, int) and rc > -1 \
+        else "the helper could not run"
+    line = str(err or "").strip().splitlines()
+    tail = ""
+    if line:
+        tail = line[-1].strip()
+        tail = "".join(c if c.isprintable() else " " for c in tail)
+        tail = " ".join(tail.split())[:limit]
+    return f"{head}: {tail}" if tail else f"{head}."
+
+
+def backup_file(path: str) -> str:
+    src = pathlib.Path(path)
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    dst = BACKUP_DIR / f"{src.name}.bak"
+    shutil.copy2(src, dst)
+    return str(dst)
+
+
+def restore_backup(backup: str, path: str) -> bool:
+    try:
+        shutil.copy2(backup, path)
+        return True
+    except (OSError, shutil.Error):
+        return False
+
+
+def confirm_flow(wiz, steps, apply_fn, verify_fn, rollback_fn, *, dry=True):
+    report = {"tool": wiz, "steps": steps, "apply_rc": None,
+              "verify": False, "rolled_back": False}
+    if not dry:
+        report["apply_rc"] = apply_fn()
+        if report["apply_rc"] == 0:
+            report["verify"] = verify_fn()
+            if not report["verify"]:
+                report["rolled_back"] = bool(rollback_fn())
+    return report

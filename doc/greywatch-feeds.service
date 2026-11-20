@@ -1,0 +1,15 @@
+[Unit]
+Description=greywatch feed refresh (threat-intel pulls, LAW-4: capped validated)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=__GW_LIB__/feeds_lane.py
+# LAW-6 caps (design §6.4): never fight the desktop for CPU/RAM.
+CPUQuota=20%
+MemoryMax=256M
+Nice=10
+IOSchedulingClass=idle
+# A hostile or dead feed never wedges the timer lane.
+TimeoutStartSec=300
