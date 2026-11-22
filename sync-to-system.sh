@@ -106,11 +106,17 @@ install -Dm 0644 "$SRC/doc/greywatch-clam-scan.service" /etc/systemd/system/
 install -Dm 0644 "$SRC/doc/greywatch-clam-scan.timer" /etc/systemd/system/
 
 step "installing the weekly CVE tracker unit"
-sed "s#__GW_LIB__#$LIB#g" "$SRC/doc/greywatch-cve.service" \
-    > /tmp/greywatch-cve.service
-install -Dm 0644 /tmp/greywatch-cve.service \
+# The substituted unit is staged in a private root-owned temp file, never
+# a fixed /tmp name: a pre-planted symlink there would be followed by
+# this root redirect and truncate the target (the same class appfw's
+# swap_ruleset fixed with its own staging dir).
+CVE_STAGE="$(mktemp /tmp/greywatch-cve.XXXXXX)"
+chmod 0600 "$CVE_STAGE"
+trap 'rm -f "$CVE_STAGE"' EXIT
+sed "s#__GW_LIB__#$LIB#g" "$SRC/doc/greywatch-cve.service" > "$CVE_STAGE"
+install -Dm 0644 "$CVE_STAGE" \
     /etc/systemd/system/greywatch-cve.service
-rm -f /tmp/greywatch-cve.service
+rm -f "$CVE_STAGE"
 install -Dm 0644 "$SRC/doc/greywatch-cve.timer" /etc/systemd/system/
 
 step "removing the retired caps so the engine is never degraded"

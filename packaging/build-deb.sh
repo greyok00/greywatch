@@ -125,6 +125,18 @@ Terminal=false
 Categories=System;Security;Monitor;
 EOF
 
+# --- the documented command line: README Quick start ends the deb route
+# --- with `gw status`, so the package ships the same wrapper install.sh
+# --- creates (a wrapper keeps sibling imports rooted in the program dir;
+# --- a bare symlink would break them). Both names of the one CLI live in
+# --- /usr/bin, so dpkg removes them with the package.
+install -d -m 0755 "$STAGE/usr/bin"
+printf '#!/bin/sh\nexec python3 %s/cli.py "$@"\n' "$PREFIX" \
+    > "$STAGE/usr/bin/gw"
+printf '#!/bin/sh\nexec python3 %s/cli.py "$@"\n' "$PREFIX" \
+    > "$STAGE/usr/bin/greywatch"
+chmod 0755 "$STAGE/usr/bin/gw" "$STAGE/usr/bin/greywatch"
+
 # --- maintainer scripts
 mkdir -p "$STAGE/DEBIAN"
 cat > "$STAGE/DEBIAN/postinst" <<'EOF'

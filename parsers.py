@@ -31,7 +31,7 @@ def _utcnow_iso() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
 
 
-def _to_utc_iso(raw: str, year: int = 2026) -> Optional[str]:
+def _to_utc_iso(raw: str, year: Optional[int] = None) -> Optional[str]:
     raw = raw.strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S",
                 "%Y:%m:%d %H:%M:%S"):
@@ -40,7 +40,14 @@ def _to_utc_iso(raw: str, year: int = 2026) -> Optional[str]:
         except ValueError:
             pass
     try:
+        # Month/day-only input (arpwatch's syslog shape) carries no year:
+        # assume the current UTC year, rolling back one when that lands
+        # in the future (a Dec 31 line read on Jan 1).
+        if year is None:
+            year = _dt.datetime.now(_dt.timezone.utc).year
         parsed = _dt.datetime.strptime(f"{year} {raw}", "%Y %b %d %H:%M:%S")
+        if parsed > _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None):
+            parsed = parsed.replace(year=year - 1)
         return parsed.replace(tzinfo=_dt.timezone.utc).isoformat()
     except (ValueError, IndexError):
         pass

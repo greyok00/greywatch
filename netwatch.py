@@ -345,3 +345,8 @@ class NetWatch:
                 self._last_cluster[host] = now
                 self._emit("MEDIUM", f"netwatch: {len(hits)} denied attempts "
                            f"against {host} in {CLUSTER_WINDOW:.0f} s")
+        # The deques trim their own timestamps, but the host key sets
+        # grow with every distinct denied host a firewall ever names:
+        # bound them like _scans/_bursts so uptime cannot inflate them.
+        self._bound(self._deny_hits, now)
+        self._bound(self._last_cluster, now)

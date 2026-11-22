@@ -40,6 +40,9 @@ BURST_WINDOW_S = 120.0
 
 # Dedupe key: (tool, text[:200])
 _DEDUPE_MAX_LEN = 200
+# Cap on distinct dedupe keys: like netwatch's MAX_KEYS, newest keys
+# win, so a months-long daemon cannot grow one entry per alert text.
+_DEDUPE_MAX_KEYS = 500
 
 
 def _read_alert_prefs(path=None) -> dict:
@@ -89,6 +92,16 @@ def _dedup_ok(tool: str, text: str, now: float) -> bool:
     if last is not None and now - last < BURST_WINDOW_S:
         return False
     _dedup_at[key] = now
+    if len(_dedup_at) > _DEDUPE_MAX_KEYS:
+        # Bound the map like netwatch bounds its key tables: expired
+        # entries go first, then the oldest-inserted keys. Dict order is
+        # insertion order, so this keeps the newest dedupe memories.
+        expired = [k for k, ts in _dedup_at.items()
+                   if now - ts >= BURST_WINDOW_S]
+        for k in expired:
+            del _dedup_at[k]
+        for k in list(_dedup_at)[:len(_dedup_at) - _DEDUPE_MAX_KEYS]:
+            del _dedup_at[k]
     return True
 
 
