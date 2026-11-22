@@ -30,6 +30,27 @@ def test_port_scan_detected_and_cooldown():
     assert len([s for s in seen if "port scan" in s[1]]) == 1
 
 
+def test_ipv6_ufw_port_scan_detected():
+    seen = []
+    nw = NetWatch(lambda sev, text: seen.append((sev, text)))
+    src = "2001:db8::77"
+    for port in range(4000, 4012):
+        nw.ingest(E("ufw", f"[UFW BLOCK] IN=wlan0 SRC={src} "
+                           f"DST=2001:db8::50 PROTO=TCP DPT={port}"))
+    scans = [s for s in seen if "port scan" in s[1]]
+    assert len(scans) == 1 and src in scans[0][1]
+
+
+def test_ipv6_appfw_destination_captured_in_brackets():
+    seen = []
+    nw = NetWatch(lambda sev, text: seen.append((sev, text)))
+    for i in range(35):
+        nw.ingest(E("appfw", f"appfw python3 → [2001:db8::{i}]:443 allow "
+                             f"[note]"))
+    bursts = [b for b in seen if "connection burst" in b[1]]
+    assert len(bursts) == 1
+
+
 def test_scattered_traffic_is_not_a_scan():
     seen = []
     nw = NetWatch(lambda sev, text: seen.append((sev, text)))

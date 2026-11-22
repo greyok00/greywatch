@@ -47,3 +47,5 @@ dist/
 
 # generated verifier output
 verify_baseline.txt
+doc/ui-shots/
+reports/

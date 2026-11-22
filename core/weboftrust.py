@@ -25,7 +25,6 @@ signed feeds in core/blocklist.py.
 """
 from __future__ import annotations
 
-import pathlib
 
 # --- the known-good floor -------------------------------------------------
 # Grouped so an owner can strike out a whole vendor in one line. Names are

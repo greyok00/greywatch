@@ -82,7 +82,13 @@ def _refresh_into(page: Gtk.Box) -> None:
 
     head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
     head.append(headline("Tools"))
-    head.append(state_pill(*_pill(level)))
+    # GW-10: the attention pill navigates to the first yellow lane's desk
+    first_yellow = next((name for name, row in tools.items()
+                         if row.get("state") == "YELLOW"), None)
+    page._gw_yellow_first = first_yellow
+    head.append(state_pill(*_pill(level),
+                           target=(_yellow_target(page, first_yellow)
+                                   if first_yellow else None)))
     head.set_halign(Gtk.Align.START)
     page.append(head)
     page.append(meta(_snapshot_note(snap)))
@@ -96,6 +102,7 @@ def _refresh_into(page: Gtk.Box) -> None:
 
     rows = []
     names = []
+    first_yellow = None
     for name, row in tools.items():
         names.append(name)
         rows.append([
@@ -104,6 +111,9 @@ def _refresh_into(page: Gtk.Box) -> None:
             _unit_word(row),
             _stamp(str(row.get("last_event") or "")),
             str((row.get("note") or ""))])
+        if row.get("state") == "YELLOW" and first_yellow is None:
+            first_yellow = name
+    page._gw_yellow_first = first_yellow
     tree = card_tree(rows, names)
     view = tree.get_child()
     view.connect("row-activated", _open_row,
@@ -128,6 +138,23 @@ def _refresh_into(page: Gtk.Box) -> None:
             meta("No events in the last 24 hours.")))
 
 
+def _yellow_target(page, name: str):
+    """Open the first yellow lane's desk — the pill's promise: click it,
+    land where the problem is."""
+    window = getattr(page, "_gw_window", None)
+
+    def _go():
+        try:
+            from ui import advanced
+            label, ids, digest = advanced.desk_for(name)
+        except KeyError:
+            return
+        opener = getattr(window, "open_tool_page", None) if window else None
+        if opener is not None:
+            opener(label, ids, digest)
+    return _go
+
+
 def _open_row(view, path, column, window, names):
     from ui import advanced
     idx = path.get_indices()[0]
@@ -145,11 +172,12 @@ def _open_row(view, path, column, window, names):
 
 def card_tree(rows, names=None):
     """The lane table, one row per tool, in the snapshot's own order,
-    each row with its tool's symbolic icon."""
+    each row with its tool's symbolic icon. Rows activate on a single
+    click (GW-12: double-click-only navigation had no affordance)."""
     scroll, _store = kit.table(columns=(
         ("Tool", 150), ("State", 90), ("Unit", 140),
         ("Last event", 165), ("Note", 160)), rows=rows,
-        tool_icons=names)
+        height=None, tool_icons=names, activate_single=True)
     return scroll
 
 
@@ -215,5 +243,8 @@ def _unit_word(row) -> str:
 
 def _stamp(stamp: str) -> str:
     if not stamp or stamp == "None":
-        return "No event yet"
+        # GW-11: the ledger deliberately skips per-check-in events, so a
+        # healthy lane can have no notable event; the old copy made it
+        # look dead.
+        return "No notable event yet"
     return stamp.replace("T", " ")[:19] + " UTC" if "T" in stamp else stamp

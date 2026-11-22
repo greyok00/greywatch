@@ -10,7 +10,7 @@ A small system service watches the logs, a command-line client reads the same
 state, and a GTK4 window puts the whole picture on screen — without sending
 anything to a cloud account.
 
-[![Version](https://img.shields.io/badge/version-0.4.5.5-2f6f5e)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.4.5.6-2f6f5e)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](pyproject.toml)
 [![CI](https://github.com/greyok00/greywatch/actions/workflows/ci.yml/badge.svg)](https://github.com/greyok00/greywatch/actions)
@@ -81,6 +81,34 @@ nftables block ledger or the intel feeds, and the DNS lookups made through the
 local resolver. The page builds from the app's own records; it does not scan
 the network itself.
 
+GreyWatch also has a passive, host-local inbound sensor. It watches new
+TCP/UDP packets and invalid TCP packets addressed to **this machine**, alerts
+on fast, slow and stealth sweeps, and temporarily blocks external sources
+after detection.
+Private/LAN sources alert but are never auto-blocked; external IPv4 and IPv6
+sources are eligible for a temporary block. Seeing sweeps against
+*other* LAN devices requires a router/SPAN tap or an agent on each device; the
+host process cannot see switched unicast traffic it is not part of.
+
+#### Web of trust
+
+Rather than trusting any single blocklist, the feeds lane pulls twelve public
+threat lists — StevenBlack, Hagezi, OISD, 1Hosts, abuse.ch URLhaus, Spamhaus
+DROP, DShield, CINS Army, FireHOL Level 1, Phishing Army, OpenPhish and
+blocklist.de — and grades each one by how independently it is curated.
+First-tier curators block on their own; entries from second-tier lists count
+only when a second, independent source names the same host or netblock
+(FireHOL, for example, only republishes several of the first-tier lists, so it
+never corroborates them).
+
+Rows that pass corroboration land in two enforcement layers: a dnsmasq
+blocklist that answers the local resolver's domain lookups, and a dedicated
+nftables table that drops traffic to and from listed netblocks, re-applied by
+the service at every boot. The Network page reports, per feed, how many rows
+were enforced and how many were held back pending corroboration. The blocklists
+are refreshed by a systemd timer; a feed that fails to download or parse is
+reported in place rather than silently dropped.
+
 ### Tools
 
 One row per monitored lane: tool name, current state, systemd unit, last event
@@ -142,8 +170,8 @@ helper scripts and Polkit policy.
 ### Service layout
 
 The installed service is `greywatch.service`. Companion timers and units cover
-the slower work: CVE refresh, the watchdog, the boot sweep, ClamAV scans and
-the threat hunter. Runtime state lives in `/var/lib/greywatch`; the program
+the slower work: CVE refresh, the threat-feed refresh, the watchdog, the boot
+sweep, ClamAV scans and the threat hunter. Runtime state lives in `/var/lib/greywatch`; the program
 lives in `/opt/greywatch` for the Debian package, or `/usr/lib/greywatch` for a
 checkout install.
 
@@ -155,7 +183,7 @@ Build the Debian package from a checkout and install it:
 git clone https://github.com/greyok00/greywatch.git
 cd greywatch
 ./packaging/build-deb.sh
-sudo apt install ./dist/greywatch_0.4.5.5_amd64.deb
+sudo apt install ./dist/greywatch_0.4.5.6_amd64.deb
 ```
 
 Open GreyWatch from the application menu. From a checkout, start the window

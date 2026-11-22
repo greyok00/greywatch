@@ -1,7 +1,5 @@
 """The bulk-fix intents (owner 2026-11-12: 'the ai assistant can't just
 fix all issues'), each confirm-gated, each reversible or honest."""
-import json
-import os
 import sys
 import pathlib
 
@@ -11,7 +9,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 def _plan(question, names=frozenset({"ufw"}), pack=None):
     import gi
     gi.require_version("Gtk", "4.0")
-    import importlib
     from ui.assistant import plan_turn
     pack = pack or {"status_line": "17 protections are green",
                     "tools": [], "recent": []}

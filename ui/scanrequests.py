@@ -7,7 +7,9 @@ module keeps the UI's import path stable and gi-free.
 
 from __future__ import annotations
 
-from scan_session import (control_path, new_request_id, request_path,
+from scan_session import (control_path as control_path,
+                          new_request_id as new_request_id,
+                          request_path as request_path,
                           write_control, write_request)
 
 

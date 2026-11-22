@@ -10,7 +10,6 @@ every new key honest, and a storm triggered mid-soak is named.
 """
 from __future__ import annotations
 
-import json
 
 import pytest
 
@@ -39,7 +38,6 @@ def test_combined_lanes_soak(tmp_path):
     # started - no worker, no kernel) provides it, test_appfw idiom
     from appfw.engine import Engine
     d.appfw_engine = Engine(d.data_dir, socket_dir=str(tmp_path))
-    seen_storms = False
     for n in range(CYCLES):
         # a burst mixing every input class the loop really eats
         burst = [
@@ -61,8 +59,6 @@ def test_combined_lanes_soak(tmp_path):
                 d.count_failure("scan", "soak-drill",
                                 RuntimeError("soak hiccup"))
         d.trim_events()
-        if d._fail_counts.get("scan", {}).get("storm"):
-            seen_storms = True
 
     # loop survived the mix: no loop-category failures
     assert not d._fail_counts.get("loop", {}).get("count"), \

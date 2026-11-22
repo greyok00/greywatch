@@ -22,6 +22,7 @@ what makes the GUI provably a skin (plan G3.3).
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import time
@@ -32,7 +33,6 @@ import sys
 import threading
 
 import baseline_apply
-import rules
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -44,7 +44,12 @@ from status import load_status
 ROOT = pathlib.Path(__file__).resolve().parent
 DATA_DIR = daemon_mod.DATA_DIR
 
-IP_RE = re.compile(rules.IP_RE)   # octet-bounded (from rules.py)
+def _valid_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(str(value))
+    except ValueError:
+        return False
+    return True
 JAIL_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 RESTART_WHITELIST = frozenset({
     "yara-tmp-scan.timer", "yara-watch.service",
@@ -182,7 +187,7 @@ def cmd_page(args) -> int:
                 print("done. Program access is updated.")
             return rc
         port = next((w for w in words if w.isdigit()), "")
-        ip = next((w for w in words if IP_RE.match(w)), "")
+        ip = next((w for w in words if _valid_ip(w)), "")
         if port:
             print(f"\nRoot command to run:\n  sudo ufw allow {port}")
             return EXIT_OK
@@ -373,7 +378,7 @@ def cmd_verify(args) -> int:
     if isinstance(tools_block, dict) and tools_block:
         tool_rows = list(tools_block.items())
     else:
-        raw = _status_json()
+        raw = snap or {}
         tool_rows = [(t.get("name") or "?", t)
                      for t in (raw.get("tools") or [])
                      if isinstance(t, dict)]
@@ -688,7 +693,7 @@ def add_clam_journal(text: str, clam_log: str, start_epoch: float) -> str:
         elif latest_exit is None:
             latest_exit = "still running or killed before exit"
     if latest_exit:
-        note = f"runner journal: "
+        note = "runner journal: "
         if latest_exit.startswith("still"):
             note += latest_exit
         else:
@@ -697,7 +702,6 @@ def add_clam_journal(text: str, clam_log: str, start_epoch: float) -> str:
                       139: "crashed (segfault)"}.get(
                 rc, f"exit code {rc}")
             note += (f"the scan exited with {reason}")
-        det_lines = text.splitlines()
         text = text.rstrip("\n") if text else ""
         text = (text + "\n" if text else "") + note
     return text
@@ -1396,7 +1400,6 @@ def cmd_run(args) -> int:
     as it happens and the summary at the end. The resident service runs
     the scanners (no password); Ctrl-C stops the wait, never the runs,
     and a rerun attaches instead of starting a second session."""
-    import time as _time
     import scan_session
     try:
         import gwpaths
@@ -1600,6 +1603,7 @@ def _attach_live(live_path, read_live) -> None:
     """Follow the live document's per-scanner rows as the service writes
     them; print what changed; return at a terminal state."""
     import time as _time
+    import scan_session
     last = {}
     while True:
         live = read_live()
@@ -1625,6 +1629,7 @@ def _attach_live(live_path, read_live) -> None:
 
 
 def _print_run_verdict(final: dict) -> None:
+    import scan_session
     print(f"Run {final.get('scan_id') or ''}: {final.get('state')}")
     for key, row in (final.get("scanners") or {}).items():
         name = scan_session.SCANNER_NAMES.get(key, key)
@@ -2542,8 +2547,8 @@ def cmd_action(args) -> int:
         print(out.stdout or f"restarted {args.target} (user unit)")
         return EXIT_OK if out.returncode == 0 else EXIT_ERR
     if args.what == "drop-ip":
-        if not IP_RE.match(args.target):
-            _fail(f"{args.target!r} is not a valid IP (drop-ip wants A.B.C.D)",
+        if not _valid_ip(args.target):
+            _fail(f"{args.target!r} is not a valid IPv4/IPv6 address",
                   EXIT_USAGE)
         return helper_exec("drop-listener", ["ufw", "deny", "from", args.target])
     if args.what == "unban":
@@ -2552,8 +2557,8 @@ def cmd_action(args) -> int:
         if not args.extra:
             _fail("action unban wants JAIL IP, e.g. "
                   "`greywatch action unban sshd 203.0.113.9`", EXIT_USAGE)
-        if not IP_RE.match(args.extra):
-            _fail(f"{args.extra!r} is not a valid IP (unban wants A.B.C.D)",
+        if not _valid_ip(args.extra):
+            _fail(f"{args.extra!r} is not a valid IPv4/IPv6 address",
                   EXIT_USAGE)
         return helper_exec("unban-ip", [args.target, args.extra])
     return EXIT_USAGE
@@ -2806,7 +2811,7 @@ def cmd_do(args) -> int:
     # 1b. "test system" / "run tests": run every detector now.
     if any(w in low for w in ("test system", "run tests", "test all tools",
                               "run the tests", "run now")):
-        targets, out = [], []
+        out = []
         # user lane: run directly
         yr = subprocess.run(["bash", str(ROOT / "apply" / "scan-now.sh"), "yara"],
                             capture_output=True, text=True, timeout=60)

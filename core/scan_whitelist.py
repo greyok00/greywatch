@@ -8,7 +8,6 @@ import datetime as _dt
 import json
 import os
 import pathlib
-import re
 
 DEFAULT_NAME = "scan-whitelist.json"
 

@@ -620,7 +620,7 @@ def test_unit_arm_enables_journals_and_undo_restores(h):
                   "probe": "true"}])
     assert "APPLY arm-again 0" in p.stdout, p.stdout + p.stderr
     entry2 = json.loads(journal.read_text().splitlines()[-1])
-    undo2 = h.run(["undo", entry2["id"], str(journal)])
+    h.run(["undo", entry2["id"], str(journal)])
     log = (h.state / "systemctl.log").read_text()
     assert "enable -- clamav-daemon.service" in log, log
 

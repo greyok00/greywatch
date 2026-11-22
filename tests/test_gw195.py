@@ -5,6 +5,7 @@ C source but not the bin/ directory it compiles into, so gcc failed with
 time: "nfq worker binary missing and gcc build failed (engine refuses to
 arm half-broken)". The fix is at the source: make the bin directory
 before building."""
+import os
 import pathlib
 import sys
 
@@ -45,3 +46,30 @@ def test_worker_build_refuses_when_bin_cannot_exist(tmp_path):
                     worker_src=str(ROOT / "appfw" / "nfq_worker.c"))
     (tmp_path / "file-not-dir").write_text("occupied")
     assert engine._ensure_worker_binary() is False
+
+
+def test_worker_rebuilds_when_the_c_source_is_newer(tmp_path, monkeypatch):
+    """A deploy can leave an IPv4-only worker binary beside the new IPv6
+    C source; trusting the binary because it is executable would keep the
+    old parser alive forever."""
+    calls = []
+
+    def fake_gcc(cmd, capture_output=True, text=True, timeout=60):
+        calls.append(list(cmd))
+        out = pathlib.Path(cmd[4])
+        out.write_bytes(b"\x7fELF-new")
+        out.chmod(0o755)
+        return type("R", (), {"returncode": 0, "stdout": "",
+                              "stderr": ""})()
+
+    bin_path = tmp_path / "bin" / "nfq_worker"
+    bin_path.parent.mkdir()
+    bin_path.write_bytes(b"\x7fELF-old")
+    bin_path.chmod(0o755)
+    os.utime(bin_path, (1, 1))
+
+    monkeypatch.setattr("appfw.engine.subprocess.run", fake_gcc)
+    engine = Engine(data_dir=tmp_path, worker_bin=bin_path,
+                    worker_src=str(ROOT / "appfw" / "nfq_worker.c"))
+    assert engine._ensure_worker_binary() is True
+    assert calls and bin_path.read_bytes() == b"\x7fELF-new"

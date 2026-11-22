@@ -11,8 +11,26 @@ honestly.
 from __future__ import annotations
 
 import datetime as _dt
+import ipaddress
 import json
 import pathlib
+import re
+import sys
+
+_IP_TOKEN = re.compile(
+    r"\b(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]+)\b")
+
+
+def _addresses(text: str) -> list[str]:
+    out = []
+    for token in _IP_TOKEN.findall(str(text or "")):
+        token = token.strip("[]")
+        try:
+            ipaddress.ip_address(token)
+        except ValueError:
+            continue
+        out.append(token)
+    return out
 
 # A small embedded OUI map: the vendors a home/lab network actually has.
 # Full lookup tables are data, not code: the report labels unknown MACs
@@ -40,14 +58,56 @@ def _vendor(mac: str) -> str:
 
 
 def _rows(data_dir: pathlib.Path, limit: int = 4000):
-    import events as events_mod
+    # GW-01: this used to call events_mod.read_events() — a function that
+    # lives in greywatch_daemon, not events — and the bare except returned
+    # [], so every build saw zero events and the Network page stayed
+    # empty forever. Catch only the expected read failure; anything else
+    # is named on stderr, never silently swallowed.
+    from greywatch_daemon import read_events
     try:
-        return events_mod.read_events(data_dir / "events.jsonl")[-limit:]
-    except Exception:                    # noqa: BLE001
+        return read_events(data_dir / "events.jsonl", limit=limit)
+    except OSError:
+        return []
+    except Exception as exc:             # noqa: BLE001
+        print(f"netmon: event reader failed: {exc!r}", file=sys.stderr)
         return []
 
 
-def build(data_dir=None) -> dict:
+def _dat_devices(dat_dir: str | None = None):
+    """arpwatch's persistent fingerprint store: /var/lib/arpwatch/*.dat,
+    one 'mac\\tip\\tepoch\\ttype\\tiface' row per device ever seen. The
+    'new station' journal events fire once per database lifetime, so the
+    device list starved without these (GW-04). Returns touch_device
+    material: (mac, ip, when_iso, what)."""
+    dat_dir = dat_dir or "/var/lib/arpwatch"
+    try:
+        paths = sorted(pathlib.Path(dat_dir).glob("*.dat"))
+    except OSError:
+        return []
+    out = []
+    for path in paths:
+        try:
+            body = path.read_text(errors="replace")
+        except OSError:
+            continue
+        for line in body.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            mac, ip, epoch = parts[0].strip(), parts[1].strip(), parts[2].strip()
+            if not re.fullmatch(r"[0-9A-Fa-f:]{17}", mac):
+                continue
+            try:
+                when = _dt.datetime.fromtimestamp(
+                    int(epoch), _dt.timezone.utc).isoformat(timespec="seconds")
+            except (ValueError, OSError, OverflowError):
+                when = None
+            out.append((mac, ip, when,
+                        f"arpwatch fingerprint ({path.stem})"))
+    return out
+
+
+def build(data_dir=None, arpwatch_dir: str | None = None) -> dict:
     """One build pass over the app's own lane records."""
     try:
         import gwpaths
@@ -111,27 +171,50 @@ def build(data_dir=None) -> dict:
         elif tool == "net-watch":
             touch_ip(text[:64], by="net-watch", when=when, what=text[:120])
         elif tool in ("psad", "fail2ban"):
-            import re
-            for ip in re.findall(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b", text):
+            for ip in _addresses(text):
                 touch_ip(ip, by=tool, when=when, what=text[:120])
                 touch_device("unknown-mac", ip, when, f"{tool} flagged the ip")
 
-    # the intel feeds: which flagged IPs are on a known bad list
+    # the persistent fingerprint store: devices the ledger never saw
+    # because "new station" fires once per arpwatch database lifetime
+    for mac, ip, when, what in _dat_devices(arpwatch_dir):
+        touch_device(mac, ip, when, what)
+
+    # the intel feeds: which flagged IPs are on a known bad list.
+    # GW-09: this was exact-string regex against the raw file, so a CIDR
+    # row could never match a concrete address. Rows are split once into
+    # exact-address sets and networks; membership does the matching.
     try:
         import feeds as feeds_mod
+        feed_dir = data_dir / "feeds"
+        per_feed = {}
         for name, spec in feeds_mod.FEEDS.items():
-            raw = data_dir / "feeds" / f"{spec.name}.txt"
             try:
-                body = raw.read_text(errors="replace")
+                rows = [ln.strip().lower() for ln
+                        in (feed_dir / f"{spec.name}.txt")
+                        .read_text().splitlines() if ln.strip()]
             except OSError:
                 continue
-            for ip in list(ips):
-                if ip and re.search(r"(^|[^0-9.])" + re.escape(ip)
-                                    + r"([^0-9.]|$)", body):
+            exact = {r for r in rows if feeds_mod._valid_ip(r)}
+            nets = []
+            for r in rows:
+                if "/" in r:
+                    try:
+                        nets.append(ipaddress.ip_network(r, strict=False))
+                    except ValueError:
+                        continue
+            per_feed[name] = (exact, nets)
+        for ip in list(ips):
+            try:
+                addr = ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+            for name, (exact, nets) in per_feed.items():
+                if str(addr) in exact or any(addr in n for n in nets):
                     touch_ip(ip, by=f"intel:{name}", when=_now_stamp(),
                              what=f"on the {name} feed")
-    except Exception:                    # noqa: BLE001
-        pass
+    except Exception as exc:             # noqa: BLE001
+        print(f"netmon: intel pass skipped: {exc!r}", file=sys.stderr)
 
     return {
         "version": 1,
@@ -151,10 +234,10 @@ def persist(report: dict, data_dir=None) -> pathlib.Path:
     except Exception:                    # noqa: BLE001
         data_dir = pathlib.Path("/var/lib/greywatch")
     out = pathlib.Path(data_dir) / "network-analytics.json"
-    tmp = pathlib.Path(str(out) + ".tmp")
-    tmp.write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
-    import os
-    os.replace(tmp, out)
+    from status import atomic_replace, ui_gid
+    atomic_replace(str(out),
+                   json.dumps(report, indent=1, sort_keys=True) + "\n",
+                   gid=ui_gid())
     return out
 
 

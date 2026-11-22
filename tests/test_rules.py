@@ -21,6 +21,12 @@ def test_ufw_exact_string():
         "ufw deny in from 203.0.113.9 to any port 23 proto tcp comment gw-W1-1"
 
 
+def test_ufw_accepts_ipv6_from():
+    cmd = ufw_build({"action": "deny", "direction": "in",
+                     "from": "2001:db8::9", "port": "22", "proto": "tcp"})
+    assert "2001:db8::9" in cmd and "from" in cmd
+
+
 def test_ufw_rejects_every_bad_input():
     with pytest.raises(ValidationError):
         ufw_build({"action": "ACCEPT", "direction": "in"})          # case

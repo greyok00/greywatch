@@ -5,7 +5,6 @@ rule, the restore command - behind the selected row."""
 from __future__ import annotations
 
 import json
-import pathlib
 
 import gi
 import pytest

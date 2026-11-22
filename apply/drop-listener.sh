@@ -5,7 +5,13 @@ for a in "$1" "$2"; do
   [[ "$a" =~ ^(allow|deny|reject|limit|in|out)$ ]] || { echo "bad token: $a" >&2; exit 65; }
 done
 FROM="$3"
-[[ $FROM =~ ^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$ ]] || { echo "bad ip" >&2; exit 65; }
+"${PYTHON:-python3}" - "$FROM" <<'PY' 2>/dev/null || { echo "bad ip" >&2; exit 65; }
+import ipaddress, sys
+try:
+    ipaddress.ip_address(sys.argv[1])
+except ValueError:
+    sys.exit(1)
+PY
 PORTS=("${@:4}")
 for p in "${PORTS[@]}"; do
   [ -z "$p" ] && continue

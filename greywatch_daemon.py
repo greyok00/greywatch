@@ -237,6 +237,12 @@ class Daemon:
                                   "(headless fallback, NOT user-approved)")
         self.healer = None       # built in run_forever (needs log/alert)
         self._notice_at = {}     # generic notice dedupe table
+        self.netwatch = None     # lazy: raw-line analyzer for UFW/appfw
+        self.inbound = None      # lazy: inbound sensor analyzer
+        self._auto_block_at = {}       # source -> monotonic of last auto-block
+        self._auto_block_times = deque()  # global hourly/burst budget
+        self._last_autoblock = 0.0
+        self._netguard_arm_tried = False
         self._reviewer_cards = set()   # question ids already raised (wave B)
         # Scans belong to the daemon: it spawns them, parses their output
         # and writes the live/findings/summary files the GUI reads. The GUI
@@ -315,6 +321,9 @@ class Daemon:
                   f"(last: {rec['last']}){storm_note}", flush=True)
 
     def consume(self, tool: str, line: str):
+        if not isinstance(line, str):
+            self._log_malformed(tool, repr(line))
+            return None
         if tool == "ufw" and "apparmor=" in line:
             tool = "apparmor"
         # Rebuild catch path: the kernel's GW-DENY lines are OUR packet
@@ -326,6 +335,19 @@ class Daemon:
             except Exception as e:
                 self.count_failure("catchpath", "evaluate", e)
             return None
+        # Inbound sensor lines are evidence, not tool events. Route them to
+        # the analyzer before normalize_event so parse_ufw never sees (and
+        # malformed.log never records) an nftables kernel line.
+        if any(p in line for p in ("GW-SCAN:", "GW-STEALTH:", "PSAD-IN:")):
+            self._ingest_netguard(line)
+            return None
+        # Feed the raw line: parse_ufw's display text drops SRC=/DPT=, so
+        # analyzing the normalized event made the UFW arm of NetWatch dead.
+        if tool in ("ufw", "appfw"):
+            try:
+                self._get_netwatch().ingest_line(tool, line)
+            except Exception as e:
+                self.count_failure("netwatch", "ingest raw", e)
         ev = None
         try:
             ev = normalize_event(tool, line)
@@ -350,13 +372,6 @@ class Daemon:
                 blockledger.classify_event(ev, self.data_dir)
             except Exception as e:
                 self.count_failure("ledger", "classify", e)
-            try:
-                if getattr(self, "netwatch", None) is None:
-                    from netwatch import NetWatch
-                    self.netwatch = NetWatch(self._netwatch_event)
-                self.netwatch.ingest(ev)
-            except Exception as e:
-                self.count_failure("netwatch", "ingest", e)
             ev.interaction = sanitize(interaction_for(ev))
             keep = ev.interaction is not None
             if not keep:
@@ -786,10 +801,11 @@ class Daemon:
         return fired
 
     def _firewall_has_block(self, ip: str) -> bool:
+        deny_set = "deny_v6" if ":" in ip else "deny_v4"
         try:
             r = subprocess.run(
                 ["nft", "get", "element", "inet", "greywatch_blocks",
-                 "deny_v4", "{", ip, "}"],
+                 deny_set, "{", ip, "}"],
                 capture_output=True, timeout=10)
         except (OSError, subprocess.SubprocessError) as e:
             # Cannot prove it left; never churn a block (unchanged law).
@@ -1331,22 +1347,163 @@ class Daemon:
                 continue
             self._appfw_notice_at[text] = now - age
 
+    def _get_netwatch(self):
+        if self.netwatch is None:
+            from netwatch import NetWatch
+            self.netwatch = NetWatch(self._netwatch_event)
+        return self.netwatch
+
+    def _ingest_netguard(self, line: str) -> None:
+        try:
+            if self.inbound is None:
+                from netwatch import InboundScanWatch
+                self.inbound = InboundScanWatch(self._netguard_event)
+            self.inbound.ingest_raw(line)
+        except Exception as e:
+            self.count_failure("netguard", "ingest", e)
+
+    def _notify_scan(self, severity: str, text: str) -> None:
+        """Bubble a scan even while the dashboard is open.
+
+        notifyd otherwise treats an open GUI as the notification surface,
+        but the GTK shell has no bubble path for arbitrary feed events.
+        Preferences, snooze, burst caps and dedupe still apply inside
+        notifyd; this only bypasses the GUI-open suppression."""
+        try:
+            if severity in ("HIGH", "CRITICAL"):
+                notifyd.notify("net-watch", severity, text, self.data_dir,
+                               os.environ.get("GREYWATCH_UI_USER", "grey"),
+                               None)
+        except Exception:
+            pass
+
     def _netwatch_event(self, severity: str, text: str):
         try:
-            from events import Event
-            from enrichment import enrich
-            now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
-            ev = Event(from_tool="net-watch", severity=severity, text=text[:500],
-                       ts=now)
-            enrich(ev)
-            with self._lock:
-                self._outbox.append(json.dumps(ev.to_dict(), separators=(",", ":")))
+            self._notice("net-watch", severity, text, dedupe_window_s=60,
+                         dedupe_key=f"net-watch|{severity}|{text[:200]}")
+            self._notify_scan(severity, text)
             log = self.data_dir / "netwatch-events.jsonl"
             log.parent.mkdir(parents=True, exist_ok=True)
             append_checked(str(log), f"netwatch {severity} {text[:400]}\n")
         except Exception as e:
             self.count_failure("write", "net-watch mirror", e)
             print("net-watch mirror write failed:", e, flush=True)
+
+    def _netguard_event(self, severity: str, text: str, meta: dict) -> None:
+        meta = meta or {}
+        src = str(meta.get("source") or "")
+        kind = str(meta.get("kind") or "scan")
+        try:
+            self._notice(
+                "net-watch", severity, text, dedupe_window_s=60,
+                dedupe_key=(f"net-watch|{kind}|{src}|"
+                            f"{int(bool(meta.get('block')))}"))
+            self._notify_scan(severity, text)
+        except Exception as e:
+            self.count_failure("netguard", "notice", e)
+        if meta.get("block") and not meta.get("local") and src:
+            self._maybe_autoblock(src, kind)
+
+    def _maybe_autoblock(self, src: str, kind: str) -> None:
+        """Temporarily block one external scanner after the detector's
+        decision. LAN/private sources never reach here."""
+        if os.environ.get("GREYWATCH_NETGUARD_BLOCK", "1") == "0":
+            return
+        now = time.monotonic()
+        if now - self._auto_block_at.get(src, -1e12) < 1800.0:
+            return
+        # A scan storm can name twenty sources in one pass. Blocking is a
+        # synchronous nft call on the main loop, so pace it: no more than
+        # one every two seconds and three per minute. Detection alerts
+        # continue; only the block action is paced.
+        if now - self._last_autoblock < 2.0:
+            return
+        while (self._auto_block_times
+               and now - self._auto_block_times[0] > 3600.0):
+            self._auto_block_times.popleft()
+        recent = sum(1 for ts in self._auto_block_times if now - ts < 60.0)
+        if recent >= 3:
+            self._notice(
+                "net-watch", "MEDIUM",
+                "net-watch: automatic block burst cap reached; scanners "
+                "are still being alerted but block requests are queued",
+                dedupe_window_s=60,
+                dedupe_key="net-watch|autoblock-burst")
+            return
+        if len(self._auto_block_times) >= 20:
+            self._notice(
+                "net-watch", "MEDIUM",
+                "net-watch: automatic block budget reached; new scanners "
+                "are still being alerted but not blocked",
+                dedupe_window_s=600,
+                dedupe_key="net-watch|autoblock-budget")
+            return
+        if len(self._auto_block_at) > 500:
+            self._auto_block_at.clear()
+        self._auto_block_at[src] = now
+        self._auto_block_times.append(now)
+        self._last_autoblock = now
+        try:
+            ttl = int(os.environ.get("GREYWATCH_NETGUARD_TTL", "3600"))
+        except ValueError:
+            ttl = 3600
+        ttl = max(60, min(86400, ttl))
+        helper = ROOT / "apply" / "netguard-block.sh"
+        env = dict(os.environ,
+                   GW_BLOCK_LEDGER=str(self.data_dir / "blocked-ips.jsonl"),
+                   GREYWATCH_DATA_DIR=str(self.data_dir),
+                   GW_NETGUARD_REASON=f"inbound {kind} against this host")
+        try:
+            proc = subprocess.run(
+                [str(helper), src, str(ttl)], capture_output=True,
+                text=True, timeout=8, env=env)
+            ok = proc.returncode == 0
+            detail = (proc.stderr or proc.stdout or "").strip()[:160]
+        except (OSError, subprocess.SubprocessError) as e:
+            ok, detail = False, f"{type(e).__name__}: {e}"[:160]
+        if ok:
+            self._notice(
+                "net-watch", "HIGH",
+                f"net-watch: blocked {src} for {ttl // 60} min after "
+                f"inbound {kind} against this host",
+                dedupe_window_s=60,
+                dedupe_key=f"net-watch|blocked|{src}")
+        else:
+            msg = (f"net-watch: could not block {src} after inbound {kind}"
+                   + (f" ({detail})" if detail else ""))
+            self._notice("net-watch", "HIGH", msg,
+                         dedupe_window_s=60,
+                         dedupe_key=f"net-watch|blockfail|{src}")
+            self._notify_scan("HIGH", msg)
+
+    def _ensure_netguard(self) -> None:
+        """Arm the passive host sensor once at boot (root daemon only)."""
+        if self._netguard_arm_tried:
+            return
+        self._netguard_arm_tried = True
+        if os.environ.get("GREYWATCH_NETGUARD", "1") == "0":
+            return
+        if os.geteuid() != 0:
+            return
+        helper = ROOT / "apply" / "netguard.sh"
+        try:
+            proc = subprocess.run([str(helper), "arm"], capture_output=True,
+                                  text=True, timeout=10)
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout or "").strip()[:160]
+                self._notice(
+                    "net-watch", "MEDIUM",
+                    "net-watch: inbound sensor could not arm"
+                    + (f" ({detail})" if detail else ""),
+                    dedupe_window_s=600,
+                    dedupe_key="net-watch|sensor-arm")
+        except (OSError, subprocess.SubprocessError) as e:
+            self.count_failure("netguard", "arm", e)
+            self._notice(
+                "net-watch", "MEDIUM",
+                f"net-watch: inbound sensor could not arm ({type(e).__name__})",
+                dedupe_window_s=600,
+                dedupe_key="net-watch|sensor-arm")
 
     def _notice(self, tool: str, severity: str, text: str,
                 dedupe_window_s: float = 600.0,
@@ -1644,7 +1801,8 @@ class Daemon:
                     if arg:
                         if self.forever_mode:
                             arg += " -n 0"    # follow-only: no history replay
-                        flt = ["[UFW", "apparmor=", "GW-DENY"]
+                        flt = ["[UFW", "apparmor=", "GW-DENY",
+                               "GW-SCAN:", "GW-STEALTH:", "PSAD-IN:"]
                         out.append(JournalTailer(t["name"], arg,
                                                  self.queue.put_nowait,
                                                  line_filter=flt))
@@ -1957,6 +2115,26 @@ class Daemon:
             self._beat = time.monotonic()
         except Exception as e:
             self.count_failure("status", "first publish", e)
+        # Passive host sensor: arm before the kernel lane starts following,
+        # so the first inbound sweep after boot is already visible. This is
+        # a no-op on a non-root/test daemon and never aborts startup.
+        self._ensure_netguard()
+        self._beat = time.monotonic()
+        # The web-of-trust firewall: re-apply the last enforced IP set so
+        # a reboot never leaves the wall down while the next feeds run is
+        # hours away. Root-only inside intelwall; never aborts startup.
+        try:
+            import intelwall
+            wall = intelwall.apply_stored(pathlib.Path(self.data_dir))
+            detail = wall.get("error")
+            if not wall.get("loaded") and detail:
+                self._notice("intelwall", "MEDIUM",
+                             f"intelwall: boot re-apply failed ({detail})",
+                             dedupe_window_s=600,
+                             dedupe_key="intelwall|boot-apply")
+        except Exception as e:
+            self.count_failure("intelwall", "boot re-apply", e)
+        self._beat = time.monotonic()
         live = tailers or self.build_collectors()
         self._beat = time.monotonic()
         self.supervisor = Supervisor()

@@ -1,6 +1,5 @@
 import json
 
-import pytest
 
 from eventgate import BurstGate, host_from_text
 

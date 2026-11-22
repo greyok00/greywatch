@@ -30,7 +30,6 @@ if sys_path not in __import__("sys").path:
 from ui.assistant import plan_turn  # noqa: E402
 from assistant.packer import build_pack  # noqa: E402
 from ui.plain import FRIENDLY  # noqa: E402
-import gwpaths  # noqa: E402
 
 
 # ---- the fixture world: one stable machine the questions live in ---------

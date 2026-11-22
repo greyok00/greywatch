@@ -7,11 +7,24 @@ answer can be matched back to the ask that produced it."""
 
 import datetime as _dt
 import hashlib
+import ipaddress
 import json
 import pathlib
 import re
 
-IP_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
+_IP_TOKEN = re.compile(
+    r"\b(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]+)\b")
+
+
+def _first_ip(text: str) -> str:
+    for token in _IP_TOKEN.findall(str(text or "")):
+        token = token.strip("[]")
+        try:
+            ipaddress.ip_address(token)
+        except ValueError:
+            continue
+        return token
+    return ""
 FILE_RE = re.compile(r"/[\w./-]{1,200}")
 
 HELPERS = frozenset({
@@ -37,7 +50,7 @@ def interaction_for(ev) -> dict | None:
     if ev is None or ev.interaction:        # spec already attached (appfw)
         return ev.interaction if ev else None
     tool, text = ev.from_tool, ev.text.lower()
-    ip = next(iter(IP_RE.findall(ev.text)), "")
+    ip = _first_ip(ev.text)
     target = next(iter(FILE_RE.findall(ev.text)), "")
 
     # Only the primary "quarantine" line may raise a decision. The follow-up

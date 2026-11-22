@@ -11,7 +11,13 @@ set -uo pipefail
 [ $# -eq 2 ] || { echo "usage: block-review.sh IP keep|lift" >&2; exit 64; }
 IP="$1"
 VERDICT="$2"
-[[ $IP =~ ^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$ ]] || { echo "bad ip" >&2; exit 65; }
+"${PYTHON:-python3}" - "$IP" <<'PY' 2>/dev/null || { echo "bad ip" >&2; exit 65; }
+import ipaddress, sys
+try:
+    ipaddress.ip_address(sys.argv[1])
+except ValueError:
+    sys.exit(1)
+PY
 [ "$VERDICT" = "keep" ] || [ "$VERDICT" = "lift" ] || { echo "verdict must be keep or lift" >&2; exit 65; }
 LEDGER="${GW_BLOCK_LEDGER:-/var/lib/greywatch/blocked-ips.jsonl}"
 mkdir -p "$(dirname "$LEDGER")" 2>/dev/null || true

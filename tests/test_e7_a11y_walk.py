@@ -15,7 +15,6 @@ import pathlib
 import socket
 import shutil
 import subprocess
-import tempfile
 import time
 
 import pytest

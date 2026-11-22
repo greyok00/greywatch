@@ -79,8 +79,6 @@ def test_clear_decisions_records_every_id(isolated_win):
     import ui.window as W
     win, tmp = isolated_win
     _seed_decisions(tmp, 3)
-    before = len([1 for _ in (tmp / "decisions.jsonl").open()] ) \
-        if (tmp / "decisions.jsonl").exists() else 0
     W.MainWindow._assistant_intent(win, "clear_decisions", "", "")
     rows = [json.loads(l) for l in
             (tmp / "decisions.jsonl").read_text().splitlines() if l.strip()]
@@ -113,9 +111,6 @@ def test_purge_quarantine_reports_the_helper_count(isolated_win,
 
     def fake_exec(helper, args):
         calls.append((helper, list(args)))
-        rows = (tmp / "quarantine.jsonl") \
-            .read_text().splitlines() if (tmp / "quarantine.jsonl") \
-            .exists() else []
         return 0
 
     (tmp / "quarantine.jsonl").write_text("\n".join([

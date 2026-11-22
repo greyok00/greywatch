@@ -24,7 +24,6 @@ network, and prints one line per action so the owner can audit it.
 """
 from __future__ import annotations
 
-import json
 import os
 import pathlib
 import shutil
@@ -70,7 +69,6 @@ def deploy_index() -> None:
         print("index: deployed tools/ missing; falling back to /opt copy")
         lib = pathlib.Path("/opt/greywatch")
     script = lib / "tools" / "build_knowledge_index.py"
-    stage = DATA / "knowledge-index.json.reconcile-tmp"
     import subprocess
     # GREYWATCH_DATA_DIR points the builder's gwpaths at a staging dir;
     # the builder writes its output there, we move it into place after.

@@ -23,8 +23,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
 
 from ui import charts, cliapi, kit
-from ui.widgets import (card, count_word, eyebrow, headline, kv_row,
-                        meta, state_pill, sub)
+from ui.widgets import (card, count_word, eyebrow, headline, meta, state_pill, sub)
 
 _CACHE = {"at": 0.0, "doc": None}
 _CACHE_S = 30.0
@@ -117,6 +116,7 @@ def _paint(page: Gtk.Box, report) -> None:
 
     page.append(_devices_card(report))
     page.append(_flagged_card(report))
+    page.append(_wot_card())
     page.append(_dns_card(page))
 
 
@@ -247,6 +247,60 @@ def _dns_card(page) -> Gtk.Widget:
 # -- small helpers -----------------------------------------------------
 
 MAC_NAMES = {"unknown-mac": "unresolved"}
+
+
+def _wot_card() -> Gtk.Widget:
+    """The web of trust: the enforced blocklists this machine serves and
+    the firewall layer that auto-drops listed netblocks. Reads the feeds
+    lane's intel-web.json report; every number there is per-source, with
+    the trust verdict counted, not implied."""
+    doc = cliapi.read_state("intel-web.json")
+    if not doc or not doc.get("sources"):
+        return card(eyebrow("Web of trust"),
+                    sub("No feed report yet. The feeds lane writes one on "
+                        "its first run; watch the Tools page for the "
+                        "lane's state."),
+                    cls="gw-card gw-card-quiet")
+    totals = doc.get("totals") or {}
+    rows = []
+    firewall = doc.get("firewall") or {}
+    for name, src in (doc.get("sources") or {}).items():
+        if not src.get("rows"):
+            continue
+        rows.append([
+            name,
+            f"tier {src.get('tier', '?')}",
+            str(src.get("curator") or ""),
+            str(src.get("rows", 0)),
+            str(src.get("enforced", 0)),
+            str(src.get("held", 0)),
+            str(src.get("state") or "unknown")])
+    parts = [eyebrow("Web of trust - "
+                     f"{count_word(totals.get('enforced', 0), 'row', 'rows')} "
+                     "enforced")]
+    parts.append(sub(
+        "Tier-1 curators enforce alone; tier-2 lists need an independent "
+        "second source. Held rows stay in the cache but never reach the "
+        "blocklist."))
+    if rows:
+        tree, store = _tree(columns=(
+            ("Source", 150), ("Trust", 70), ("Curator", 110),
+            ("Rows", 70), ("Enforced", 80), ("Held", 60),
+            ("Last pull", 100)), rows=rows)
+        _ = store
+        parts.append(tree)
+    else:
+        parts.append(meta("No feed rows survived validation; the report "
+                          "names why per source."))
+    if firewall.get("count"):
+        parts.append(meta(
+            f"Firewall layer: {firewall.get('summary') or firewall['count']} "
+            + ("enforced in the gw_intel nft table."
+               if firewall.get("loaded") else
+               "stored; the daemon re-applies it at its next boot.")))
+    elif firewall:
+        parts.append(meta("Firewall layer: no enforced IP rows to drop."))
+    return card(*parts)
 
 _WHAT_GLUE = "; "
 

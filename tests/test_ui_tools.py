@@ -4,7 +4,6 @@ honest when the snapshot is stale, down or fresh."""
 from __future__ import annotations
 
 import json
-import pathlib
 
 import gi
 gi.require_version("Gtk", "4.0")
@@ -56,7 +55,7 @@ def test_fresh_snapshot_rows_in_daemon_order(tools_mod, monkeypatch,
     assert [r[0] for r in rows] == ["Virus Scan", "Kernel Watch"]
     assert rows[0][1] == "Live"
     assert "active" in rows[0][2]
-    assert rows[1][3] == "No event yet"
+    assert rows[1][3] == "No notable event yet"
 
 
 def test_stale_snapshot_says_the_service_may_be_paused(tools_mod,
@@ -162,6 +161,23 @@ def test_row_activation_with_an_unknown_tool_is_harmless(tmp_path,
     assert "no desk yet" in getattr(window, "last_note", "")
 
 
+def test_lane_table_has_no_inner_vertical_scroller(tmp_path, monkeypatch):
+    """The page scroller owns vertical movement; the lane table must not
+    clip its last row inside a second scroller (seen live 2026-11-20)."""
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(_snap(
+        tmp_path, "2026-11-15T08:00:00+00:00")))
+    from ui import tools
+    page = tools.build(_ShellStub())
+    view = _treeview(getattr(page, "_gw_body", page))
+    assert view is not None
+    parent = view.get_parent()
+    assert parent is not None
+    _h, vertical = parent.get_policy()
+    assert int(vertical) == int(Gtk.PolicyType.NEVER)
+    model = view.get_model()
+    assert model.iter_n_children(None) == 2
+
+
 def test_built_scroller_fills_the_page(tmp_path, monkeypatch):
     """A lazily shown page must fill the window. The scroller and the
     body both expand, so the page never collapses to its minimum."""
@@ -172,3 +188,63 @@ def test_built_scroller_fills_the_page(tmp_path, monkeypatch):
     assert page.get_vexpand() is True
     assert page.get_hexpand() is True
     assert page._gw_body.get_vexpand() is True
+
+
+def test_attention_pill_is_a_button_that_opens_the_yellow_desk(tmp_path,
+                                                               monkeypatch):
+    """GW-10: the Tools header pill navigates to the first YELLOW
+    lane's desk instead of being paint that looks clickable."""
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(_snap(
+        tmp_path, "2026-11-15T08:00:00+00:00")))
+    from ui import tools
+    window = _DeskWindow()
+    page = tools.build(window)
+    body = getattr(page, "_gw_body", page)
+
+    pills = []
+
+    def walk(w):
+        if isinstance(w, Gtk.Button) and w.has_css_class("gw-pill-link"):
+            pills.append(w)
+        child = w.get_first_child()
+        while child is not None:
+            walk(child)
+            child = child.get_next_sibling()
+
+    walk(body)
+    assert pills, "no clickable pill on the Tools page"
+    pills[0].emit("clicked")
+    # the seeded snapshot's first YELLOW lane is tetragon -> Kernel Watch
+    assert window.opened == ("Kernel Watch", ("tetragon",), "tetragon")
+
+
+def test_all_green_page_has_no_navigation_pill(tmp_path, monkeypatch):
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(_snap_all_green(
+        tmp_path, "2026-11-15T08:00:00+00:00")))
+    from ui import tools
+    page = tools.build(_DeskWindow())
+    body = getattr(page, "_gw_body", page)
+    pills = []
+
+    def walk(w):
+        if isinstance(w, Gtk.Button) and w.has_css_class("gw-pill-link"):
+            pills.append(w)
+        child = w.get_first_child()
+        while child is not None:
+            walk(child)
+            child = child.get_next_sibling()
+
+    walk(body)
+    assert pills == []
+
+
+def _snap_all_green(tmp_path, stamp):
+    import json
+    d = tmp_path / "state"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "status.json").write_text(json.dumps({
+        "updated": stamp,
+        "tools": {"clamav": {"label": "Virus & threat protection",
+                             "state": "GREEN", "unit_state": "active",
+                             "note": "ready", "last_event": None}}}))
+    return d

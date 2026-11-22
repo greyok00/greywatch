@@ -280,7 +280,14 @@ class Engine:
 
     def _ensure_worker_binary(self) -> bool:
         if os.access(self._worker_bin, os.X_OK):
-            return True
+            try:
+                if self._worker_src.stat().st_mtime <= \
+                        self._worker_bin.stat().st_mtime:
+                    return True       # shipped binary is current
+            except OSError:
+                return True           # no source to compare: trust the bin
+            # Source newer than binary (a deploy copied the IPv6-capable
+            # C source): rebuild instead of running the stale worker.
         # gcc cannot create the output when the bin directory is absent
         # from the installed tree; it reported the build "failed" for that
         # missing directory alone (owner live finding, 2026-11-05 - the
@@ -613,9 +620,12 @@ class Engine:
         if now - self._miss_last.get(conn_attribution, 0.0) < 60.0:
             return
         self._miss_last[conn_attribution] = now
+        dst = str(conn.dst_ip or "")
+        if ":" in dst and not dst.startswith("["):
+            dst = f"[{dst}]"
         self.on_event(
             f"appfw attribution miss ({conn_attribution}): "
-            f"{conn.protocol} → {conn.dst_ip}:{conn.dst_port} unnamed")
+            f"{conn.protocol} → {dst}:{conn.dst_port} unnamed")
 
     def _decide_line(self, line: str, ctl: socket.socket) -> None:
         parts = line.split()
@@ -669,7 +679,10 @@ class Engine:
                 self.on_event(
                     f"appfw: {self._log_suppressed} allow event(s) throttled")
                 self._log_suppressed = 0
-            self.on_event(f"appfw {conn.app_name} → {conn.host}:"
+            dest = str(conn.host or "")
+            if ":" in dest and not dest.startswith("["):
+                dest = f"[{dest}]"       # bracket a bare IPv6 literal
+            self.on_event(f"appfw {conn.app_name} → {dest}:"
                           f"{conn.dst_port} {action} [{note}]")
             self._log_last = now
         else:

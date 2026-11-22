@@ -94,6 +94,19 @@ def test_catch_rule_optional_off():
     assert "GW-DENY" not in text
 
 
+def test_feed_sets_split_ipv4_and_ipv6_families():
+    text = render_ruleset([], {"urlhaus": {"192.0.2.66", "2001:db8::9"}},
+                          catch=True)
+    assert "set gw_urlhaus {" in text
+    assert "type ipv4_addr; flags interval" in text
+    assert "elements = { 192.0.2.66 }" in text
+    assert "set gw_urlhaus_v6 {" in text
+    assert "type ipv6_addr; flags interval" in text
+    assert "elements = { 2001:db8::9 }" in text
+    assert "ip daddr @gw_urlhaus drop" in text
+    assert "ip6 daddr @gw_urlhaus_v6 drop" in text
+
+
 def test_feed_sets_hold_only_ips_and_drop_invalid(tmp_path):
     sets = {"firehol-l1": {"203.0.113.7", "not-an-ip", "999.1.1.1"}}
     text = render_ruleset([], sets, catch=True)
@@ -165,7 +178,6 @@ def test_rendered_file_validates_under_real_nft():
     at the syntax layer for any future renderer change."""
     import shutil
     import subprocess
-    import appfw.ruleset as rs
     nft = shutil.which("nft")
     if nft is None:
         pytest.skip("nft binary not present")

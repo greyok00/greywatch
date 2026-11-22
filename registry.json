@@ -148,9 +148,7 @@
    "label": "Net Watch (light IDS)",
    "unit": "greywatch.service",
    "scope": "root",
-   "logs": [
-    "{STATE}/netwatch-events.jsonl"
-   ]
+   "logs": []
   },
   {
    "name": "cve-updater",

@@ -5,10 +5,10 @@ Wizards that create rules for the app firewall and UFW call the
 validators here, and the rules subcommand dispatches to them."""
 
 
+import ipaddress
 import pathlib
 import sys
 
-IP_RE = r"^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$"
 JAIL_RE = r"^[A-Za-z0-9_-]{1,64}$"
 NAME_RE = r"^[A-Za-z0-9_.-]{1,64}$"
 
@@ -45,6 +45,16 @@ def _match(value, pattern, what):
     return value
 
 
+def _valid_ip_or_net(value) -> bool:
+    """UFW accepts both families; a plain ``ipaddress`` check avoids
+    maintaining an IPv4 octet regex that silently rejects every v6 rule."""
+    try:
+        ipaddress.ip_network(str(value), strict=False)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 
 def ufw_build(spec: dict) -> list:
     """ufw_build."""
@@ -52,8 +62,9 @@ def ufw_build(spec: dict) -> list:
     direction = _match(spec.get("direction", ""), r"^(in|out)$", "direction")
     cmd = ["ufw", action, direction]
     if spec.get("from"):
-        _match(spec["from"], IP_RE, "from-ip")
-        cmd += ["from", spec["from"]]
+        if not _valid_ip_or_net(spec["from"]):
+            raise ValidationError(f"from-ip invalid: {spec['from']!r}")
+        cmd += ["from", str(spec["from"])]
     if spec.get("port"):
         port = _match(str(spec["port"]), r"^\d{1,5}$", "port")
         if not 1 <= int(port) <= 65535:

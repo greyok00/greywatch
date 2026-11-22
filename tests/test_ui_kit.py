@@ -73,3 +73,16 @@ def _labels(w):
         out.extend(_labels(c))
         c = c.get_next_sibling()
     return out
+
+
+def test_table_single_click_flag():
+    """GW-12: navigating tables open rows on one click."""
+    import gi
+    gi.require_version("Gtk", "4.0")
+    scroller, _s = kit.table(columns=(("A", 80), ("B", 80)),
+                             rows=[["1", "2"]], activate_single=True)
+    tree = scroller.get_child()
+    assert tree.get_activate_on_single_click() is True
+    scroller2, _s2 = kit.table(columns=(("A", 80), ("B", 80)),
+                               rows=[["1", "2"]])
+    assert scroller2.get_child().get_activate_on_single_click() is False

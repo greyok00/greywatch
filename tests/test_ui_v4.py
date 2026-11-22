@@ -14,7 +14,6 @@ import pathlib
 import re
 
 import gi
-import pytest
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
@@ -301,6 +300,22 @@ def test_cve_row_carries_its_direction(tmp_path, monkeypatch):
     body = getattr(page, "_gw_body", page)
     texts = " ".join(_all_texts(body)).lower()
     assert "lower is better" in texts
+
+
+def test_scan_desk_follows_the_headline_and_cards(tmp_path, monkeypatch):
+    security, page = _build_page(tmp_path, monkeypatch)
+    body = getattr(page, "_gw_body", page)
+    overview = body._gw_overview
+    children = []
+    child = overview.get_first_child()
+    while child is not None:
+        children.append(child)
+        child = child.get_next_sibling()
+    order = [children.index(body._gw_head),
+             children.index(body._gw_hero),
+             children.index(body._gw_grid),
+             children.index(body._gw_scan_block)]
+    assert order == sorted(order), f"Security Center order: {order}"
 
 
 def _all_texts(w) -> list:

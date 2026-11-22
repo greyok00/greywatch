@@ -232,8 +232,11 @@ def test_the_virus_card_keeps_only_its_status_lines(state):
     win.scan_monitor = None
     page._gw_window = win
     card = security.virus_card(win, page)
-    labels = [b.get_label() for b in _buttons(card)]
-    # The scan controls moved to the scan block; the card is status only.
+    # The scan controls moved to the scan block; the card is status
+    # only. The state pill may be a NAVIGATION button (gw-pill-link,
+    # it opens the desk) — that is not a scan control.
+    labels = [b.get_label() for b in _buttons(card)
+              if not b.has_css_class("gw-pill-link")]
     assert labels == [], labels
     text = _texts(card).lower()
     assert "signatures" in text
@@ -266,3 +269,75 @@ def test_patch_affected_shows_pending_then_reports(state, monkeypatch):
     assert button.get_sensitive()
     status = page._gw_slots["updates"]["status"].get_text().lower()
     assert "patched the affected packages" in status
+
+
+def test_weakest_input_reads_the_directions():
+    from ui import security
+    inputs = {"lynis_hardening": {"value": 40},          # higher is better
+              "baseline_pass": {"value": 90},
+              "cve_exposure": {"value": 20},             # lower is better
+              "apparmor_exposure": {"value": 95}}
+    # cve 20/100 worse-direction scores 80; lynis 40 is the true worst
+    assert security._weakest_input(inputs) == "lynis_hardening"
+    # an unreadable input never claims the spot
+    inputs["lynis_hardening"]["value"] = None
+    assert security._weakest_input(inputs) == "cve_exposure"
+    assert security._weakest_input({}) is None
+
+
+def test_posture_pill_is_clickable_and_clicking_is_harmless(tmp_path,
+                                                            monkeypatch):
+    """GW-10: the Security Center header pill opens... nothing scary: it
+    scrolls to the weakest input's anchor row; a click must not crash a
+    page without geometry (test shells have none)."""
+    from tests.test_ui_v4 import _build_page
+    security, page = _build_page(tmp_path, monkeypatch, score=57)
+    body = getattr(page, "_gw_body", page)
+    pills = []
+
+    def walk(w):
+        if isinstance(w, Gtk.Button) and w.has_css_class("gw-pill-link"):
+            pills.append(w)
+        child = w.get_first_child()
+        while child is not None:
+            walk(child)
+            child = child.get_next_sibling()
+
+    walk(body)
+    assert pills, "posture pill is not clickable"
+    pills[0].emit("clicked")            # must not raise without geometry
+    anchors = getattr(body, "_gw_input_anchors", {})
+    assert set(anchors) == {"lynis_hardening", "baseline_pass",
+                            "cve_exposure", "apparmor_exposure"}
+
+
+def test_card_head_pill_opens_its_desk(tmp_path, monkeypatch):
+    """GW-10: a category card's yellow pill opens that tool's desk."""
+    (tmp_path / "state").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path / "state"))
+    from ui import security
+    win = _Win()
+    win.scan_monitor = None
+    security.integrity_card(win)
+    opened = []
+
+    class _Nav(_Win):
+        def open_tool_page(self, label, ids, digest):
+            opened.append((label, ids, digest))
+
+    nav = _Nav()
+    card2 = security.integrity_card(nav)
+    pills = []
+
+    def walk(w):
+        if isinstance(w, Gtk.Button) and w.has_css_class("gw-pill-link"):
+            pills.append(w)
+        child = w.get_first_child()
+        while child is not None:
+            walk(child)
+            child = child.get_next_sibling()
+
+    walk(card2)
+    assert pills, "integrity card pill is not clickable"
+    pills[0].emit("clicked")
+    assert opened == [("Integrity", ("aide",), "aide")]

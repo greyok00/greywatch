@@ -122,7 +122,7 @@ def test_digest_unavailable_states_itself(tmp_path, monkeypatch, capsys):
         return 0, "", "NO-STATE /usr/lib/greywatch/data/run-scan-state.json"
 
     results, rc = cli.run_every_detector(runner=runner, running=lambda t: False)
-    out = capsys.readouterr().out
+    capsys.readouterr()
     assert sum("could not be read from the root log" in r["headline"]
                for r in results) == 2
     assert rc == 0

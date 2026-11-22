@@ -9,7 +9,13 @@ PORT="" PROTO="" FROM="" COMMENT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     from) [ $# -ge 2 ] || { echo "from needs an IP" >&2; exit 65; }
-          [[ $2 =~ ^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$ ]] || { echo "bad from IP: $2" >&2; exit 65; }
+          "${PYTHON:-python3}" - "$2" <<'PY' 2>/dev/null || { echo "bad from IP: $2" >&2; exit 65; }
+import ipaddress, sys
+try:
+    ipaddress.ip_network(sys.argv[1], strict=False)
+except ValueError:
+    sys.exit(1)
+PY
           FROM="$2"; shift 2 ;;
     to)    [[ "$2" =~ ^any$ ]] || { echo "only 'to any' supported" >&2; exit 65; }; shift 2 ;;
     port)  [[ "$2" =~ ^[0-9]{1,5}$ ]] || { echo "bad port: $2" >&2; exit 65; }

@@ -292,7 +292,7 @@ def baseline_verifier(data_dir=None):
         data_dir = pathlib.Path(data_dir) if data_dir else gwpaths.data_dir()
     except Exception:                    # noqa: BLE001
         data_dir = pathlib.Path(data_dir or "/var/lib/greywatch")
-    snap = load_status(str(data_dir / "status.json"))
+    load_status(str(data_dir / "status.json"))
     yara_path = pathlib.Path.home() / "security-hardening" /         "yara-rules" / "index.yar"
     for name, source in (("cve-updater", str(data_dir / "cve-cache.json")),
                          ("yara-hunting", str(yara_path))):

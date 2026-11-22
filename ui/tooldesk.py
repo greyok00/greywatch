@@ -19,8 +19,7 @@ from gi.repository import GLib, Gtk
 
 from ui import actions, charts, cliapi, kit, labels, scanrequests, toolactions
 from ui.jobpanel import JobPanel
-from ui.widgets import (card, eyebrow, headline, kv_row, meta, state_pill,
-                        sub)
+from ui.widgets import (card, eyebrow, headline, kv_row, meta, state_pill)
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 

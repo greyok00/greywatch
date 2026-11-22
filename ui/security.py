@@ -94,6 +94,7 @@ def build(window) -> Gtk.Widget:
         scroll.connect("destroy", lambda _w: monitor.unsubscribe(callback))
     scroll.set_child(page)
     scroll._gw_body = page
+    page._gw_scroll = scroll
     scroll._gw_relayout = lambda width: _relayout(page, width)
     return scroll
 
@@ -221,12 +222,6 @@ def _build_overview(window, box: Gtk.Box, page: Gtk.Box) -> None:
     _clear(box)
     page._gw_slots = {}
 
-    # The one antivirus scan block: Quick and Deep start here, and the
-    # job panel under them carries the live chart, status and controls.
-    # It is the only antivirus start surface in the app.
-    box.append(_scan_block(window, page))
-    _carry_scan_state(page, old_scan)
-
     report = cliapi.read_state("posture.json") or {}
     inputs = report.get("inputs") or {}
     score = report.get("score")
@@ -234,10 +229,16 @@ def _build_overview(window, box: Gtk.Box, page: Gtk.Box) -> None:
 
     head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
     head.append(headline("Security Center"))
-    head.append(state_pill(*_posture_mark(score)))
+    # GW-10: the posture pill navigates to the weakest input's row in
+    # the hero card, the way "needs attention" reads as an action
+    weak = _weakest_input(inputs)
+    head.append(state_pill(*_posture_mark(score),
+                           target=(_weak_target(page, weak)
+                                   if weak else None)))
     head.set_halign(Gtk.Align.START)
     head.set_hexpand(False)
     box.append(head)
+    page._gw_head = head
     box.append(meta(_head_note(score, inputs, built)))
 
     # the ring row: the score, and beside it the four inputs with the
@@ -250,6 +251,7 @@ def _build_overview(window, box: Gtk.Box, page: Gtk.Box) -> None:
     inputs_box.set_valign(Gtk.Align.CENTER)
     inputs_box.set_hexpand(True)
     inputs_box.append(eyebrow("The four inputs"))
+    anchors = page._gw_input_anchors = {}
     for key in ("lynis_hardening", "baseline_pass",
                 "cve_exposure", "apparmor_exposure"):
         row = inputs.get(key) or {}
@@ -279,6 +281,7 @@ def _build_overview(window, box: Gtk.Box, page: Gtk.Box) -> None:
         if value is not None:
             shown_lab.add_css_class(f"gw-{level}")
         bar_row.append(shown_lab)
+        anchors[key] = bar_row
         inputs_box.append(bar_row)
         inputs_box.append(meta(str(row.get("how") or "")))
     if report.get("unknown_inputs"):
@@ -289,7 +292,9 @@ def _build_overview(window, box: Gtk.Box, page: Gtk.Box) -> None:
     if elevate is not None:
         box.append(elevate)
     ring_row.append(inputs_box)
-    box.append(card(ring_row, cls="gw-card gw-hero"))
+    hero = card(ring_row, cls="gw-card gw-hero")
+    box.append(hero)
+    page._gw_hero = hero
 
     # the five category cards: two columns, three at 4K. The grid is kept
     # on the page so a width change can refill it without a data rebuild.
@@ -305,6 +310,15 @@ def _build_overview(window, box: Gtk.Box, page: Gtk.Box) -> None:
     page._gw_columns = columns
     _fill_grid(grid, page, window, columns)
     box.append(grid)
+
+    # The scan desk belongs below the score and the five protection
+    # cards (README: "Below the score are the five protection cards
+    # and the scan desk"). It is still the one antivirus start surface;
+    # carrying the old state keeps a rebuild from cancelling a run.
+    scan_block = _scan_block(window, page)
+    box.append(scan_block)
+    page._gw_scan_block = scan_block
+    _carry_scan_state(page, old_scan)
 
     # the findings pulse: reported findings by hour, the last 24 hours,
     # fed by the audit trail the app already owns
@@ -323,6 +337,36 @@ def _posture_mark(score) -> tuple[str, str]:
     if score >= 60:
         return "needs attention", "warn"
     return "at risk", "fail"
+
+
+def _weakest_input(inputs) -> str | None:
+    """The worst-scoring posture input, as the score reads it: a
+    higher-is-better input scores its value, a lower-is-better input
+    (CVE exposure climbs as the machine gets worse) scores its inverse.
+    Unreadable inputs never claim the spot."""
+    best_worst = None
+    worst_key = None
+    for key, row in (inputs or {}).items():
+        value = row.get("value")
+        if value is None:
+            continue
+        lower = row.get("direction", "lower-is-better"
+                        if key == "cve_exposure"
+                        else "higher-is-better") == "lower-is-better"
+        norm = (100 - value) if lower else value
+        if best_worst is None or norm < best_worst:
+            best_worst, worst_key = norm, key
+    return worst_key
+
+
+def _weak_target(page, key: str):
+    def _go():
+        from ui import pageutil
+        widget = (getattr(page, "_gw_input_anchors", {}) or {}).get(key)
+        scroll = getattr(page, "_gw_scroll", None)
+        if widget is not None and scroll is not None:
+            pageutil.scroll_to_widget(scroll, widget)
+    return _go
 
 
 def _head_note(score, inputs, built) -> str:
@@ -397,7 +441,7 @@ def virus_card(window, page=None) -> Gtk.Widget:
         word, level = "Snapshot unavailable", "warn"
     f_level, f_word = _word_for(fresh.get("state") or "YELLOW")
     return card(_card_head("clamav", "Virus & threat protection",
-                           (word, level)),
+                           (word, level), goto="Virus Scan", window=window),
                 sub("The antivirus engine and its signature updater."),
                 kv_row("Signatures", f_word.lower(), f_level),
                 kv_row("Last finding", _last_finding_line()))
@@ -696,7 +740,8 @@ def net_card(window) -> Gtk.Widget:
     if window.has_page("Network"):
         lines.append(cta_button(
             "Open Network", lambda _b: window.show_page("Network")))
-    headrow = _card_head("ufw", "Firewall & network", (word, level))
+    headrow = _card_head("ufw", "Firewall & network", (word, level),
+                         goto="App Firewall", window=window)
     return card(headrow, *lines)
 
 
@@ -707,7 +752,8 @@ def program_card(window) -> Gtk.Widget:
     level, word = _word_for(appfw.get("state") or "YELLOW")
     if snap is None:
         word, level = "Snapshot unavailable", "warn"
-    return card(_card_head("appfw", "Program control", (word, level)),
+    return card(_card_head("appfw", "Program control", (word, level),
+                        goto="App Firewall", window=window),
                 sub("The program gate: what may run and reach the "
                     "network."),
                 kv_row("Pending decisions", str(asks),
@@ -724,7 +770,8 @@ def integrity_card(window) -> Gtk.Widget:
         word, level = "Snapshot unavailable", "warn"
     t_level, t_word = _word_for(tetra.get("state") or "YELLOW")
     p_level, p_word = _word_for(aapro.get("state") or "YELLOW")
-    return card(_card_head("aide", "Device integrity", (word, level)),
+    return card(_card_head("aide", "Device integrity", (word, level),
+                        goto="Integrity", window=window),
                 sub("Disk changes, kernel watch and profiles."),
                 kv_row("Kernel watch", t_word.lower(), t_level),
                 kv_row("Profiles", p_word.lower(), p_level))
@@ -832,9 +879,9 @@ def updates_card(window, page=None) -> Gtk.Widget:
     rows, doc, affected, installed, value = _cve_live_snapshot()
     snap = _status_snap()
     cve_tool = _tool_row(snap, "cve-updater")
-    c_level, c_word = _word_for(cve_tool.get("state") or "YELLOW")
+    _c_level, c_word = _word_for(cve_tool.get("state") or "YELLOW")
     if snap is None:
-        c_word, c_level = "Snapshot unavailable", "warn"
+        c_word, _c_level = "Snapshot unavailable", "warn"
     level = _invert_level3(value)
     value_word = "unknown" if value is None else f"{value}/100"
 
@@ -920,7 +967,8 @@ def updates_card(window, page=None) -> Gtk.Widget:
                             "rows": rows_lab, "button": primary,
                             "secondary": secondary, "status": status}
     return card(_card_head("cve-updater", "Updates & patching",
-                           _snapshot_mark(snap)), *lines)
+                           _snapshot_mark(snap), goto="Intel",
+                           window=window), *lines)
 
 
 def _snapshot_mark(snap) -> tuple[str, str]:
@@ -1174,10 +1222,12 @@ def elevate_row(page, report, status_mtime=None) -> Gtk.Widget:
                 cls="gw-card gw-card-quiet")
 
 
-def _card_head(tool_id: str, title: str, pill=None) -> Gtk.Box:
+def _card_head(tool_id: str, title: str, pill=None, goto: str | None = None,
+               window=None) -> Gtk.Box:
     """A card head: icon, eyebrow, a spacer, and the state pill on the
     right. The pill used to sit on its own line and stretch across the
-    card."""
+    card. With a goto desk name the pill is clickable and opens that
+    tool's desk (GW-10): a yellow state navigates to its fix."""
     row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
     row.append(kit.icon(tool_id, size=20))
     lab = Gtk.Label()
@@ -1195,8 +1245,27 @@ def _card_head(tool_id: str, title: str, pill=None) -> Gtk.Box:
     spacer.set_hexpand(True)
     row.append(spacer)
     if pill is not None:
-        row.append(state_pill(pill[0], pill[1]))
+        target = _desk_opener(goto, window) if goto else None
+        row.append(state_pill(pill[0], pill[1], target=target))
     return row
+
+
+def _desk_opener(desk: str | None, window):
+    """A zero-arg callable that opens one Advanced desk, or None when
+    the window cannot navigate (test builds without a main window)."""
+    if not desk:
+        return None
+
+    def _go():
+        try:
+            from ui import advanced
+            label, ids, digest = advanced.desk_for(desk)
+        except KeyError:
+            return
+        opener = getattr(window, "open_tool_page", None) if window else None
+        if opener is not None:
+            opener(label, ids, digest)
+    return _go
 
 
 def _findings_card() -> Gtk.Widget:

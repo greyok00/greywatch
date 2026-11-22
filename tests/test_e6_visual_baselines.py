@@ -12,8 +12,6 @@ import os
 import pathlib
 import shutil
 import subprocess
-import sys
-import tempfile
 import time
 
 import pytest
@@ -62,7 +60,7 @@ def _shotGTK(out_png, tmp_path):
     drill never reads the live install's status."""
     import gi
     gi.require_version("Gtk", "4.0")
-    from gi.repository import Gtk, GLib, Gdk
+    from gi.repository import GLib
     import ui.window as W
     W.snapshot_stale = lambda *a, **k: False
     from ui.window import MainWindow
@@ -78,16 +76,6 @@ def _shotGTK(out_png, tmp_path):
     for view in VIEW_METRICS:
         win._show(view)
         pump(30)
-        surf = None
-        # native render export: paintable of the window's surface
-        try:
-            renderer = win.get_native().get_renderer()
-            paintable = Gdk.Paintable()
-            # GTK4 exposes snapshot-to-paintable only via widgets; use the
-            # window's own draw-to-pixbuf idiom: export via GtkSnapshot is
-            # not public, so xdotool+import on our own display instead.
-        except Exception:
-            pass
         subprocess.run(["import", "-window", "root", str(out_png)],
                        env=dict(os.environ, DISPLAY=os.environ["DISPLAY"]))
         shots[view] = out_png
@@ -109,7 +97,7 @@ def test_view_pixel_baseline(view, tmp_path, monkeypatch):
         baseline = BASELINES / f"{view}.png"
         (size, threshold) = VIEW_METRICS[view]
         shot = tmp_path / f"{view}-new.png"
-        shots = _shotGTK(shot, tmp_path)
+        _shotGTK(shot, tmp_path)
     if not baseline.exists():
         shutil.copy(shot, baseline)
         pytest.skip(f"baseline created on first run for {view}; "

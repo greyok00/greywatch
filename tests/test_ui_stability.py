@@ -6,7 +6,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk
 
 
 def test_timeline_filter_handler_receives_the_page(monkeypatch):

@@ -18,7 +18,6 @@ import re
 import threading
 import time
 
-import pytest
 
 import appfw.sd_notify as sd
 import greywatch_daemon as gd

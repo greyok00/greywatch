@@ -276,3 +276,10 @@ def test_ask_stats_flag(capsys, data_env, monkeypatch):
     err = capsys.readouterr().err
     assert rc == 0
     assert "Traceback" not in out and "Traceback" not in err
+
+
+def test_cli_ip_validator_accepts_both_families():
+    assert cli._valid_ip("203.0.113.9")
+    assert cli._valid_ip("2001:db8::9")
+    assert not cli._valid_ip("999.1.1.1")
+    assert not cli._valid_ip("not-an-ip")

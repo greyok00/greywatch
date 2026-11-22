@@ -97,6 +97,7 @@ def test_validate_firewall_and_learning_need_on_or_off():
 def test_validate_trust_takes_a_plain_site_only():
     assert validate(Intent("trust_site", value="example.com"), set()) is None
     assert validate(Intent("block_site", value="ads.example.org"), set()) is None
+    assert validate(Intent("block_site", value="2001:db8::9"), set()) is None
     for bad in ("https://example.com", "example.com/path", "example.com:443",
                 "user@example.com", "not a site", ""):
         assert validate(Intent("trust_site", value=bad), set()) is not None

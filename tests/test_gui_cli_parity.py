@@ -9,7 +9,6 @@ CLI's own parser.
 """
 import ast
 import pathlib
-import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -57,14 +56,13 @@ def test_every_gui_cli_verb_exists():
                 if verb not in verbs:
                     offenders.append(f"{py.name}: cliapi.{func.attr}"
                                      f"('{verb}'...) has no CLI verb")
-    assert not offenders, (f"the GUI references verbs the CLI does not "
-                           f"have (the 'Scan now' class):\n"
+    assert not offenders, ("the GUI references verbs the CLI does not "
+                           "have (the 'Scan now' class):\n"
                            + "\n".join(offenders))
 
 
 def test_the_known_lives():
     # spot-checks that the pin would have caught tonight's dead wire:
-    import ui
     verbs = cli_verbs()
     for wanted in ("run", "posture", "doctor", "verify", "decisions",
                    "trust", "clamav"):

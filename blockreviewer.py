@@ -21,7 +21,8 @@ import hashlib
 import ipaddress
 
 OWN_RANGES = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
-              "127.0.0.0/8", "169.254.0.0/16", "fe80::/10", "::1/128")
+              "127.0.0.0/8", "169.254.0.0/16",
+              "fe80::/10", "fc00::/7", "::1/128")
 
 # Content-delivery networks: shared edge addresses that legitimate sites
 # round-robin over. Blocking one usually means one or more ordinary sites
@@ -38,6 +39,12 @@ CDN_RANGES = (
     "143.204.0.0/16", "205.251.200.0/21",
     # google edge fronts
     "74.125.0.0/16", "142.250.0.0/15",
+    # IPv6 edges (same networks; a v6 block is now a real block too)
+    "2606:4700::/32",              # cloudflare
+    "2a04:4e42::/32",              # fastly
+    "2600:1400::/24",              # akamai
+    "2600:9000::/28",              # amazon cloudfront
+    "2a00:1450::/32",              # google
 )
 
 _OWN_NETS = [ipaddress.ip_network(r) for r in OWN_RANGES]

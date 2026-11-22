@@ -183,9 +183,7 @@ def test_scope_and_enforce_share_the_cgroup_tokenizer():
     """M2: the two cgroup parsers must not drift — enforce's reader
     delegates to appfw.scope (or scope's to enforce's), pinned by source
     identity of the split + the 0:: marker."""
-    import pathlib
     enforce_src = (ROOT / "appfw" / "enforce.py").read_text()
-    scope_src = (ROOT / "appfw" / "scope.py").read_text()
     # exactly ONE place strips the 0:: marker outside of scope.py, or
     # enforce imports the reader from scope
     marks = enforce_src.count('"0::"') + enforce_src.count("'0::'")
@@ -254,7 +252,6 @@ def test_v6_kernel_deny_line_parses():
         def loopback_ports(self):
             return ()
 
-    import appfw.policy as policy_mod
     verdict = enforce.evaluate_connection(
         line, policy=P(), resolver=None)
     assert verdict is not None, "v6 catch line must parse (was v4-only)"
@@ -376,6 +373,5 @@ def test_decisions_trim_never_creates_a_plantable_tmp(tmp_path):
                 ("decisions.jsonl", "asks", ".root-tmp")]
     assert not sidecars, [p.name for p in sidecars]
     if (base / ".root-tmp").exists():
-        import stat
         mode = (base / ".root-tmp").stat().st_mode & 0o777
         assert mode == 0o700, oct(mode)

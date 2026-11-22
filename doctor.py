@@ -131,7 +131,7 @@ def _default_repair(cfg: dict) -> list:
                      f"set to {clean['nfqueue_num']}")
     if cfg.get("always_exempt") != clean["always_exempt"]:
         cfg["always_exempt"] = clean["always_exempt"]
-        fixed.append("appfw config: always_exempt held non-IPv4 or "
+        fixed.append("appfw config: always_exempt held non-IP or "
                      "drop-all entries - cleaned (broke the nft arm)")
     return fixed
 

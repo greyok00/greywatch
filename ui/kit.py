@@ -12,7 +12,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
 from ui import toolicons
-from ui.widgets import count_word, esc
+from ui.widgets import esc
 
 
 def icon(tool_id: str, size: int = 22) -> Gtk.Image:
@@ -48,13 +48,15 @@ def section_card(title: str, *rows, cls: str = "gw-card") -> Gtk.Frame:
     return frame
 
 
-def table(columns, rows=(), height: int = 220,
-          tool_icons: list | None = None) -> tuple:
+def table(columns, rows=(), height: int | None = 220,
+          tool_icons: list | None = None,
+          activate_single: bool = False) -> tuple:
     """The one tree builder: a fixed-column tree over a scroller. An
     optional leading icon column renders one symbolic icon per row,
     given as `tool_icons` (the tool's own id); nothing is guessed. The
     row data rides the scroller as `_gw_rows` for tests, because a tree
-    cell's text is not a widget label."""
+    cell's text is not a widget label. activate_single opens rows on a
+    single click for tables whose rows navigate (GW-12)."""
     with_icon = tool_icons is not None
     store = Gtk.ListStore(*[str] * (len(columns) + (1 if with_icon
                                                     else 0)))
@@ -65,7 +67,8 @@ def table(columns, rows=(), height: int = 220,
                 toolicons.icon_name(tool_icons[i])] + values)
         else:
             store.append(values)
-    tree = Gtk.TreeView(model=store, activate_on_single_click=False)
+    tree = Gtk.TreeView(model=store,
+                        activate_on_single_click=activate_single)
     tree.set_enable_search(True)
     if with_icon:
         cell = Gtk.CellRendererPixbuf()
@@ -85,8 +88,15 @@ def table(columns, rows=(), height: int = 220,
             col.set_expand(True)
         tree.append_column(col)
     scroll = Gtk.ScrolledWindow()
-    scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-    scroll.set_min_content_height(height)
+    if height is None:
+        # A table inside a page scroller must not grow a second vertical
+        # scrollbar or clip its last row. Natural height lets the page own
+        # the scrolling; the horizontal policy still protects wide tables.
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        scroll.set_propagate_natural_height(True)
+    else:
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_min_content_height(height)
     scroll.set_child(tree)
     scroll._gw_rows = [list(r) for r in rows]
     return scroll, store

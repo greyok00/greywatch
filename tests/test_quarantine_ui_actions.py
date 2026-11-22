@@ -8,7 +8,6 @@ Root causes (checked 2026-11-13):
   * delete-quarantine and purge-quarantine had NO policy action at all.
 """
 import json
-import os
 import pathlib
 import stat
 

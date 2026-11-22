@@ -661,7 +661,6 @@ class App(Gtk.Application):
         A dead tray is non-fatal - the window close path keeps working."""
         try:
             from ui.tray import Tray
-            import gi
             from gi.repository import GLib
 
             def on_show():

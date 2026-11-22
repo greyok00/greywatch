@@ -15,6 +15,7 @@ after the confirm dialog, and writes one audit line.
 from __future__ import annotations
 
 import dataclasses
+import ipaddress
 import json
 import re
 
@@ -116,18 +117,21 @@ def parse_intent(text: str) -> tuple[Intent | None, str]:
     return Intent(action, str(data.get("tool") or "").strip(), value), rest
 
 
-# Four octets, each 0-255 - "999.1.1.1" is not an address a trust rule
-# can match, and it used to validate.
-_SITE_OK_IPV4 = re.compile(
-    r"(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
-    r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)")
-
-
 def _site_ok(value: str) -> bool:
     """A plain site name, never a URL with a scheme, a port or a path."""
     text = (value or "").strip().lower()
     return bool(_SITE.fullmatch(text)) and not any(
         c in text for c in ("/", ":", " ", "@"))
+
+
+def _site_ip(value: str) -> bool:
+    """A bare IPv4 or IPv6 address (IPv6 is full of colons, so the site
+    name validator must not be the only gate)."""
+    try:
+        ipaddress.ip_address((value or "").strip())
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def validate(intent: Intent, tool_names: set[str],
@@ -157,9 +161,8 @@ def validate(intent: Intent, tool_names: set[str],
         # A blocked destination is often an unresolved address, and the
         # trust list accepts it: the firewall matches conn.host exactly,
         # IP or name alike. "Unblock last blocked site" resolves to one.
-        if not (_site_ok(intent.value)
-                or _SITE_OK_IPV4.fullmatch(intent.value)):
-            return "that is not a plain site name like example.com"
+        if not (_site_ok(intent.value) or _site_ip(intent.value)):
+            return "that is not a plain site name or IP address"
         return None
     if intent.action == "trust_program":
         if not (intent.value.strip() or intent.tool.strip()):
@@ -193,7 +196,7 @@ def describe(intent: Intent, friendly: dict, scan_titles=None) -> str:
                 "recorded?" if intent.value == "on"
                 else "Stop learning mode?")
     if intent.action in ("trust_site", "block_site"):
-        if _SITE_OK_IPV4.fullmatch(intent.value):
+        if _site_ip(intent.value):
             verb = ("Allow connections to" if intent.action == "trust_site"
                     else "Block connections to")
             return f"{verb} {intent.value} from now on, without asking?"

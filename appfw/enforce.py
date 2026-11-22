@@ -172,22 +172,25 @@ class Conn:                                # local shape for the chain
 
 
 def _socket_pid(src_port: int, dst_port: int) -> int:
-    """/proc/net/tcp sweep: the socket with both ports → owner pid."""
+    """/proc/net/tcp{,6} sweep: the socket with both ports → owner pid."""
     want = {(src_port, dst_port)}
-    try:
-        lines = pathlib.Path("/proc/net/tcp").read_text().splitlines()[1:]
-    except OSError:
-        return 0
     inode = ""
-    for line in lines:
-        parts = line.split()
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
         try:
-            local = int(parts[1].split(":")[1], 16)
-            remote = int(parts[2].split(":")[1], 16)
-        except (ValueError, IndexError):
+            lines = pathlib.Path(table).read_text().splitlines()[1:]
+        except OSError:
             continue
-        if (local, remote) in want:
-            inode = parts[9]
+        for line in lines:
+            parts = line.split()
+            try:
+                local = int(parts[1].split(":")[1], 16)
+                remote = int(parts[2].split(":")[1], 16)
+            except (ValueError, IndexError):
+                continue
+            if (local, remote) in want:
+                inode = parts[9]
+                break
+        if inode:
             break
     if not inode:
         return 0

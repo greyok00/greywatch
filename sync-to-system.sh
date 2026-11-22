@@ -14,12 +14,16 @@ step() { echo "== $1"; }
 }
 
 step "syncing code"
-cp "$SRC"/cli.py "$SRC"/doctor.py "$SRC"/setup.py \
-   "$SRC"/install.sh "$SRC"/scan_session.py "$SRC"/baseline_apply.py \
-   "$SRC"/baseline.py "$SRC"/status.py "$SRC"/registry.json \
-   "$SRC"/greywatch_daemon.py "$SRC"/selfheal.py "$SRC"/cve-refresh.py \
-   "$SRC"/cve_data.py \
-   "$LIB"/
+# Every top-level module ships: the old hand-maintained list silently
+# stopped at greywatch_daemon.py and stranded feeds/rules/parsers/
+# decisions_factory/blockreviewer in the checkout, so installed code
+# lagged behind the tree after every sync.
+cp "$SRC"/*.py "$SRC"/install.sh "$SRC"/registry.json "$LIB"/
+mkdir -p "$LIB"/appfw "$LIB"/assistant "$LIB"/wiz "$LIB"/schemas
+cp "$SRC"/appfw/*.py "$SRC"/appfw/nfq_worker.c "$LIB"/appfw/
+cp "$SRC"/assistant/*.py "$LIB"/assistant/
+cp "$SRC"/wiz/*.py "$LIB"/wiz/
+cp "$SRC"/schemas/*.py "$SRC"/schemas/*.json "$LIB"/schemas/
 install -Dm 0755 "$SRC/tools/build_knowledge_index.py" \
     "$LIB/tools/build_knowledge_index.py"
 # subdirectory files need their own cp: a flat cp DROPS the dirname and
@@ -40,12 +44,45 @@ cp "$SRC"/core/*.py "$LIB"/core/
 # (2026-11-14); nothing imports them, the real ones live at the root
 rm -f "$LIB/core/cli.py" "$LIB/core/scan_session.py"
 
+step "syncing the current UI and its assets"
+# The installed shell must track the checkout. Before 2026-11-20 this
+# script copied the daemon and CLI but never ui/, so /usr/lib/greywatch
+# stayed on the retired v3 window.py shell while the dev tree moved on.
+mkdir -p "$LIB/ui" "$LIB/assets"
+cp "$SRC"/ui/*.py "$SRC"/ui/*.css "$SRC"/ui/*.sh "$LIB"/ui/
+chmod 0755 "$LIB"/ui/*.sh
+# Prune only stale top-level UI modules: never touch an unknown subdir.
+for installed in "$LIB"/ui/*.py; do
+    [ -f "$installed" ] || continue
+    name="$(basename "$installed")"
+    if [ ! -f "$SRC/ui/$name" ]; then
+        echo "  removing retired UI module: ui/$name"
+        rm -f "$installed"
+    fi
+done
+cp -a "$SRC"/assets/. "$LIB"/assets/
+# The system menu entry must point at a tree that exists. The old one
+# carried /opt/greywatch/ui/app.py, and /opt/greywatch was never built.
+SYSTEM_DESKTOP=/usr/share/applications/greywatch.desktop
+cat > "$SYSTEM_DESKTOP" <<EOF
+[Desktop Entry]
+Type=Application
+Name=greywatch
+Comment=AI-enabled endpoint security for the Linux desktop
+Exec=$LIB/ui/launch.sh
+Icon=greywatch
+Terminal=false
+Categories=System;Security;Monitor;
+EOF
+chmod 0644 "$SYSTEM_DESKTOP"
+
 step "syncing helpers"
 # every helper, all at once: single-file lists stranded arpwrite.sh on
 # an October copy that lacked the -a flag the verified config needs
 cp "$SRC"/apply/*.sh "$LIB"/apply/
 chmod 0755 "$LIB"/apply/clam-session.sh "$LIB"/apply/request-scan.sh
 chmod 0755 "$LIB"/apply/scan-now.sh "$LIB"/apply/tool-control.sh
+chmod 0755 "$LIB"/apply/netguard.sh "$LIB"/apply/netguard-block.sh
 
 step "syncing tool digests"
 mkdir -p "$LIB"/tool-digests
@@ -163,15 +200,23 @@ systemctl reset-failed greywatch-cve.service 2>/dev/null || true
 systemctl restart greywatch.service
 
 step "self-verification"
-echo -n "clamd masked (want masked): "; systemctl is-enabled clamav-daemon.service
-echo -n "daily timer (want disabled): "; systemctl is-enabled greywatch-clam-scan.timer
+# `systemctl is-enabled` and `grep -c` return nonzero for the *correct*
+# state here (masked/disabled/no match). They are reports, not gates;
+# without `|| true`, set -e aborted the sync after a successful deploy.
+echo -n "clamd masked (want masked): "; systemctl is-enabled clamav-daemon.service || true
+echo -n "daily timer (want disabled): "; systemctl is-enabled greywatch-clam-scan.timer || true
 echo -n "boot sweep (want disabled): "; systemctl is-enabled greywatch-boot-sweep.timer || true
-echo -n "scanners throttle on:      "; grep -c "\"max-speed\": (SCAN_ALL, True)" "$LIB/scan_session.py"
+echo -n "scanners throttle on:      "; grep -c "\"max-speed\": (SCAN_ALL, True)" "$LIB/scan_session.py" || true
 echo -n "session script on system: "; [ -f "$LIB/apply/clam-session.sh" ] \
     && echo present || echo MISSING
 echo -n "schedule timer:          "; systemctl is-enabled \
     greywatch-clam-scan.timer || true
 echo -n "baseline configs on system: "; [ -f "$LIB/data/baseline-configs.json" ] \
     && echo present || echo MISSING
-echo -n "unit-arm verb on system:    "; grep -c "unit-arm)" "$LIB/apply/harden.sh"
+echo -n "unit-arm verb on system:    "; grep -c "unit-arm)" "$LIB/apply/harden.sh" || true
+echo -n "current UI on system:       "; [ -f "$LIB/ui/security.py" ] \
+    && [ -f "$LIB/ui/tools.py" ] && [ -f "$LIB/ui/launch.sh" ] \
+    && echo present || echo MISSING
+echo -n "system launcher target:     "; grep -q "Exec=$LIB/ui/launch.sh" \
+    /usr/share/applications/greywatch.desktop && echo current || echo STALE
 echo "SYNC-COMPLETE"

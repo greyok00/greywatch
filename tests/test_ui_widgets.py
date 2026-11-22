@@ -24,3 +24,30 @@ def test_section_card_adds_each_class_in_a_compound_string():
                          cls="gw-card gw-card-quiet")
     assert frame.has_css_class("gw-card")
     assert frame.has_css_class("gw-card-quiet")
+
+
+def test_state_pill_with_target_is_a_clickable_button():
+    """GW-10: a pill with a target is a button in pill dress; clicking
+    it calls the target."""
+    import gi
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import Gtk
+    from ui.widgets import state_pill
+    hits = []
+    pill = state_pill("Needs attention", "warn", target=lambda: hits.append(1))
+    assert isinstance(pill, Gtk.Button)
+    assert pill.has_css_class("gw-pill")
+    assert pill.has_css_class("gw-pill-warn")
+    assert pill.has_css_class("gw-pill-link")
+    pill.emit("clicked")
+    assert hits == [1]
+
+
+def test_state_pill_without_target_stays_a_label():
+    import gi
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import Gtk
+    from ui.widgets import state_pill
+    pill = state_pill("All green", "ok")
+    assert isinstance(pill, Gtk.Label)
+    assert not pill.has_css_class("gw-pill-link")

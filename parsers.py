@@ -296,7 +296,7 @@ _PSAD_IDENT = _re.compile(r"psad(?:\[\d+\])?: (?P<msg>.*)$")
 # the three real auto-block syslog phrases, verified in the psad 2.4.6
 # package source (ipt_block's sys_log calls): added / renewed / removed
 _PSAD_BLOCK_RE2 = _re.compile(
-    r"\b(added|renewed|removed)\s+iptables auto-block against (\S+)")
+    r"\b(added|renewed|removed)\s+(?:ip|ip6)tables auto-block against (\S+)")
 
 
 def parse_psad(line: str) -> Optional[Event]:

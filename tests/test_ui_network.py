@@ -4,7 +4,6 @@ DNS monitor under it - one page, its own page in the v4 rail."""
 from __future__ import annotations
 
 import json
-import pathlib
 import time
 
 import gi
@@ -294,3 +293,43 @@ def test_built_scroller_fills_the_page(stores, monkeypatch):
     assert page.get_vexpand() is True
     assert page.get_hexpand() is True
     assert page._gw_body.get_vexpand() is True
+
+
+def test_wot_card_names_sources_and_enforcement(stores, monkeypatch):
+    """The web-of-trust card reads the feeds lane's intel-web.json:
+    per-source rows, the tier, and what the corroboration bar held."""
+    network, d, _cli = stores
+    (d / "intel-web.json").write_text(json.dumps({
+        "generated": 1700000000.0,
+        "totals": {"raw": 955097, "enforced": 809153, "held": 145944},
+        "sources": {
+            "spamhaus-drop": {"tier": 1, "curator": "spamhaus",
+                              "category": "bad-ip", "rows": 1753,
+                              "enforced": 1753, "held": 0, "state": "ok"},
+            "onehosts-lite": {"tier": 2, "curator": "1hosts",
+                              "category": "ads", "rows": 202953,
+                              "enforced": 57009, "held": 145944,
+                              "state": "ok"}},
+        "dnsmasq": {"rendered": 491776, "reload": False},
+        "firewall": {"stored": "/x/gw-intel.nft", "count": 15318,
+                     "summary": "15318 ipv4 + 0 ipv6 ranges",
+                     "loaded": False}}))
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(d))
+    page = _build(network)
+    texts = " ".join(_all_texts(getattr(page, "_gw_body", page))).lower()
+    assert "web of trust" in texts
+    assert "809,153 rows enforced" in texts or "809153 rows enforced" in texts
+    rows = _tree_rows(page)
+    assert any(r[0] == "spamhaus-drop" and r[1] == "tier 1"
+               and r[3] == "1753" and r[4] == "1753" for r in rows)
+    assert any(r[0] == "onehosts-lite" and r[5] == "145944" for r in rows)
+    assert "15318 ipv4 + 0 ipv6 ranges" in texts
+    assert "re-applies" in texts       # stored-not-loaded is said honestly
+
+
+def test_wot_card_is_quiet_without_a_report(stores, monkeypatch):
+    network, d, _cli = stores
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(d))
+    page = _build(network)
+    texts = " ".join(_all_texts(getattr(page, "_gw_body", page))).lower()
+    assert "no feed report yet" in texts

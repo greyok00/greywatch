@@ -9,7 +9,6 @@ Allow makes retries succeed).
 """
 from __future__ import annotations
 
-import pytest
 
 import appfw.enforce as enforce
 
@@ -126,7 +125,7 @@ def test_tailer_parses_and_decides(monkeypatch):
     verdict = enforce.evaluate_connection(
         KERNEL_LINE, policy=FakePolicy(), resolver=FakeResolver())
     assert verdict is not None
-    app, dst, port, action = verdict[0], verdict[1], verdict[2], verdict[3]
+    dst, port, action = verdict[1], verdict[2], verdict[3]
     assert dst == "203.0.113.7" and port == 443
     assert action in ("allow", "deny")
     assert len(verdict) == 6          # duration + resolved path ride along (C3)
@@ -198,7 +197,6 @@ def test_catch_answer_without_path_writes_no_rule():
 def test_refresh_carries_full_cgroup_path_depth_through_render():
     """Re-review C (final): the live FULL cgroup path must reach the
     renderer — production real path shapes to level 5, not level 1."""
-    import pathlib
     procs = {
         1: ("/usr/bin/firefox",
             "app-gnome-firefox@4123.scope",
@@ -209,8 +207,6 @@ def test_refresh_carries_full_cgroup_path_depth_through_render():
             "system.slice/app-curl@9.scope"),
     }
     texts = []
-    import appfw.ruleset as rs
-    monkeypatched = rs.swap_ruleset
     orig = enforce.ruleset.swap_ruleset
     try:
         enforce.ruleset.swap_ruleset = lambda t: texts.append(t) or True

@@ -11,7 +11,6 @@ GREYWATCH_REGEN_ASSISTANT_BASELINES=1.
 """
 from __future__ import annotations
 
-import os
 import pathlib
 import sys
 
@@ -20,7 +19,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from assistant.intents import INTENTS, parse_intent, validate  # noqa: E402
+from assistant.intents import INTENTS, validate  # noqa: E402
 from ui.plain import FRIENDLY  # noqa: E402
 
 NAMES = set(FRIENDLY)

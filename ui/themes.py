@@ -1038,6 +1038,7 @@ button.gw-send:hover {{ background-color: {accent_hover}; }}
 }}
 .gw-pill-fail {{ border-color: {fail}; background-color: transparent; }}
 .gw-pill-warn {{ border-color: {warn}; background-color: transparent; }}
+.gw-pill-link:hover {{ background-color: {hover}; }}
 .gw-dbody {{ padding: 12px 14px; }}
 .gw-dlabel {{
   font-size: 10px; font-weight: 700; letter-spacing: 1.1px;
@@ -1172,6 +1173,7 @@ frame.gw-card, .gw-card > box {{ border-radius: 14px; }}
 .gw-pill-ok {{ color: {ok}; border-color: {ok}; }}
 .gw-pill-warn {{ color: {warn}; border-color: {warn}; }}
 .gw-pill-fail {{ color: {fail}; border-color: {fail}; }}
+.gw-pill-link:hover {{ background-color: {hover}; }}
 .gw-cta {{
   padding: 11px 20px; border-radius: 10px; font-size: 14px;
   font-weight: 700; background-image: none;

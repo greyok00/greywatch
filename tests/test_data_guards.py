@@ -6,10 +6,8 @@ paths were written into the production ledger on 2026-10-27.
 """
 import json
 import os
-import pathlib
 import subprocess
 
-import pytest
 
 import gwpaths
 import quarantine as Q

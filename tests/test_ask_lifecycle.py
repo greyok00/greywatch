@@ -12,9 +12,7 @@ import json
 import pathlib
 import threading
 
-import pytest
 
-import threatscale
 import appfw.asklifecycle as asklifecycle
 from appfw.policy import Policy, decide
 import baseline as baseline_mod
@@ -88,7 +86,7 @@ def test_l1_baseline_hit_allows_silently_no_ask(tmp_path):
     spy = _Spy()
     result = decide(_Conn(dst_host="93.184.216.34", process_path="/usr/bin/firefox"),
                     _policy(tmp_path, baseline=base), ask=spy)
-    action, duration, note = result[0], result[1], result[2]
+    action, _duration, note = result[0], result[1], result[2]
     assert action == "allow"
     assert "baseline" in note.lower()
     assert spy.specs == []          # silent: a known pair never asks
@@ -230,7 +228,7 @@ def test_sweep_never_deletes_a_late_arriving_answer(tmp_path, monkeypatch):
         return real_exists(path)
     racy_exists.count = 0
     monkeypatch.setattr(pathlib.Path, "exists", racy_exists)
-    counts = asklifecycle.sweep_asks(tmp_path, now=1_000_000.0)
+    asklifecycle.sweep_asks(tmp_path, now=1_000_000.0)
     rows = (tmp_path / "appfw" / "decisions.jsonl").read_text().splitlines()
     answered = [json.loads(r) for r in rows
                 if "answer:" in json.dumps(json.loads(r).get("option", ""))]
@@ -267,7 +265,6 @@ def test_catch_notices_group_on_app_dst_not_port(tmp_path):
     d._lock = threading.Lock()
     d._outbox = []
     d.count_failure = lambda *a, **k: None
-    notices = []
     class FakeDaemon:  # _notice is bound; patch the outbox sink by inspecting
         pass
     # monkey the Event path: capture via _outbox JSON after enrich

@@ -150,7 +150,6 @@ _copy_program() { # $1 = destination program tree (code, root-owned)
         --exclude='./docs/superpowers' --exclude='./docs/2026*' \
         --exclude='./docs/1.0-gap-audit.md' \
         --exclude='./docs/manual/shots' --exclude='./docs/manual/walkthrough.pdf' \
-        --exclude='./assets' \
         . | tar -C "$dest" -xf -
     if [ "$(id -u)" -eq 0 ] && [ -z "$STAGE" ]; then
         chown -R root:root "$dest"
@@ -385,6 +384,15 @@ check_program_tree() { # $1 = program tree dir
     elif [ ! -f "$1/ui/app.py" ]; then
         echo "✗ the ui tree carries no app.py (the shell ships from ui/)"
         fail=1
+    else
+        # The installed tree must carry the current shell, not the retired
+        # v3 window.py pages. These are the modules the live registry reads.
+        for rel in ui/launch.sh ui/security.py ui/tools.py ui/timeline.py \
+                   ui/network.py ui/assistant_page.py ui/helpdesk.py \
+                   assets/logo/greywatch-icon-256.png assets/maps/world.png; do
+            [ -f "$1/$rel" ] \
+                || { echo "✗ the program tree is missing $rel"; fail=1; }
+        done
     fi
     # every code path must be closed to other-writes
     local loose

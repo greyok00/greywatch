@@ -127,7 +127,8 @@ def main() -> int:
             _app.quit()
             return False
 
-        GLib.timeout_add_seconds(4, snap)
+        GLib.timeout_add_seconds(
+            int(os.environ.get("GW_SHOT_WAIT", "4")), snap)
 
     app.connect("activate", on_activate)
     try:

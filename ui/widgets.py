@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Pango
+from gi.repository import Gtk
 
 from ui import themes
 
@@ -63,9 +63,24 @@ MARK_LEVELS = {"ok": "gw-ok", "warn": "gw-warn", "fail": "gw-fail",
                "mute": "dim"}
 
 
-def state_pill(word: str, level: str = "mute") -> Gtk.Label:
+def state_pill(word: str, level: str = "mute", target=None):
     """The state mark: the state word inside a pill, coloured by level
-    (ok/warn/fail). Every page top carries one."""
+    (ok/warn/fail). Every page top carries one. With a target (a
+    zero-arg callable) the pill becomes a button in the same pill dress
+    plus the gw-pill-link affordance — a yellow alert that jumps to the
+    desk where the problem lives, not paint that only looks clickable
+    (GW-10)."""
+    if target is not None:
+        btn = Gtk.Button(label=str(word).upper())
+        btn.add_css_class("gw-pill")
+        if level in ("ok", "warn", "fail"):
+            btn.add_css_class(f"gw-pill-{level}")
+        btn.add_css_class("gw-pill-link")
+        btn.set_halign(Gtk.Align.START)
+        btn.set_valign(Gtk.Align.CENTER)
+        btn.set_cursor_from_name("pointer")
+        btn.connect("clicked", lambda *_a: target())
+        return btn
     lab = Gtk.Label(label=str(word).upper())
     lab.add_css_class("gw-pill")
     lab.set_halign(Gtk.Align.START)

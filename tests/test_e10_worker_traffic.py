@@ -10,14 +10,10 @@ is exercised through the same socket pair the production lane uses.
 from __future__ import annotations
 
 import json
-import os
 import pathlib
-import socket
 import subprocess
 import sys
-import time
 
-import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 

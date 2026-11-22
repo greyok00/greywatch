@@ -138,6 +138,22 @@ def _stage_for(path: str) -> str:
     return d
 
 
+def ui_gid() -> int | None:
+    """The GUI user's group id when we run as root, else None — the
+    group argument for atomic_replace on lane-written stores. Stores the
+    root lane writes must be 0640 root:<ui-user> or the unprivileged GUI
+    reader can never see them (GW-02/GW-03: dnslog.json and the feed
+    cache sat 0600 root and every GUI read failed silently)."""
+    import os
+    if os.geteuid() != 0:
+        return None
+    import pwd
+    try:
+        return pwd.getpwnam(os.environ.get("GREYWATCH_UI_USER", "grey")).pw_gid
+    except (KeyError, ImportError):
+        return None
+
+
 def atomic_replace(path: str, data: str, gid: int | None = None) -> None:
     """Write data to a root-owned file via a staging dir, the open fd,
     and one atomic rename — never following anything a group member

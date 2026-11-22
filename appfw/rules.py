@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import ipaddress
 import json
 import os
 import pathlib
@@ -11,9 +12,6 @@ from dataclasses import dataclass
 
 from .base import ACTIONS, DURATIONS
 
-
-IP_RE = r"^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)" \
-        r"(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$"
 
 
 class ValidationError(ValueError):
@@ -35,6 +33,14 @@ class Rule:
     created: int = 0
 
 
+def _valid_address(value: str) -> bool:
+    try:
+        ipaddress.ip_address(str(value))
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 def validate(name, action, duration, op_kind, op_value) -> Rule:
     if action not in ACTIONS:
         raise ValidationError(f"action invalid: {action!r}")
@@ -49,7 +55,7 @@ def validate(name, action, duration, op_kind, op_value) -> Rule:
     if op_kind == "dst.host" and not re.match(HOST_RE, op_value):
         raise ValidationError(f"host invalid: {op_value!r}")
     if op_kind == "dst.ip" and "*" not in op_value \
-            and not re.match(IP_RE, op_value) and ":" not in op_value:
+            and not _valid_address(op_value):
         raise ValidationError(f"ip invalid: {op_value!r}")
     if op_kind == "dst.port":
         if not op_value.isdigit() or not 1 <= int(op_value) <= 65535:
@@ -91,8 +97,7 @@ def matches(rule: Rule, conn) -> bool:
 
 def _address_like(value: str) -> bool:
     value = str(value or "")
-    return bool(value) and ("*" in value or ":" in value
-                            or re.match(IP_RE, value))
+    return bool(value) and ("*" in value or _valid_address(value))
 
 
 def rule_from_decision(conn, action: str, duration: str,

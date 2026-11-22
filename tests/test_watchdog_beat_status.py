@@ -11,7 +11,6 @@ it.
 """
 import time
 
-import greywatch_daemon as gd
 from greywatch_daemon import Daemon
 from registry import load_registry
 

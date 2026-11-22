@@ -153,7 +153,8 @@ def _sentence(tool: str, t: str) -> str:
         if "kill" in sev_low:
             return "Process stopped (threat rule)"
         if "firewall_drop" in sev_low:
-            m = re.search(r"new external listener [\d.]+:(\d+)", t)
+            m = re.search(
+                r"new external listener (?:\[[0-9A-Fa-f:]+\]|\S+):(\d+)", t)
             if m:
                 return f"Blocked inbound on port {m.group(1)}"
             return f"Blocked {ip or 'address'}"

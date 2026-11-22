@@ -5,7 +5,6 @@ plus every digest)."""
 from __future__ import annotations
 
 import json
-import pathlib
 
 import pytest
 
@@ -107,7 +106,6 @@ def test_a_digest_opens_inside_help(tmp_path, monkeypatch):
 
 
 def test_help_has_no_extra_window(tmp_path, monkeypatch):
-    import gi
     from gi.repository import Gtk
     before = set(Gtk.Window.get_toplevels())
     from ui import helpdesk

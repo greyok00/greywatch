@@ -8,7 +8,6 @@ packet layer answers app questions only.
 """
 from __future__ import annotations
 
-import os
 import pathlib
 import subprocess
 import tempfile
@@ -47,13 +46,13 @@ def _nft_quote(token: str) -> str:
     return "".join(out)
 
 
-def _set_block(name: str, rows: list[str], comment: str) -> list[str]:
+def _set_block(name: str, rows: list[str], comment: str,
+               v6: bool = False) -> list[str]:
+    family = "ipv6_addr" if v6 else "ipv4_addr"
     lines = [f"    set {name} {{", f"        comment \"{_nft_quote(comment)}\""]
+    lines.append(f"        type {family}; flags interval")
     if rows:
-        lines.append("        type ipv4_addr; flags interval")
         lines.append("        elements = { " + ", ".join(sorted(rows)) + " }")
-    else:
-        lines.append("        type ipv4_addr; flags interval")
     lines.append("    }")
     return lines
 
@@ -74,8 +73,12 @@ def render_ruleset(apps: list[AppRule], feed_sets: dict[str, set[str]],
     lines.append("    # feed ip sets (deny-or-annotate only, LAW-4)")
     for name in sorted(feed_sets):
         ips = sorted(ip for ip in feed_sets[name] if _valid_ip(ip))
-        lines.extend(_set_block(f"gw_{_safe_name(name)}", ips,
-                                f"feed {name}"))
+        v4 = [ip for ip in ips if ":" not in ip]
+        v6 = [ip for ip in ips if ":" in ip]
+        safe = _safe_name(name)
+        lines.extend(_set_block(f"gw_{safe}", v4, f"feed {name}"))
+        lines.extend(_set_block(f"gw_{safe}_v6", v6, f"feed {name} v6",
+                                v6=True))
     if not feed_sets:
         lines.append("    set gw_empty { type ipv4_addr; flags interval }")
 
@@ -100,7 +103,9 @@ def render_ruleset(apps: list[AppRule], feed_sets: dict[str, set[str]],
     lines.append("        tcp dport 53 accept comment \"dns exempt tcp fallback\"")
     lines.append("        # feeds deny-or-annotate only (LAW-4): named sets drop")
     for name in sorted(feed_sets):
-        lines.append(f"        ip daddr @gw_{_safe_name(name)} drop")
+        safe = _safe_name(name)
+        lines.append(f"        ip daddr @gw_{safe} drop")
+        lines.append(f"        ip6 daddr @gw_{safe}_v6 drop")
     if not feed_sets:
         lines.append("        counter return")
     lines.append("    }")

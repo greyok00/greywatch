@@ -13,7 +13,8 @@ Protocol: the worker HOLDS each packet id for at most
 PEND_MS (250); the daemon's decision arrives within that window or the
 worker ACCEPTS it (fail-open — the machine can never be locked out, even
 if the daemon dies mid-flight). Signals accept everything pending and
-exit. IPv4 only (the nft ruleset queues ipv4; anything else = accept).
+exit. IPv4 and IPv6 TCP/UDP (the nft ruleset queues both families;
+anything else = accept).
 */
 #include <stdio.h>
 #include <stdlib.h>
@@ -145,32 +146,81 @@ static int queue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfg,
     unsigned char *payload = NULL;
     int plen = nfq_get_payload(nfa, &payload);
     unsigned char *b = (unsigned char *)payload;
-    if (plen < 20 || !b) {
+    if (plen < 1 || !b) {
         nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
         return 0;
     }
-    if ((b[0] >> 4) != 4) {                  /* not IPv4 → accept */
-        nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
-        return 0;
-    }
-    int ihl = (b[0] & 0x0F) * 4;
-    if (plen < ihl + 4) {
-        nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
-        return 0;
-    }
-    int proto = b[9];
-    char src[INET_ADDRSTRLEN] = "?", dst[INET_ADDRSTRLEN] = "?";
+    int version = b[0] >> 4;
+    int l4off;
+    int proto;
+    int src_off;
+    int dst_off;
+    int af;
+    char src[INET6_ADDRSTRLEN] = "?", dst[INET6_ADDRSTRLEN] = "?";
     char line[256];
     uint16_t sport = 0, dport = 0;
-    if (proto == 6 || proto == 17) {
-        sport = (b[ihl] << 8) | b[ihl + 1];
-        dport = (b[ihl + 2] << 8) | b[ihl + 3];
+    if (version == 4) {
+        if (plen < 20) {
+            nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+            return 0;
+        }
+        l4off = (b[0] & 0x0F) * 4;
+        if (l4off < 20 || plen < l4off + 4) {
+            nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+            return 0;
+        }
+        proto = b[9];
+        src_off = 12;
+        dst_off = 16;
+        af = AF_INET;
+    } else if (version == 6) {
+        if (plen < 44) {
+            nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+            return 0;
+        }
+        proto = b[6];
+        l4off = 40;
+        /* Walk common extension headers (hop-by-hop, routing, fragment,
+           AH, destination options) so a normal IPv6 TCP connection that
+           carries one does not silently bypass the queue. */
+        for (int ext = 0; ext < 4; ext++) {
+            if (proto != 0 && proto != 43 && proto != 44 &&
+                proto != 51 && proto != 60)
+                break;
+            if (plen < l4off + 2)
+                break;
+            int hdr;
+            if (proto == 44) {
+                hdr = 8;                    /* fragment header is fixed */
+            } else if (proto == 51) {
+                hdr = (b[l4off + 1] + 2) * 4;   /* AH length in 4-byte words */
+            } else {
+                hdr = (b[l4off + 1] + 1) * 8;   /* ext length in 8-byte units */
+            }
+            if (hdr <= 0 || plen < l4off + hdr)
+                break;
+            proto = b[l4off];
+            l4off += hdr;
+        }
+        if (plen < l4off + 4) {
+            nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+            return 0;
+        }
+        src_off = 8;
+        dst_off = 24;
+        af = AF_INET6;
     } else {
+        nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+        return 0;
+    }
+    if (proto != 6 && proto != 17) {
         nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
         return 0;                            /* non-TCP/UDP → accept */
     }
-    inet_ntop(AF_INET, b + 12, src, sizeof(src));
-    inet_ntop(AF_INET, b + 16, dst, sizeof(dst));
+    sport = (b[l4off] << 8) | b[l4off + 1];
+    dport = (b[l4off + 2] << 8) | b[l4off + 3];
+    inet_ntop(af, b + src_off, src, sizeof(src));
+    inet_ntop(af, b + dst_off, dst, sizeof(dst));
     snprintf(line, sizeof(line), "PKT %u %s %s %u %s %u", id,
              proto == 6 ? "tcp" : "udp", src, sport, dst, dport);
     send_events(line);

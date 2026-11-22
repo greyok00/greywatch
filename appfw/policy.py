@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import ipaddress
 import json
 import pathlib
 import threading
@@ -276,6 +277,22 @@ class Policy:
             return (None, None)
         low = (str(host or "").strip().lower().rstrip("."))
         if not low:
+            return (None, None)
+        try:
+            ipaddress.ip_address(low)
+        except ValueError:
+            pass
+        else:
+            # An address has no parent domain; IPv6 in particular has no
+            # dot for the parent-domain loop to split on.
+            for name, rows in sets.items():
+                if low in rows:
+                    try:
+                        import feeds as feeds_mod
+                        spec = feeds_mod.FEEDS.get(name)
+                    except Exception:
+                        spec = None
+                    return (spec.category if spec else "unknown", name)
             return (None, None)
         parts = low.split(".")
         for cut in range(0, len(parts) - 1):

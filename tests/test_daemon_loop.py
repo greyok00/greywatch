@@ -399,7 +399,6 @@ def test_stale_gui_lock_with_dead_pid_does_not_read_as_dashboard(tmp_path):
     text inside the file is not evidence of a live holder.
     """
     import fcntl
-    import os
     d = Daemon(data_dir=tmp_path, registry=load_registry())
     lock = tmp_path / "gui.lock"
     lock.write_text("999999")            # a PID that is not running

@@ -2,7 +2,6 @@
 def test_scan_finding_auto_quarantines(tmp_path):
     import importlib.util
     import pathlib
-    import scan_session as ss
     spec = importlib.util.spec_from_file_location(
         "svcmod", "/home/grey/greywatch/scan_session.py")
     mod = importlib.util.module_from_spec(spec)
@@ -35,7 +34,6 @@ def test_unicornscan_pentest_payloads_never_quarantined():
     """The owner's pentest tool ships its own payloads; a flag on that
     path reads and acts as the known-benign case (2026-11-11 verdict)."""
     import importlib.util
-    import pathlib
     spec = importlib.util.spec_from_file_location(
         "s2", "/home/grey/greywatch/scan_session.py")
     mod = importlib.util.module_from_spec(spec)

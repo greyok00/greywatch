@@ -92,7 +92,6 @@ def _blocked_domains(data_dir) -> tuple[set, str]:
         if out:
             return out, str(path)
     try:
-        import gwpaths
         rendered = pathlib.Path(data_dir) / "webguard-blocklist.conf"
         body = rendered.read_text(errors="replace")
     except Exception:                    # noqa: BLE001
@@ -200,10 +199,12 @@ def persist(report: dict, data_dir=None) -> pathlib.Path:
     except Exception:                    # noqa: BLE001
         data_dir = pathlib.Path("/var/lib/greywatch")
     out = pathlib.Path(data_dir) / STORE_NAME
-    tmp = pathlib.Path(str(out) + ".tmp")
-    tmp.write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
-    import os
-    os.replace(tmp, out)
+    body = json.dumps(report, indent=1, sort_keys=True) + "\n"
+    from status import atomic_replace, ui_gid
+    # 0640 root:ui so the GUI lane can read it (GW-02: a bare
+    # tmp-write + replace left dnslog.json 0600 root:root and the DNS
+    # card could never fill).
+    atomic_replace(str(out), body, gid=ui_gid())
     return out
 
 

@@ -132,7 +132,6 @@ def test_posture_score_needs_three_inputs_and_names_them(tmp_path,
     """One readable input is not a score (the user context read only the
     CVE lane and scored 100/100: seen live 2026-11-15). Three inputs
     compute; every number carries its source."""
-    import importlib.util
     root = pathlib.Path(__file__).resolve().parents[1]
     spec = __import__("importlib").util.spec_from_file_location(
         "posture", root / "core" / "posture.py")

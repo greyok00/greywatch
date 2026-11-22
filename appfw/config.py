@@ -140,19 +140,20 @@ def _sanitize(cfg: dict) -> dict:
         exempt = []
     else:
         exempt = [str(item).strip() for item in exempt]
-    # The ruleset emits "ip daddr <d>" - an IPv6 or name entry there is
-    # an nft parse error that took the whole arm down (audit,
-    # so anything that is not a valid IPv4 host or network is dropped.
+    # The ruleset emits "ip daddr <d>" or "ip6 daddr <d>" depending on the
+    # family. A name entry is an nft parse error that took the whole arm
+    # down, so anything that is not a valid IPv4/IPv6 host or network is
+    # dropped; a family mismatch is what made IPv6 exemptions unusable.
     clean = []
     for d in exempt:
         try:
-            ipaddress.ip_network(d, strict=False)
+            net = ipaddress.ip_network(d, strict=False)
         except ValueError:
             continue
         # A bare "0.0.0.0" is the same /32 drop-everything as "0.0.0.0/0"
         # once ip_network normalizes it - exempting it exempts the
         # whole internet (round-3 audit R3-F9).
-        if d in ("0.0.0.0", "0.0.0.0/0", "::/0", "::") or ":" in d:
+        if net.prefixlen == 0 or net.network_address.is_unspecified:
             continue
         if d not in clean:
             clean.append(d)
@@ -179,7 +180,8 @@ def build_ruleset(cfg: dict) -> str:
         "add rule inet greywatch_appfw out ip6 daddr ::1 counter accept",
         "add rule inet greywatch_appfw out udp dport 53 counter accept",
         "add rule inet greywatch_appfw out tcp dport 53 counter accept",
-        *[f"add rule inet greywatch_appfw out ip daddr {d} counter accept"
+        *[f"add rule inet greywatch_appfw out "
+          f"{'ip6' if ':' in d else 'ip'} daddr {d} counter accept"
           for d in cfg["always_exempt"]],
         f"add rule inet greywatch_appfw out ip protocol tcp ct state new "
         f"counter {queue_stmt}",

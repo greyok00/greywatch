@@ -9,7 +9,6 @@ breaker and the deadline discipline stay the only authorities.
 """
 from __future__ import annotations
 
-import json
 
 import pytest
 

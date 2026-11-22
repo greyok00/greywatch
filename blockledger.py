@@ -10,17 +10,34 @@ than rewriting it.
 from __future__ import annotations
 
 import datetime as _dt
+import ipaddress
 import json
 import pathlib
 import re
 
-IP_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
-PSAD_BLOCK_RE = re.compile(r"(?:added)\s+iptables auto-block against (\S+)",
-                           re.I)
-PSAD_RENEW_RE = re.compile(r"renewed\s+iptables auto-block against (\S+)",
-                           re.I)
-PSAD_RELEASE_RE = re.compile(r"removed iptables auto-block against (\S+)",
-                             re.I)
+# fail2ban ban/unban lines carry one address and no field name. Match
+# both families; the IPv6 alternative is deliberately colon-heavy so it
+# cannot swallow ordinary words.
+IP_RE = re.compile(
+    r"\b(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]+)\b")
+PSAD_BLOCK_RE = re.compile(
+    r"(?:added)\s+(?:ip|ip6)tables auto-block against (\S+)", re.I)
+PSAD_RENEW_RE = re.compile(
+    r"renewed\s+(?:ip|ip6)tables auto-block against (\S+)", re.I)
+PSAD_RELEASE_RE = re.compile(
+    r"removed (?:ip|ip6)tables auto-block against (\S+)", re.I)
+
+
+def _address(text: str) -> str | None:
+    """The first valid IPv4/IPv6 token in an event line, or None."""
+    for token in IP_RE.findall(text):
+        token = token.strip("[]")
+        try:
+            ipaddress.ip_address(token)
+        except ValueError:
+            continue
+        return token
+    return None
 
 
 def ledger_path(data_dir) -> pathlib.Path:
@@ -45,10 +62,15 @@ def _append(path: pathlib.Path, record: dict) -> dict:
 
 
 def record_block(data_dir, ip: str, source: str, reason: str,
-                 forever: bool = False) -> dict:
-    return _append(ledger_path(data_dir),
-                   {"kind": "block", "ip": ip, "source": source,
-                    "reason": reason[:300], "forever": bool(forever)})
+                 forever: bool = False, expires_at: str | None = None,
+                 ttl_s: int | None = None) -> dict:
+    rec = {"kind": "block", "ip": ip, "source": source,
+           "reason": reason[:300], "forever": bool(forever)}
+    if expires_at:
+        rec["expires_at"] = str(expires_at)
+    if ttl_s is not None:
+        rec["ttl_s"] = int(ttl_s)
+    return _append(ledger_path(data_dir), rec)
 
 
 def record_release(data_dir, ip: str, source: str, reason: str) -> dict:
@@ -81,10 +103,29 @@ def blocked(data_dir) -> dict:
     return state
 
 
+def _expired(rec: dict, now=None) -> bool:
+    """True when a temporary block's own deadline has passed.
+
+    nftables removes the address on its timeout; the ledger must agree, or
+    the Defense page would show a block that is no longer live."""
+    value = rec.get("expires_at")
+    if not value:
+        return False
+    try:
+        when = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=_dt.timezone.utc)
+    except (TypeError, ValueError):
+        return False              # malformed deadline: keep the block visible
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    return when <= now
+
+
 def active_blocks(data_dir) -> dict:
-    """ip -> newest entry whose kind is still 'block' (no release after)."""
+    """ip -> newest entry whose kind is still 'block' and whose temporary
+    deadline (when present) has not passed."""
     return {ip: rec for ip, rec in blocked(data_dir).items()
-            if rec.get("kind") == "block"}
+            if rec.get("kind") == "block" and not _expired(rec)}
 
 
 def reviews(data_dir) -> dict:
@@ -140,13 +181,13 @@ def classify_event(ev, data_dir) -> dict | None:
         return None
     if tool == "fail2ban":
         t = text.lower()
-        m = IP_RE.search(text)
-        if not m or not (t.startswith("ban") or t.startswith("unban")):
+        ip = _address(text)
+        if not ip or not (t.startswith("ban") or t.startswith("unban")):
             return None
         if t.startswith("unban"):
-            return record_release(data_dir, m.group(0), "fail2ban",
+            return record_release(data_dir, ip, "fail2ban",
                                   "ban released")
-        return record_block(data_dir, m.group(0), "fail2ban",
+        return record_block(data_dir, ip, "fail2ban",
                             "repeated login failures")
     return None
 
@@ -170,6 +211,7 @@ def page_digest(evs, data_dir, answered=None) -> dict:
             "ip": ip, "source": str(rec.get("source", "")),
             "reason": str(rec.get("reason", "")),
             "forever": bool(rec.get("forever")),
+            "expires_at": str(rec.get("expires_at", "")),
             "cls": verdict["cls"], "why": verdict["why"],
             "reviewed": verdicts.get(ip) or "",
             "ts": str(rec.get("ts", "")),

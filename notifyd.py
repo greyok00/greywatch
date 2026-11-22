@@ -13,7 +13,6 @@ per 120 seconds, deduplicated by (tool, text[:200]).
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -21,7 +20,6 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from appfw.rules import RuleStore  # noqa: E402
 
 from events import lane_for  # noqa: E402
 from gwpaths import data_dir as _gw_data  # noqa: E402

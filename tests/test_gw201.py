@@ -95,6 +95,19 @@ def test_ledger_ingests_psad_and_fail2ban_events(tmp_path):
 
 
 # ---- the decision card on the auto-block itself --------------------------
+def test_ledger_ingests_ipv6_psad_and_fail2ban(tmp_path):
+    rec = blockledger.classify_event(
+        _ev("psad", "added ip6tables auto-block against 2001:db8::9"),
+        tmp_path)
+    assert rec and rec["ip"] == "2001:db8::9"
+    rec = blockledger.classify_event(
+        _ev("fail2ban", "Ban sshd - 2001:db8::7"), tmp_path)
+    assert rec and rec["ip"] == "2001:db8::7"
+    blockledger.classify_event(
+        _ev("fail2ban", "Unban sshd - 2001:db8::7"), tmp_path)
+    assert "2001:db8::7" not in blockledger.active_blocks(tmp_path)
+
+
 def test_auto_block_event_offers_forever_or_lift():
     ev = parse_psad(_j("added iptables auto-block against 203.0.113.9 "
                        "timeout: 3600 sec"))
@@ -102,6 +115,14 @@ def test_auto_block_event_offers_forever_or_lift():
     assert card and card["question"]
     helpers = [o["helper"] for o in card["options"]]
     assert "block-ip" in helpers and "lift-block" in helpers
+
+
+def test_ipv6_auto_block_card_carries_the_address_into_the_helpers():
+    ev = parse_psad(_j("added ip6tables auto-block against 2001:db8::9 "
+                       "timeout: 3600 sec"))
+    card = sanitize(interaction_for(ev))
+    assert card and "2001:db8::9" in card["subject"]
+    assert any(o.get("args") == ["2001:db8::9"] for o in card["options"])
 
 
 def test_wave_b_helpers_are_sanitizer_known():
@@ -117,6 +138,8 @@ def test_reviewer_baselines_classify_own_cdn_scanner():
     assert blockreviewer.classify("151.101.65.140")["cls"] == "cdn"
     far = blockreviewer.classify("203.0.113.9")
     assert far["cls"] == "datacenter"
+    assert blockreviewer.classify("fd00::15")["cls"] == "own-infra"
+    assert blockreviewer.classify("2606:4700::7")["cls"] == "cdn"
 
 
 def test_reviewer_asks_about_house_and_cdn_blocks_only():
@@ -355,7 +378,6 @@ def test_classify_event_touches_no_filesystem_for_non_blocks():
     def never_called(data_dir):
         raise AssertionError("ledger_path called for a non-block event")
 
-    monkey = None  # ledger_path is patched below via the module namespace
     orig = blockledger.ledger_path
     blockledger.ledger_path = never_called
     try:

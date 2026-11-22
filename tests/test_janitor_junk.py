@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from decisions_factory import _quarantine_target, pending_spec_pairs  # noqa: E402
+from decisions_factory import pending_spec_pairs  # noqa: E402
 from greywatch_daemon import Daemon, load_registry  # noqa: E402
 
 
@@ -83,7 +83,6 @@ def test_janitor_runs_in_the_boot_pass(tmp_path):
     junk.write_text("junk")
     _seed(tmp, [("responderd:bj", str(junk), {})])
     d = _daemon(tmp)
-    stop = type(d).__mro__ and __import__("threading").Event()
     d.run_once(tailers=[])
     # the boot pass records no answer; the ask reaches the owner
     answers = (d.decisions_path.read_text()

@@ -9,8 +9,6 @@ additive-stable: rc values and output shape, not byte-for-byte prose
 """
 from __future__ import annotations
 
-import pathlib
-import sys
 
 import pytest
 

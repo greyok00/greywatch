@@ -7,7 +7,6 @@ that consume them (a set with no consumer inert by construction).
 """
 from __future__ import annotations
 
-import pytest
 
 import appfw.enforce as enforce
 
@@ -103,7 +102,6 @@ def test_engine_stop_teardown_keys_on_armed_mode_not_stale_config():
     import pathlib, sys
     REPO = pathlib.Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(REPO))
-    import subprocess as sp
     import appfw.engine as eng_mod
     import appfw.ruleset as rs
 

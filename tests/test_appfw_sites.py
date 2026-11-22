@@ -158,3 +158,8 @@ def test_build_ruleset_drops_unusable_exempt_entries():
     assert "ip daddr ::1" not in doc            # loopback ip6 line is base
     assert "ip daddr example.net" not in doc
     assert "ip daddr 999.999" not in doc
+
+def test_build_ruleset_keeps_ipv6_exemptions_on_the_v6_family():
+    doc = config.build_ruleset({"always_exempt": ["2001:db8::9"]})
+    assert "ip6 daddr 2001:db8::9 counter accept" in doc
+    assert "ip daddr 2001:db8::9" not in doc

@@ -8,7 +8,6 @@ globs ONLY the manifest's own sibling directory — a fixture manifest in
 import json
 import subprocess
 import os
-import pathlib
 
 
 def _run(tmp_path, manifest, args=()):
