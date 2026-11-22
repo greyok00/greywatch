@@ -13,6 +13,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from decisions_factory import pending_spec_pairs  # noqa: E402
 from greywatch_daemon import Daemon, load_registry  # noqa: E402
+from status import append_checked  # noqa: E402
 
 
 def _ask(rid, path, subject=True, options=True):
@@ -92,6 +93,46 @@ def test_janitor_runs_in_the_boot_pass(tmp_path):
     assert "responderd:bj" not in answers
     pairs = [p[0]["id"] for p in pending_spec_pairs(tmp)]
     assert "responderd:bj" in pairs, _boot_state(tmp, d)
+
+
+def test_append_never_glues_onto_a_torn_last_line(tmp_path):
+    """A torn last write leaves the ledger without its trailing newline;
+    the next append must SEPARATE, never weld the two lines into one
+    record no reader can parse (the pending-ask-loses-its-id class the
+    0.4.5.6 CI battery caught: the boot pass's first appended event
+    welded itself onto the seeded ask)."""
+    ledger = tmp_path / "events.jsonl"
+    ledger.write_text(json.dumps(
+        {"ts": "t0", "interaction": {"id": "responderd:torn"}}))
+    ledger.chmod(0o644)     # a private root-owned ledger; a 0664 umask
+    # artifact would trip append_checked's group-writable refusal first
+    append_checked(str(ledger), json.dumps({"ts": "t1"}) + "\n")
+    append_checked(str(ledger), json.dumps({"ts": "t2"}) + "\n")
+    rows = [ln for ln in ledger.read_text().splitlines() if ln.strip()]
+    assert len(rows) == 3
+    assert json.loads(rows[0])["interaction"]["id"] == "responderd:torn"
+    assert json.loads(rows[1])["ts"] == "t1"
+    assert json.loads(rows[2])["ts"] == "t2"
+    pairs = [p[0]["id"] for p in pending_spec_pairs(tmp_path)]
+    assert pairs == ["responderd:torn"]
+
+
+def test_append_leaves_a_healthy_ledger_untouched(tmp_path):
+    """The separator must fire ONLY on a torn tail: on a ledger whose
+    records already end with a newline, appends add nothing extra —
+    no blank line, no doubled separator (a pread fallback that fired
+    on every append littered learning-seen.jsonl with blank lines and
+    broke a raw line-count assertion)."""
+    ledger = tmp_path / "events.jsonl"
+    ledger.write_text(json.dumps(
+        {"ts": "t0", "interaction": {"id": "responderd:ok"}}) + "\n")
+    ledger.chmod(0o644)
+    append_checked(str(ledger), json.dumps({"ts": "t1"}) + "\n")
+    append_checked(str(ledger), json.dumps({"ts": "t2"}) + "\n")
+    lines = ledger.read_text().splitlines()
+    assert len(lines) == 3
+    assert all(ln.strip() for ln in lines)
+    assert json.loads(lines[0])["interaction"]["id"] == "responderd:ok"
 
 
 def _boot_state(data_dir, d):

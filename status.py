@@ -234,6 +234,34 @@ def append_checked(path: str, text: str, create_mode: int = 0o600,
             os.fchmod(fd, 0o640)
         except OSError:
             pass
+    # A writer that died mid-line (a torn last write, a seeded ledger)
+    # leaves no trailing newline; appending after it would glue both
+    # lines into one record that no reader can parse — an owner's
+    # pending ask can vanish from every surface that way (found by the
+    # 0.4.5.6 CI battery: the boot pass's first appended event welded
+    # itself onto the seeded ask). One read of the last byte decides
+    # whether a separator goes first; a stray blank line is harmless,
+    # every ledger reader skips lines that fail to parse. The read
+    # cannot go through the append descriptor: current kernels refuse
+    # ANY read on an O_APPEND write descriptor with EBADF, which made
+    # the fallback fire on every append and litter healthy ledgers
+    # with blank lines — so the byte is read through a fresh read-only
+    # descriptor (NOFOLLOW, same stance as the create above) instead.
+    if st.st_size:
+        tail = None
+        try:
+            rfd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            rfd = -1
+        if rfd >= 0:
+            try:
+                tail = os.pread(rfd, 1, st.st_size - 1)
+            except OSError:
+                tail = None
+            finally:
+                os.close(rfd)
+        if tail != b"\n":
+            os.write(fd, b"\n")
     with os.fdopen(fd, "a") as f:
         f.write(text)
 

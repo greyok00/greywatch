@@ -275,11 +275,17 @@ def test_findings_whitelist_filters_and_never_counts(tmp_path,
     """The owner's ignore list: whitelisted paths drop out of the clam
     digest with an honest note, and never count as findings. The state
     dir is redirected: the lookup must read the SAME file the test
-    writes, never whatever the host's real whitelist happens to hold."""
+    writes, never whatever the host's real whitelist happens to hold.
+    The entries are written with their subtree flag EXPLICIT: add()
+    sniffs the host filesystem (p.is_dir() at add time) to decide it,
+    and these paths exist on some machines and not others - a CI box
+    read the same entries as exact-file matches and filtered nothing."""
     from core import scan_whitelist as W
     monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
-    W.add("/tmp/pytest-of-grey", "test scratch")
-    W.add("/etc/unicornscan", "pentest payloads")
+    W.save({"version": 1, "entries": [
+        {"target": "/tmp/pytest-of-grey", "subtree": True},
+        {"target": "/etc/unicornscan", "subtree": True},
+    ]})
     mark, head, det, n = cli._clamav_result(
         "/etc/unicornscan/payloads.conf: Py.Trojan.NecroBot FOUND\n"
         "/tmp/pytest-of-grey/p8/x: Eicar-Test-Signature FOUND\n"
