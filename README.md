@@ -10,7 +10,7 @@ A small system service watches the logs, a command-line client reads the same
 state, and a GTK4 window puts the whole picture on screen — without sending
 anything to a cloud account.
 
-[![Version](https://img.shields.io/badge/version-0.4.5.6-2f6f5e)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.4.5.7-2f6f5e)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-informational)](pyproject.toml)
 [![CI](https://github.com/greyok00/greywatch/actions/workflows/ci.yml/badge.svg)](https://github.com/greyok00/greywatch/actions)
@@ -183,7 +183,7 @@ Build the Debian package from a checkout and install it:
 git clone https://github.com/greyok00/greywatch.git
 cd greywatch
 ./packaging/build-deb.sh
-sudo apt install ./dist/greywatch_0.4.5.6_amd64.deb
+sudo apt install ./dist/greywatch_0.4.5.7_amd64.deb
 ```
 
 Open GreyWatch from the application menu. From a checkout, start the window
