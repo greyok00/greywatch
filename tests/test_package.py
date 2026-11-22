@@ -24,8 +24,16 @@ def test_deb_packages_the_program():
         pytest.skip("dpkg-deb or packaging script not available")
     with tempfile.TemporaryDirectory() as tmp:
         out = pathlib.Path(tmp)
-        subprocess.run([SCRIPT, str(out)], cwd=ROOT, check=True,
-                       capture_output=True, text=True)
+        built = subprocess.run([SCRIPT, str(out)], cwd=ROOT, check=False,
+                               capture_output=True, text=True)
+        if built.returncode != 0:
+            # the build script swallows its own chatter behind >/dev/null;
+            # a bare CalledProcessError says nothing about WHERE it broke
+            raise AssertionError(
+                f"build-deb.sh failed (rc {built.returncode}):\n"
+                f"--- stdout ---\n{built.stdout}\n"
+                f"--- stderr ---\n{built.stderr}")
+        deb = out / f"greywatch_{VER}_amd64.deb"
         deb = out / f"greywatch_{VER}_amd64.deb"
         assert deb.exists() and deb.stat().st_size > 500_000   # the deb shrank when the old UI was deleted; the floor only guards against an empty or broken package
 

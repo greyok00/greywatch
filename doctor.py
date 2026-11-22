@@ -353,7 +353,7 @@ def row_ledger(data_dir) -> dict:
                 f", within its {cap} cap")
 
 
-def row_clamav(data_dir, home=None) -> dict:
+def row_clamav(data_dir, home=None, sigs=None) -> dict:
     """(g) the ClamAV lane, in the words of the people who hit it: a
     killed scan is never hidden, the resident daemon's memory burden is
     named, and the signature age is honest. home overrides the desktop
@@ -398,7 +398,10 @@ def row_clamav(data_dir, home=None) -> dict:
     else:
         notes.append("scan journal is created by the first throttled run")
 
-    daily = pathlib.Path("/var/lib/clamav/daily.cld")
+    # sigs is a test seam: the production default stays the system
+    # signature store, but the battery cannot assume ClamAV is installed
+    sigs = sigs or "/var/lib/clamav/daily.cld"
+    daily = pathlib.Path(sigs)
     try:
         age_days = (time.time() - daily.stat().st_mtime) / 86400
     except OSError:

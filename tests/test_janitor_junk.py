@@ -4,6 +4,8 @@ The daemon never answers a decision. Every quarantine ask stays pending
 until the owner answers it through the CLI. These tests pin that law and
 the scratch-path classifier the CLI sweep still uses.
 """
+import json
+import os
 import pathlib
 import sys
 
@@ -89,4 +91,35 @@ def test_janitor_runs_in_the_boot_pass(tmp_path):
                if d.decisions_path.exists() else "")
     assert "responderd:bj" not in answers
     pairs = [p[0]["id"] for p in pending_spec_pairs(tmp)]
-    assert "responderd:bj" in pairs
+    assert "responderd:bj" in pairs, _boot_state(tmp, d)
+
+
+def _boot_state(data_dir, d):
+    """Evidence at the boundary the boot pass owns: what the ledger and
+    the published snapshot carried when the read-back went empty. A CI
+    failure used to die on a bare `in []` with nothing to diagnose."""
+    facts = []
+    events = data_dir / "events.jsonl"
+    try:
+        raw = events.read_bytes()
+        lines = [ln for ln in raw.split(b"\n") if ln.strip()]
+        hits = [ln for ln in lines if b'"interaction"' in ln]
+        facts.append(f"events: exists, {len(lines)} lines, "
+                     f"{len(hits)} interaction lines")
+        if hits:
+            facts.append(f"first hit: {hits[0][:200]!r}")
+    except OSError as e:
+        facts.append(f"events: unreadable ({e})")
+    try:
+        snap = json.loads((data_dir / "status.json").read_text())
+        recent = snap.get("recent") or []
+        facts.append(f"status: recent={len(recent)}, "
+                     f"pending_decisions={snap.get('pending_decisions')}")
+        rec_ids = [(r.get("interaction") or {}).get("id")
+                   for r in recent if isinstance(r, dict)]
+        facts.append(f"status recent ids: {[i for i in rec_ids if i]}")
+    except (OSError, ValueError) as e:
+        facts.append(f"status: unreadable ({e})")
+    facts.append(f"failures: {d._fail_counts}")
+    facts.append(f"uid={os.geteuid()} outbox={len(d._outbox)}")
+    return "; ".join(facts)

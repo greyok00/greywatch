@@ -1,6 +1,9 @@
 # runtime state (root-0600 daemon writes; never ship)
 data/*
 !data/hardening-controls.json
+# the watchlist snapshot ships with the app (deb/wheel/tarball builds
+# install it; ptp.py refreshes it at runtime) - a curated file, not state
+!data/ptp-watchlist.json
 
 # local working files that never ship
 runbooks/

@@ -202,7 +202,14 @@ def test_trim_keeps_the_ledger_readable_to_the_ui_group(tmp_path):
     both lost the ledger at the very first trim (2026-11-12 live). The
     trimmed file must carry the same group-read shape."""
     import os
+    import pytest
     d = mk_daemon(tmp_path, max_events=20)
+    if d.ui_gid is None:
+        # No desktop identity on this host: the law is that an unresolved
+        # UI user is never guessed, the replacement lands 0600 root:root,
+        # and there is no group bit to assert. The trait under test (the
+        # trim keeps the group shape) only exists when a group exists.
+        pytest.skip("no desktop group on this host")
     for i in range(30):
         d.consume("ufw", f"[ 1{i}.1] [UFW BLOCK] IN=wlan0 SRC=1.2.3.{i % 250} DST=1.1.1.1 PROTO=TCP")
     d.flush_outbox()

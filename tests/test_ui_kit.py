@@ -40,10 +40,12 @@ def test_level_bar_marks_direction():
 
 
 def test_icon_uses_installed_symbolic():
-    name = toolicons.icon_name("clamav")
-    svg = (pathlib.PosixPath.home() / ".local/share/icons/hicolor"
-           / "scalable/apps" / f"{name}.svg")
-    assert svg.exists(), "the installed symbolic icon must be on disk"
+    """Every mapped tool ships a symbolic svg with the tree, so the
+    mapping never points at a name no theme carries."""
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for tool, name in toolicons.ICONS.items():
+        svg = root / "assets" / "icons" / "tools" / f"{name}.svg"
+        assert svg.exists(), f"{tool}: shipped svg {name} must be on disk"
     image = kit.icon("clamav")
     assert isinstance(image, Gtk.Image)
 

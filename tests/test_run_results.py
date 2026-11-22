@@ -270,13 +270,16 @@ def test_finished_run_history_retires_after_thirty_minutes(tmp_path,
     assert launched == ["start-all"], "a stale history must not be reprinted"
 
 
-def test_findings_whitelist_filters_and_never_counts(tmp_path):
+def test_findings_whitelist_filters_and_never_counts(tmp_path,
+                                                     monkeypatch):
     """The owner's ignore list: whitelisted paths drop out of the clam
-    digest with an honest note, and never count as findings."""
+    digest with an honest note, and never count as findings. The state
+    dir is redirected: the lookup must read the SAME file the test
+    writes, never whatever the host's real whitelist happens to hold."""
     from core import scan_whitelist as W
-    wl = W._state_path().parent / "wl-test.json"
-    W.add("/tmp/pytest-of-grey", "test scratch", path=wl)
-    W.add("/etc/unicornscan", "pentest payloads", path=wl)
+    monkeypatch.setenv("GREYWATCH_DATA_DIR", str(tmp_path))
+    W.add("/tmp/pytest-of-grey", "test scratch")
+    W.add("/etc/unicornscan", "pentest payloads")
     mark, head, det, n = cli._clamav_result(
         "/etc/unicornscan/payloads.conf: Py.Trojan.NecroBot FOUND\n"
         "/tmp/pytest-of-grey/p8/x: Eicar-Test-Signature FOUND\n"

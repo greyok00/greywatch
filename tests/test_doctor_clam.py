@@ -27,7 +27,9 @@ def test_killed_scan_is_named_not_hidden(tmp_path, monkeypatch):
         "2026-11-14T09:09:01-07:00 clamscan start\n"
         "2026-11-14T09:40:00-07:00 clamscan exit rc=137\n")
     monkeypatch.setattr(doctor, "_probe", _probe_fake())
-    row = doctor.row_clamav(tmp_path / "data", home=tmp_path)
+    (tmp_path / "sigs").write_text("x")   # a fresh signature file
+    row = doctor.row_clamav(tmp_path / "data", home=tmp_path,
+                      sigs=str(tmp_path / "sigs"))
     assert row["verdict"] == "DEGRADED"
     assert "was killed" in row["text"]
     assert "09:40" in row["text"]
@@ -37,7 +39,9 @@ def test_one_shot_lane_armed_reads_ready(tmp_path, monkeypatch):
     # Superseded (owner 2026-11-17): the timer armed IS the antivirus
     # being healthy; the resident engine never runs again.
     monkeypatch.setattr(doctor, "_probe", _probe_fake(timer="active"))
-    row = doctor.row_clamav(tmp_path / "data", home=tmp_path)
+    (tmp_path / "sigs").write_text("x")   # a fresh signature file
+    row = doctor.row_clamav(tmp_path / "data", home=tmp_path,
+                      sigs=str(tmp_path / "sigs"))
     assert row["verdict"] == "READY"
     assert "one-shot" in row["text"]
 
@@ -47,7 +51,9 @@ def test_disabled_timer_is_healthy_not_degraded(tmp_path, monkeypatch):
     disabled timer is the intended state, never a fault."""
     monkeypatch.setattr(doctor, "_probe", _probe_fake(timer="inactive",
                                                       enabled="disabled"))
-    row = doctor.row_clamav(tmp_path / "data", home=tmp_path)
+    (tmp_path / "sigs").write_text("x")   # a fresh signature file
+    row = doctor.row_clamav(tmp_path / "data", home=tmp_path,
+                      sigs=str(tmp_path / "sigs"))
     assert row["verdict"] == "READY"
     assert "timer is not armed" not in row["text"]
     assert "one-shot" in row["text"]
@@ -61,7 +67,9 @@ def test_clean_journal_reads_ready(tmp_path, monkeypatch):
         "2026-11-14T09:09:01-07:00 clamscan start\n"
         "2026-11-14T09:40:00-07:00 clamscan exit rc=0\n")
     monkeypatch.setattr(doctor, "_probe", _probe_fake())
-    row = doctor.row_clamav(tmp_path / "data", home=tmp_path)
+    (tmp_path / "sigs").write_text("x")   # a fresh signature file
+    row = doctor.row_clamav(tmp_path / "data", home=tmp_path,
+                      sigs=str(tmp_path / "sigs"))
     assert row["verdict"] == "READY"
     assert "finished clean" in row["text"]
 
@@ -159,6 +167,8 @@ def test_session_exit_clears_the_stale_interrupt(tmp_path, monkeypatch):
         "2026-11-14T18:35:28-07:00 clamscan exit rc=130\n"
         "2026-11-15T01:30:00+00:00 session 20261115T0125-a1 exit rc=0\n")
     monkeypatch.setattr(doctor, "_probe", _probe_fake())
-    row = doctor.row_clamav(tmp_path / "data", home=tmp_path)
+    (tmp_path / "sigs").write_text("x")   # a fresh signature file
+    row = doctor.row_clamav(tmp_path / "data", home=tmp_path,
+                      sigs=str(tmp_path / "sigs"))
     assert row["verdict"] == "READY"
     assert "finished clean" in row["text"] and "01:30" in row["text"]

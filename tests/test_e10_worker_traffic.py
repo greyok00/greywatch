@@ -48,6 +48,11 @@ def test_engine_worker_transport_and_verdict_chain(tmp_path, monkeypatch):
     FAKE.chmod(0o755)
     monkeypatch.setattr("appfw.engine.ENGINE_BIN", FAKE)
     monkeypatch.setattr("appfw.engine.subprocess", _FakeSub())
+    # The queue-module probe is a HOST fact (are nfnetlink_queue/nft_queue
+    # loaded?), not something this socket-level test exercises; a CI box
+    # without them would refuse the arm before the transport is touched.
+    monkeypatch.setattr("appfw.engine.Engine._ensure_queue_module",
+                        staticmethod(lambda: None))
     (tmp_path / "appfw").mkdir(parents=True, exist_ok=True)
     (tmp_path / "appfw" / "enable.json").write_text(
         json.dumps({"enabled": True}) + "\n")
