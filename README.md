@@ -92,10 +92,10 @@ host process cannot see switched unicast traffic it is not part of.
 
 #### Web of trust
 
-Rather than trusting any single blocklist, the feeds lane pulls twelve public
-threat lists — StevenBlack, Hagezi, OISD, 1Hosts, abuse.ch URLhaus, Spamhaus
-DROP, DShield, CINS Army, FireHOL Level 1, Phishing Army, OpenPhish and
-blocklist.de — and grades each one by how independently it is curated.
+Rather than trusting any single blocklist, the feeds lane pulls thirteen public
+threat lists — StevenBlack, two Hagezi lists, OISD, 1Hosts, abuse.ch URLhaus,
+Spamhaus DROP, DShield, CINS Army, FireHOL Level 1, Phishing Army, OpenPhish
+and blocklist.de — and grades each one by how independently it is curated.
 First-tier curators block on their own; entries from second-tier lists count
 only when a second, independent source names the same host or netblock
 (FireHOL, for example, only republishes several of the first-tier lists, so it
